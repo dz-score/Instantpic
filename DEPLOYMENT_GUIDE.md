@@ -37,9 +37,9 @@ cd backend
 python3 -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
-pip install -r requirements.txt
+pip install -r backend/requirements.txt
 # Verify FastAPI start (will run on port 8000)
-uvicorn main:app --host 0.0.0.0 --port 8000 &
+uvicorn backend.main:app --host 0.0.0.0 --port 8000 &
 ```
 Press **Ctrl‑C** to stop after confirming the server prints `Uvicorn running on http://0.0.0.0:8000`.
 
