@@ -1,0 +1,25 @@
+{
+  "printer_name": "mock",
+  "max_photos": 1000,
+  "disk_min_free_gb": 2.0,
+  "default_text": "Our Wedding 2026",
+  "port": 8000,
+  "selected_overlay": "none",
+  "overlays": [
+    {
+      "id": "none",
+      "name": "No Frame",
+      "filename": ""
+    },
+    {
+      "id": "blush_floral",
+      "name": "Chic Blush Floral",
+      "filename": "blush_floral.png"
+    },
+    {
+      "id": "gold_glitter",
+      "name": "Elegant Gold Frame",
+      "filename": "gold_glitter.png"
+    }
+  ]
+}

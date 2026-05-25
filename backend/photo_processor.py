@@ -1,0 +1,159 @@
+import os
+import base64
+import urllib.request
+from io import BytesIO
+from PIL import Image, ImageDraw, ImageFont, ImageOps
+from backend.config import load_settings
+
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+PHOTOS_DIR = os.path.join(BASE_DIR, "backend", "photos")
+OVERLAYS_DIR = os.path.join(BASE_DIR, "backend", "overlays")
+FONT_PATH = os.path.join(BASE_DIR, "backend", "PlayfairDisplay-Regular.ttf")
+
+# Default Google Font URL to download if missing
+FONT_URL = "https://raw.githubusercontent.com/technext/cozastore/master/fonts/PlayfairDisplay/PlayfairDisplay-Regular.ttf"
+
+def ensure_font():
+    """Download Playfair Display font if it doesn't exist locally."""
+    if not os.path.exists(FONT_PATH):
+        try:
+            print("Downloading Playfair Display font from Google Fonts...")
+            urllib.request.urlretrieve(FONT_URL, FONT_PATH)
+            print("Font downloaded successfully.")
+        except Exception as e:
+            print(f"Failed to download font: {e}. Will fallback to system default.")
+
+def get_font(size: int):
+    """Get the downloaded font or fallback to default."""
+    ensure_font()
+    if os.path.exists(FONT_PATH):
+        try:
+            return ImageFont.truetype(FONT_PATH, size)
+        except Exception:
+            pass
+    return ImageFont.load_default()
+
+def decode_base64_image(base64_str: str) -> Image.Image:
+    """Decode a base64 data URI to a PIL Image."""
+    if "," in base64_str:
+        base64_str = base64_str.split(",")[1]
+    image_data = base64.b64decode(base64_str)
+    return Image.open(BytesIO(image_data))
+
+def create_mock_overlay_png(filename: str, overlay_id: str):
+    """Generate a mock transparent overlay PNG if it is missing."""
+    os.makedirs(OVERLAYS_DIR, exist_ok=True)
+    filepath = os.path.join(OVERLAYS_DIR, filename)
+    if os.path.exists(filepath):
+        return
+    
+    # Create an 1800x1200 transparent image
+    overlay = Image.new("RGBA", (1800, 1200), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay)
+    
+    if overlay_id == "blush_floral":
+        # Draw soft pink/rose gold botanical shapes on corners
+        # Top-left corner design
+        draw.ellipse([(-50, -50), (250, 250)], fill=(255, 213, 213, 180)) # Blush
+        draw.ellipse([(-20, -20), (180, 180)], fill=(232, 200, 159, 120)) # Champagne Gold
+        # Bottom-right corner design
+        draw.ellipse([(1550, 950), (1850, 1250)], fill=(255, 213, 213, 180))
+        draw.ellipse([(1620, 1020), (1820, 1220)], fill=(232, 200, 159, 120))
+        # Elegant border
+        draw.rectangle([(20, 20), (1780, 1180)], outline=(183, 110, 121, 150), width=4) # Rose Gold line
+    
+    elif overlay_id == "gold_glitter":
+        # Elegant double gold border
+        draw.rectangle([(30, 30), (1770, 1170)], outline=(232, 200, 159, 255), width=6) # Gold outer
+        draw.rectangle([(45, 45), (1755, 1155)], outline=(183, 110, 121, 255), width=2) # Rose Gold inner
+        
+    overlay.save(filepath, "PNG")
+
+def process_photo_layout(images_base64: list, layout_type: str, text: str, overlay_id: str) -> str:
+    """
+    Process single or multi-photo layouts into an 1800x1200 canvas,
+    overlay selected template and draw custom branding text.
+    Returns the filename of the saved image.
+    """
+    os.makedirs(PHOTOS_DIR, exist_ok=True)
+    os.makedirs(OVERLAYS_DIR, exist_ok=True)
+    
+    # 1. Create Canvas (1800x1200 landscape - 4x6 print aspect ratio)
+    # Using a soft off-white/cream background suitable for weddings
+    canvas = Image.new("RGB", (1800, 1200), (253, 251, 247))
+    
+    # Decode input base64 images
+    decoded_images = [decode_base64_image(img_str) for img_str in images_base64]
+    
+    if layout_type == "single" and decoded_images:
+        # Single Landscape photo placement
+        img = decoded_images[0]
+        # Crop or resize to fit 3:2 nicely with elegant borders
+        # We want to fit it to 1440x960, centered horizontally
+        img_resized = ImageOps.fit(img, (1440, 960))
+        canvas.paste(img_resized, (180, 80)) # x = 180, y = 80. Bottom is 1040.
+        
+    elif layout_type == "collage" and len(decoded_images) >= 3:
+        # 3-Photo horizontal collage
+        # Crop each photo to portrait 3:4 aspect ratio (540x720)
+        collage_width = 540
+        collage_height = 720
+        gap = 45 # (1800 - (3 * 540)) / 4 = 45
+        
+        for idx, img in enumerate(decoded_images[:3]):
+            cropped_img = ImageOps.fit(img, (collage_width, collage_height))
+            x_pos = gap + idx * (collage_width + gap)
+            y_pos = 80
+            canvas.paste(cropped_img, (x_pos, y_pos)) # Bottom is 800
+            
+    # 3. Apply Overlay Template
+    settings = load_settings()
+    overlay_filename = ""
+    for o in settings.overlays:
+        if o.id == overlay_id:
+            overlay_filename = o.filename
+            break
+            
+    if overlay_filename:
+        # Ensure template file exists (create a beautiful mock if missing)
+        create_mock_overlay_png(overlay_filename, overlay_id)
+        overlay_path = os.path.join(OVERLAYS_DIR, overlay_filename)
+        if os.path.exists(overlay_path):
+            try:
+                overlay_img = Image.open(overlay_path).convert("RGBA")
+                # Paste overlay using it's own alpha channel as a mask
+                canvas.paste(overlay_img, (0, 0), overlay_img)
+            except Exception as e:
+                print(f"Error applying overlay template: {e}")
+                
+    # 4. Render Customizable Text
+    if text:
+        draw = ImageDraw.Draw(canvas)
+        font = get_font(52)
+        
+        # Calculate text dimensions using textbbox
+        bbox = draw.textbbox((0, 0), text, font=font)
+        text_width = bbox[2] - bbox[0]
+        
+        # Centered horizontally
+        text_x = (1800 - text_width) // 2
+        
+        # Y position: vertical alignment in the bottom area
+        # For single, bottom area is 1040 -> 1200. Center is 1120.
+        # For collage, bottom area is 800 -> 1200. Center is 1000.
+        if layout_type == "single":
+            text_y = 1040 + (160 - (bbox[3] - bbox[1])) // 2 - 10
+        else:
+            text_y = 800 + (400 - (bbox[3] - bbox[1])) // 2 - 20
+            
+        # Draw elegant dark rose/gold text
+        draw.text((text_x, text_y), text, fill=(50, 30, 40), font=font)
+        
+    # 5. Save the photo
+    import uuid
+    filename = f"photo_{uuid.uuid4().hex[:10]}.jpg"
+    filepath = os.path.join(PHOTOS_DIR, filename)
+    
+    # Save as high-quality JPEG
+    canvas.save(filepath, "JPEG", quality=95)
+    return filename
