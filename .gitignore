@@ -26,3 +26,4 @@ backend/PlayfairDisplay-Regular.ttf
 *.njsproj
 *.sln
 *.swp
+.venv/
