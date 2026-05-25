@@ -1,0 +1,46 @@
+/* ── CountdownRing ── */
+
+.countdown-ring {
+  position: relative;
+  width: 220px;
+  height: 220px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.countdown-ring__svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.countdown-ring__arc {
+  transition: stroke-dashoffset 0.9s var(--ease-out);
+}
+
+.countdown-ring__number {
+  font-family: var(--font-display);
+  font-size: 7rem;
+  font-weight: 300;
+  color: white;
+  text-shadow: 0 4px 30px rgba(0, 0, 0, 0.4);
+  animation: countdown-pop 0.6s var(--ease-spring);
+  z-index: 1;
+}
+
+.countdown-ring__prompt {
+  position: absolute;
+  bottom: -40px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  font-weight: 500;
+  color: white;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.5);
+  white-space: nowrap;
+  animation: fade-in 0.3s ease;
+}

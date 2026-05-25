@@ -1,0 +1,77 @@
+/* ── RevealScreen ── */
+
+.reveal-screen {
+  background: var(--bg-base);
+  gap: var(--space-md);
+}
+
+/* Loading */
+.reveal-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+.reveal-spinner {
+  width: 48px;
+  height: 48px;
+  border: 4px solid var(--champagne);
+  border-top-color: var(--gold);
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+
+.reveal-loading__text {
+  font-family: var(--font-display);
+  font-size: var(--text-h3);
+  font-style: italic;
+  color: var(--text-secondary);
+}
+
+/* Content wrapper (fade+slide in) */
+.reveal-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-md);
+  opacity: 0;
+  transform: translateY(20px);
+  transition:
+    opacity var(--duration-dramatic) var(--ease-dramatic),
+    transform var(--duration-dramatic) var(--ease-dramatic);
+}
+
+.reveal-content--visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Compliment text */
+.reveal-compliment {
+  font-family: var(--font-display);
+  font-size: var(--text-h2);
+  font-weight: 500;
+  font-style: italic;
+  color: var(--gold);
+  letter-spacing: 0.5px;
+  animation: fade-up 0.8s var(--ease-out) 0.4s both;
+}
+
+/* Actions */
+.reveal-actions {
+  display: flex;
+  gap: var(--space-md);
+  align-items: center;
+  animation: fade-up 0.8s var(--ease-out) 0.6s both;
+}
+
+/* Error */
+.reveal-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-md);
+  color: var(--error);
+  font-size: var(--text-body);
+}

@@ -40,6 +40,8 @@ class ConfigUpdateRequest(BaseModel):
     printer_name: Optional[str] = None
     max_photos: Optional[int] = None
     disk_min_free_gb: Optional[float] = None
+    couple_names: Optional[str] = None
+    event_date: Optional[str] = None
     default_text: Optional[str] = None
     selected_overlay: Optional[str] = None
 

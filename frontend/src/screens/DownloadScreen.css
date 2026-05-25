@@ -1,0 +1,83 @@
+/* ── DownloadScreen (Mobile) ── */
+
+.download-screen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-base);
+  padding: var(--space-md);
+  overflow-y: auto;
+}
+
+.download-card {
+  width: 100%;
+  max-width: 480px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+.download-header {
+  text-align: center;
+}
+
+.download-title {
+  font-family: var(--font-display);
+  font-size: var(--text-h2);
+  font-weight: 500;
+  color: var(--dusty-rose);
+  margin-bottom: 4px;
+}
+
+.download-text {
+  font-size: var(--text-caption);
+  color: var(--text-secondary);
+}
+
+.download-photo {
+  width: 100%;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  box-shadow: var(--shadow-photo);
+  background: white;
+  padding: var(--space-xs);
+}
+
+.download-photo__img {
+  width: 100%;
+  height: auto;
+  border-radius: 8px;
+  display: block;
+}
+
+/* Save button styled as primary */
+.download-save-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: var(--touch-comfortable);
+  background: var(--gold-gradient);
+  color: var(--text-on-gold);
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: var(--text-body);
+  border-radius: var(--radius-full);
+  box-shadow: var(--shadow-button);
+  text-decoration: none;
+  transition: transform var(--duration-fast) ease-out;
+}
+
+.download-save-btn:active {
+  transform: scale(0.97);
+}
+
+.download-tip {
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+  text-align: center;
+  line-height: 1.5;
+  max-width: 320px;
+}

@@ -16,6 +16,8 @@ class AppSettings(BaseModel):
     printer_name: str
     max_photos: int
     disk_min_free_gb: float
+    couple_names: str
+    event_date: str
     default_text: str
     port: int
     selected_overlay: str
@@ -29,7 +31,9 @@ def load_settings() -> AppSettings:
             printer_name="mock",
             max_photos=1000,
             disk_min_free_gb=2.0,
-            default_text="Our Wedding 2026",
+            couple_names="Sarah & Michael",
+            event_date="June 14, 2026",
+            default_text="Sarah & Michael \u00b7 June 14, 2026",
             port=8000,
             selected_overlay="none",
             overlays=[

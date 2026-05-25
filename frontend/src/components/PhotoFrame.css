@@ -1,0 +1,39 @@
+/* ── PhotoFrame ── */
+
+.photo-frame {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  box-shadow: var(--shadow-photo);
+  background: var(--bg-elevated);
+  border: 4px solid rgba(201, 169, 110, 0.12);
+}
+
+.photo-frame__img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.photo-frame--default {
+  max-width: 100%;
+  max-height: 60vh;
+}
+
+.photo-frame--small {
+  max-width: 280px;
+  max-height: 200px;
+}
+
+.photo-frame--large {
+  max-width: 90vw;
+  max-height: 70vh;
+}
+
+/* Reveal entrance animation */
+.photo-frame--reveal {
+  animation: reveal-up var(--duration-dramatic) var(--ease-dramatic) forwards;
+}

@@ -1,0 +1,116 @@
+import { useState, useEffect, useCallback, useRef } from 'react';
+
+const API = '';
+
+/**
+ * Centralises all API interactions + health-check polling.
+ */
+export default function useApi() {
+  const [config, setConfig] = useState(null);
+  const [isOnline, setIsOnline] = useState(true);
+  const [gallery, setGallery] = useState([]);
+  const configRef = useRef(null);
+
+  /* ── Health check ── */
+  useEffect(() => {
+    const check = async () => {
+      try {
+        const r = await fetch(`${API}/api/health`);
+        setIsOnline(r.ok);
+      } catch {
+        setIsOnline(false);
+      }
+    };
+    check();
+    const id = setInterval(check, 5000);
+    return () => clearInterval(id);
+  }, []);
+
+  /* ── Load config on mount ── */
+  const fetchConfig = useCallback(async () => {
+    try {
+      const r = await fetch(`${API}/api/config`);
+      const data = await r.json();
+      setConfig(data);
+      configRef.current = data;
+      return data;
+    } catch (e) {
+      console.error('Failed to load config:', e);
+      return null;
+    }
+  }, []);
+
+  useEffect(() => { fetchConfig(); }, [fetchConfig]);
+
+  /* ── Gallery ── */
+  const fetchGallery = useCallback(async () => {
+    try {
+      const r = await fetch(`${API}/api/photos`);
+      const data = await r.json();
+      setGallery(data);
+      return data;
+    } catch (e) {
+      console.error('Failed to load gallery:', e);
+      return [];
+    }
+  }, []);
+
+  useEffect(() => { fetchGallery(); }, [fetchGallery]);
+
+  /* ── Save photo (process on backend) ── */
+  const savePhoto = useCallback(async (images, layout, overlayId) => {
+    const cfg = configRef.current || {};
+    const text = [cfg.couple_names, cfg.event_date].filter(Boolean).join(' · ') || cfg.default_text || '';
+    const r = await fetch(`${API}/api/save-photo`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        images,
+        layout,
+        text,
+        overlay_id: overlayId || cfg.selected_overlay || 'none',
+      }),
+    });
+    if (!r.ok) throw new Error((await r.json()).detail || 'Processing failed');
+    return await r.json();
+  }, []);
+
+  /* ── Print ── */
+  const printPhoto = useCallback(async (filename) => {
+    const r = await fetch(`${API}/api/print/${filename}`, { method: 'POST' });
+    if (!r.ok) throw new Error('Print failed');
+    fetchGallery();
+    return await r.json();
+  }, [fetchGallery]);
+
+  /* ── Save config (admin) ── */
+  const saveConfig = useCallback(async (updates) => {
+    const r = await fetch(`${API}/api/config`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates),
+    });
+    if (!r.ok) throw new Error('Config save failed');
+    const data = await r.json();
+    setConfig(data);
+    configRef.current = data;
+    return data;
+  }, []);
+
+  /* ── QR helper ── */
+  const getQrUrl = useCallback((downloadUrl) => {
+    return `${API}/api/qrcode?text=${encodeURIComponent(downloadUrl)}`;
+  }, []);
+
+  return {
+    config,
+    isOnline,
+    gallery,
+    fetchConfig,
+    fetchGallery,
+    savePhoto,
+    printPhoto,
+    saveConfig,
+    getQrUrl,
+  };
+}

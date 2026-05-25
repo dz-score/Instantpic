@@ -2,7 +2,9 @@
   "printer_name": "mock",
   "max_photos": 1000,
   "disk_min_free_gb": 2.0,
-  "default_text": "Our Wedding 2026",
+  "couple_names": "Sarah & Michael",
+  "event_date": "June 14, 2026",
+  "default_text": "Sarah & Michael · June 14, 2026",
   "port": 8000,
   "selected_overlay": "none",
   "overlays": [

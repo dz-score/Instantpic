@@ -1,0 +1,86 @@
+/* ═══════════════════════════════════════════════════════
+   DESIGN TOKENS — Wedding Photo Booth
+   ═══════════════════════════════════════════════════════ */
+
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400;1,500&family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&display=swap');
+
+:root {
+  /* ── Background Layers ── */
+  --bg-base:            #FAF7F2;
+  --bg-elevated:        #FFFFFF;
+  --bg-overlay:         rgba(42, 36, 32, 0.55);
+  --bg-frosted:         rgba(255, 253, 248, 0.85);
+  --bg-frosted-strong:  rgba(255, 253, 248, 0.92);
+
+  /* ── Brand Palette ── */
+  --champagne:          #E8DCCC;
+  --champagne-light:    #F5EFE6;
+  --blush:              #D4A0A0;
+  --blush-muted:        #E8C8C8;
+  --gold:               #C9A96E;
+  --gold-light:         #DFC9A0;
+  --gold-gradient:      linear-gradient(135deg, #C9A96E 0%, #D4B07A 50%, #DFC9A0 100%);
+  --sage:               #8B9E8B;
+  --dusty-rose:         #B07D7D;
+
+  /* ── Text ── */
+  --text-primary:       #2D2420;
+  --text-secondary:     #6B5E57;
+  --text-on-dark:       #FAF7F2;
+  --text-accent:        #8B6914;
+  --text-on-gold:       #FFFFFF;
+
+  /* ── Semantic ── */
+  --success:            #7BA37B;
+  --error:              #C27070;
+  --surface-border:     rgba(201, 169, 110, 0.20);
+
+  /* ── Typography ── */
+  --font-display:       'Cormorant Garamond', 'Georgia', serif;
+  --font-body:          'DM Sans', 'system-ui', sans-serif;
+
+  --text-hero:          4.5rem;     /* 72px */
+  --text-h1:            3rem;       /* 48px */
+  --text-h2:            2rem;       /* 32px */
+  --text-h3:            1.5rem;     /* 24px */
+  --text-body:          1.25rem;    /* 20px */
+  --text-caption:       1rem;       /* 16px */
+  --text-small:         0.875rem;   /* 14px */
+
+  /* ── Spacing (8px grid) ── */
+  --space-xs:           8px;
+  --space-sm:           16px;
+  --space-md:           24px;
+  --space-lg:           40px;
+  --space-xl:           64px;
+  --space-2xl:          96px;
+
+  /* ── Touch Targets ── */
+  --touch-min:          56px;
+  --touch-comfortable:  72px;
+
+  /* ── Border Radius ── */
+  --radius-sm:          12px;
+  --radius-md:          20px;
+  --radius-lg:          32px;
+  --radius-full:        9999px;
+
+  /* ── Shadows ── */
+  --shadow-sm:          0 2px 8px rgba(45, 36, 32, 0.06);
+  --shadow-md:          0 4px 24px rgba(45, 36, 32, 0.08);
+  --shadow-lg:          0 12px 48px rgba(45, 36, 32, 0.12);
+  --shadow-photo:       0 8px 40px rgba(45, 36, 32, 0.15),
+                        0 2px 8px rgba(45, 36, 32, 0.08);
+  --shadow-glow:        0 0 40px rgba(201, 169, 110, 0.15);
+  --shadow-button:      0 4px 24px rgba(201, 169, 110, 0.25);
+  --shadow-button-hover:0 8px 32px rgba(201, 169, 110, 0.35);
+
+  /* ── Transitions ── */
+  --ease-out:           cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-spring:        cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-dramatic:      cubic-bezier(0.16, 1, 0.3, 1);
+  --duration-fast:      120ms;
+  --duration-normal:    300ms;
+  --duration-slow:      500ms;
+  --duration-dramatic:  1200ms;
+}

@@ -1,0 +1,77 @@
+/* ── Button Component ── */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-xs);
+  font-family: var(--font-body);
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  border: none;
+  border-radius: var(--radius-full);
+  transition:
+    transform var(--duration-fast) ease-out,
+    box-shadow var(--duration-normal) var(--ease-out),
+    background var(--duration-normal) var(--ease-out);
+  position: relative;
+  overflow: hidden;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+/* ── Primary: gold gradient fill ── */
+.btn--primary {
+  background: var(--gold-gradient);
+  color: var(--text-on-gold);
+  box-shadow: var(--shadow-button);
+}
+.btn--primary:active {
+  transform: scale(0.97);
+  box-shadow: var(--shadow-sm);
+}
+
+/* ── Ghost: transparent with subtle border ── */
+.btn--ghost {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 2px solid var(--surface-border);
+}
+.btn--ghost:active {
+  transform: scale(0.97);
+  background: var(--champagne-light);
+}
+
+/* ── Size: default ── */
+.btn--default {
+  height: var(--touch-comfortable);
+  padding: 0 var(--space-lg);
+  font-size: var(--text-body);
+}
+
+/* ── Size: large ── */
+.btn--large {
+  height: 80px;
+  padding: 0 var(--space-xl);
+  font-size: 1.375rem;
+}
+
+/* ── Size: small ── */
+.btn--small {
+  height: var(--touch-min);
+  padding: 0 var(--space-md);
+  font-size: var(--text-caption);
+}
+
+/* ── Pulse glow modifier ── */
+.btn--glow {
+  animation: pulse-glow 2.5s infinite;
+}
+
+/* ── Disabled ── */
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none !important;
+  animation: none !important;
+}

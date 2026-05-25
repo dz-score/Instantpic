@@ -1,0 +1,128 @@
+/* ── PrintingScreen ── */
+
+.print-screen {
+  background: var(--bg-base);
+  padding: var(--space-lg);
+  gap: var(--space-md);
+}
+
+/* Photo preview (small) */
+.print-preview {
+  animation: fade-in 0.5s ease;
+}
+
+/* Printing spinner */
+.print-status {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-md);
+  animation: fade-in 0.4s ease;
+}
+
+.print-spinner {
+  width: 44px;
+  height: 44px;
+  border: 4px solid var(--champagne);
+  border-top-color: var(--gold);
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+
+.print-status__msg {
+  font-family: var(--font-display);
+  font-size: var(--text-h3);
+  font-style: italic;
+  color: var(--text-secondary);
+}
+
+/* Done/Error phase */
+.print-complete {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-md);
+  animation: fade-up 0.5s var(--ease-out);
+  width: 100%;
+  max-width: 500px;
+}
+
+/* Status badge */
+.print-badge {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-caption);
+  font-weight: 500;
+}
+.print-badge--success {
+  background: rgba(123, 163, 123, 0.12);
+  border-left: 4px solid var(--success);
+  color: var(--text-primary);
+}
+.print-badge--error {
+  background: rgba(194, 112, 112, 0.12);
+  border-left: 4px solid var(--error);
+  color: var(--text-primary);
+}
+
+.print-badge__icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: white;
+  flex-shrink: 0;
+}
+.print-badge--success .print-badge__icon { background: var(--success); }
+.print-badge--error .print-badge__icon { background: var(--error); }
+
+/* QR Code */
+.print-qr {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.print-qr__frame {
+  padding: var(--space-sm);
+  background: white;
+  border-radius: var(--radius-md);
+  border: 3px solid var(--champagne);
+  box-shadow: var(--shadow-md);
+}
+
+.print-qr__img {
+  width: 180px;
+  height: 180px;
+  display: block;
+}
+
+.print-qr__instructions {
+  text-align: center;
+}
+
+.print-qr__step {
+  font-size: var(--text-caption);
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+/* Actions */
+.print-actions {
+  margin-top: var(--space-xs);
+}
+
+/* Countdown */
+.print-countdown {
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+  opacity: 0.7;
+}
