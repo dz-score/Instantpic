@@ -1,0 +1,47 @@
+/* ── ToggleSwitch ── */
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+}
+
+.toggle-label {
+  font-size: var(--text-body);
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.toggle-switch {
+  position: relative;
+  width: 72px;
+  height: 40px;
+  border-radius: 20px;
+  background: var(--champagne);
+  border: none;
+  cursor: pointer;
+  transition: background var(--duration-normal) var(--ease-out);
+  flex-shrink: 0;
+  padding: 0;
+}
+
+.toggle-switch--on {
+  background: var(--gold);
+}
+
+.toggle-switch__thumb {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: white;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  transition: transform var(--duration-normal) var(--ease-spring);
+}
+
+.toggle-switch--on .toggle-switch__thumb {
+  transform: translateX(32px);
+}

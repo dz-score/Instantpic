@@ -68,7 +68,7 @@ export default function AttractScreen({ config, gallery, onStart }) {
 
       {/* Main content — tap target */}
       <button className="attract-content" onClick={handleTap}>
-        <h1 className="attract-title">Create a Beautiful Memory</h1>
+        <h1 className="attract-title">{config?.welcome_message || 'Create a Beautiful Memory'}</h1>
         <div className="attract-divider">
           <span className="attract-divider__line" />
           <span className="attract-divider__star">{GOLD_DIVIDER}</span>

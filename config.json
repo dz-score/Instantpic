@@ -1,4 +1,11 @@
 {
+  "admin_pin": "1234",
+  "welcome_message": "Create a Beautiful Memory",
+  "thank_you_message": "Thank you for celebrating with us!",
+  "countdown_duration": 3,
+  "flash_enabled": true,
+  "max_photos_per_session": 5,
+  "session_timeout": 120,
   "printer_name": "mock",
   "max_photos": 1000,
   "disk_min_free_gb": 2.0,
@@ -8,20 +15,8 @@
   "port": 8000,
   "selected_overlay": "none",
   "overlays": [
-    {
-      "id": "none",
-      "name": "No Frame",
-      "filename": ""
-    },
-    {
-      "id": "blush_floral",
-      "name": "Chic Blush Floral",
-      "filename": "blush_floral.png"
-    },
-    {
-      "id": "gold_glitter",
-      "name": "Elegant Gold Frame",
-      "filename": "gold_glitter.png"
-    }
+    {"id": "none", "name": "No Frame", "filename": ""},
+    {"id": "blush_floral", "name": "Chic Blush Floral", "filename": "blush_floral.png"},
+    {"id": "gold_glitter", "name": "Elegant Gold Frame", "filename": "gold_glitter.png"}
   ]
 }

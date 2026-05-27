@@ -15,6 +15,7 @@ export default function PrintingScreen({
   finalPhoto,
   printPhoto,
   getQrUrl,
+  config,
   onFinish,
   onAnother,
 }) {
@@ -95,6 +96,13 @@ export default function PrintingScreen({
             <span className="print-badge__icon">{phase === 'DONE' ? '✓' : '!'}</span>
             <span className="print-badge__text">{printMsg}</span>
           </div>
+
+          {/* Thank you message */}
+          {phase === 'DONE' && (
+            <p className="print-thankyou">
+              {config?.thank_you_message || 'Thank you for celebrating with us!'}
+            </p>
+          )}
 
           {/* QR Code */}
           <div className="print-qr">

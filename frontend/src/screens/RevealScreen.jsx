@@ -6,7 +6,7 @@ import Button from '../components/Button';
 import { getRandomCompliment } from '../utils/compliments';
 import './RevealScreen.css';
 
-const MAX_RETAKES = 3;
+
 
 /**
  * Photo reveal screen — the emotional peak.
@@ -17,13 +17,14 @@ export default function RevealScreen({
   finalPhoto,
   isProcessing,
   retakeCount,
+  maxRetakes = 3,
   onRetake,
   onPrint,
 }) {
   const compliment = useMemo(() => getRandomCompliment(), [finalPhoto]);
   const [showPhoto, setShowPhoto] = useState(false);
-  const isLastRetake = retakeCount >= MAX_RETAKES - 1;
-  const canRetake = retakeCount < MAX_RETAKES;
+  const isLastRetake = retakeCount >= maxRetakes - 1;
+  const canRetake = retakeCount < maxRetakes;
 
   // Trigger reveal animation after processing completes
   useEffect(() => {

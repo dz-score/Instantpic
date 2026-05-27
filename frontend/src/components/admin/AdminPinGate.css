@@ -1,0 +1,133 @@
+/* ── AdminPinGate ── */
+
+.pin-gate {
+  position: fixed;
+  inset: 0;
+  background: var(--bg-base);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  animation: fade-in 0.3s ease;
+}
+
+.pin-gate__card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-md);
+  max-width: 400px;
+  width: 100%;
+  padding: var(--space-lg);
+}
+
+.pin-gate__title {
+  font-family: var(--font-display);
+  font-size: var(--text-h1);
+  font-weight: 400;
+  color: var(--text-primary);
+}
+
+.pin-gate__subtitle {
+  font-size: var(--text-body);
+  color: var(--text-secondary);
+  margin-bottom: var(--space-sm);
+}
+
+/* PIN dots */
+.pin-gate__dots {
+  display: flex;
+  gap: 16px;
+  margin-bottom: var(--space-sm);
+}
+
+.pin-gate__dot {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid var(--champagne);
+  background: transparent;
+  transition: all var(--duration-fast) var(--ease-spring);
+}
+
+.pin-gate__dot--filled {
+  background: var(--gold);
+  border-color: var(--gold);
+  transform: scale(1.15);
+}
+
+.pin-gate__dot--error {
+  border-color: var(--error);
+  background: var(--error);
+  animation: tap-bounce 0.3s ease;
+}
+
+.pin-gate__error {
+  font-size: var(--text-caption);
+  color: var(--error);
+  font-weight: 500;
+  min-height: 24px;
+}
+
+/* Numpad */
+.pin-gate__numpad {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  width: 100%;
+  max-width: 320px;
+}
+
+.pin-gate__key {
+  height: 72px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--surface-border);
+  background: var(--bg-elevated);
+  font-family: var(--font-body);
+  font-size: var(--text-h3);
+  font-weight: 500;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition:
+    transform var(--duration-fast) ease,
+    background var(--duration-fast) ease;
+  user-select: none;
+}
+
+.pin-gate__key:active {
+  transform: scale(0.95);
+  background: var(--champagne-light);
+}
+
+.pin-gate__key--action {
+  font-size: var(--text-caption);
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: transparent;
+  border-color: transparent;
+}
+
+.pin-gate__key--submit {
+  color: var(--gold);
+}
+
+.pin-gate__key:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Backspace */
+.pin-gate__backspace {
+  margin-top: var(--space-xs);
+  padding: var(--space-xs) var(--space-md);
+  font-size: var(--text-caption);
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.pin-gate__backspace:disabled {
+  opacity: 0.3;
+}

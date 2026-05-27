@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import useCamera from './hooks/useCamera';
 import useApi from './hooks/useApi';
 
@@ -11,8 +11,8 @@ import FramePickerScreen from './screens/FramePickerScreen';
 import PrintingScreen from './screens/PrintingScreen';
 import DownloadScreen from './screens/DownloadScreen';
 
-// Components
-import AdminModal from './components/AdminModal';
+// Admin
+import AdminPanel from './components/admin/AdminPanel';
 
 // ─── State Machine ──────────────────────────────────────────────
 const SCREENS = {
@@ -37,6 +37,7 @@ export default function App() {
 
   const camera = useCamera();
   const api = useApi();
+  const inactivityTimer = useRef(null);
 
   // ─── URL Routing (mobile download) ───
   useEffect(() => {
@@ -57,6 +58,45 @@ export default function App() {
   useEffect(() => {
     camera.ensureVideoSrc();
   }, [screen, camera]);
+
+  // ─── Inactivity Timeout ───
+  // Resets to attract screen after config.session_timeout seconds of no touch
+  const resetInactivityTimer = useCallback(() => {
+    if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
+
+    // Only apply timeout when NOT on attract or download screen
+    const timeoutSec = api.config?.session_timeout || 120;
+    inactivityTimer.current = setTimeout(() => {
+      // Only reset if we're in a guest screen (not attract, not download, not admin)
+      setScreen((currentScreen) => {
+        if (
+          currentScreen !== SCREENS.ATTRACT &&
+          currentScreen !== SCREENS.DOWNLOAD &&
+          !showAdmin
+        ) {
+          resetSession();
+          return SCREENS.ATTRACT;
+        }
+        return currentScreen;
+      });
+    }, timeoutSec * 1000);
+  }, [api.config, showAdmin]);
+
+  // Start/restart timer on screen change or any touch
+  useEffect(() => {
+    if (screen === SCREENS.ATTRACT || screen === SCREENS.DOWNLOAD) {
+      if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
+      return;
+    }
+    resetInactivityTimer();
+
+    const handleTouch = () => resetInactivityTimer();
+    window.addEventListener('pointerdown', handleTouch, { passive: true });
+    return () => {
+      window.removeEventListener('pointerdown', handleTouch);
+      if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
+    };
+  }, [screen, resetInactivityTimer]);
 
   // ─── Hidden Admin: 5 rapid taps ───
   const handleBrandingTap = useCallback(() => {
@@ -207,6 +247,7 @@ export default function App() {
           layoutMode={layoutMode}
           captureFrame={camera.captureFrame}
           onComplete={handleCaptureComplete}
+          config={api.config}
         />
       )}
 
@@ -215,6 +256,7 @@ export default function App() {
           finalPhoto={finalPhoto}
           isProcessing={isProcessing}
           retakeCount={retakeCount}
+          maxRetakes={api.config?.max_photos_per_session || 5}
           onRetake={handleRetake}
           onPrint={handlePrintFromReveal}
         />
@@ -236,6 +278,7 @@ export default function App() {
           finalPhoto={finalPhoto}
           printPhoto={api.printPhoto}
           getQrUrl={api.getQrUrl}
+          config={api.config}
           onFinish={handleFinish}
           onAnother={handleAnother}
         />
@@ -260,7 +303,7 @@ export default function App() {
       )}
 
       {/* ─── Admin Trigger (branding tap) ─── */}
-      {screen !== SCREENS.DOWNLOAD && screen !== SCREENS.COUNTDOWN && (
+      {screen !== SCREENS.DOWNLOAD && screen !== SCREENS.COUNTDOWN && !showAdmin && (
         <button
           className="admin-trigger"
           onClick={handleBrandingTap}
@@ -270,12 +313,15 @@ export default function App() {
         </button>
       )}
 
-      {/* ─── Admin Modal ─── */}
+      {/* ─── Admin Panel (full-page) ─── */}
       {showAdmin && (
-        <AdminModal
+        <AdminPanel
           config={api.config}
           onSave={handleAdminSave}
           onClose={() => setShowAdmin(false)}
+          getDiagnostics={api.getDiagnostics}
+          emergencyAction={api.emergencyAction}
+          changePin={api.changePin}
         />
       )}
     </div>

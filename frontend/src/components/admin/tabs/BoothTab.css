@@ -1,0 +1,108 @@
+/* ── BoothTab ── */
+
+.booth-tab {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.booth-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: var(--space-sm) 0;
+  border-bottom: 1px solid var(--surface-border);
+}
+
+.booth-section:last-child {
+  border-bottom: none;
+}
+
+.booth-section__label {
+  font-size: var(--text-body);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.booth-section__hint {
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+/* ── Toggle button group (3s / 5s / 10s) ── */
+.booth-toggle-group {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.booth-toggle-btn {
+  flex: 1;
+  height: var(--touch-min);
+  max-width: 120px;
+  border-radius: var(--radius-sm);
+  border: 2px solid var(--surface-border);
+  background: var(--bg-elevated);
+  font-family: var(--font-body);
+  font-size: var(--text-caption);
+  font-weight: 600;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.booth-toggle-btn--active {
+  border-color: var(--gold);
+  background: var(--champagne-light);
+  color: var(--text-accent);
+  box-shadow: 0 0 0 3px rgba(201, 169, 110, 0.12);
+}
+
+.booth-toggle-btn:active {
+  transform: scale(0.97);
+}
+
+/* ── Stepper ── */
+.booth-stepper {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-top: 4px;
+}
+
+.booth-stepper__btn {
+  width: var(--touch-min);
+  height: var(--touch-min);
+  border-radius: var(--radius-sm);
+  border: 2px solid var(--surface-border);
+  background: var(--bg-elevated);
+  font-size: var(--text-h3);
+  font-weight: 500;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all var(--duration-fast) ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.booth-stepper__btn:active {
+  transform: scale(0.95);
+  background: var(--champagne-light);
+}
+
+.booth-stepper__btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.booth-stepper__value {
+  font-family: var(--font-display);
+  font-size: var(--text-h2);
+  font-weight: 500;
+  color: var(--text-primary);
+  min-width: 48px;
+  text-align: center;
+}

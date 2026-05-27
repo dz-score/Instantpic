@@ -102,6 +102,40 @@ export default function useApi() {
     return `${API}/api/qrcode?text=${encodeURIComponent(downloadUrl)}`;
   }, []);
 
+  /* ── Diagnostics ── */
+  const getDiagnostics = useCallback(async () => {
+    const r = await fetch(`${API}/api/diagnostics`);
+    if (!r.ok) throw new Error('Diagnostics failed');
+    return await r.json();
+  }, []);
+
+  /* ── Emergency actions ── */
+  const emergencyAction = useCallback(async (action) => {
+    const r = await fetch(`${API}/api/emergency`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action }),
+    });
+    if (!r.ok) throw new Error('Emergency action failed');
+    return await r.json();
+  }, []);
+
+  /* ── Change PIN ── */
+  const changePin = useCallback(async (currentPin, newPin) => {
+    const r = await fetch(`${API}/api/change-pin`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ current_pin: currentPin, new_pin: newPin }),
+    });
+    if (!r.ok) {
+      const err = await r.json();
+      throw new Error(err.detail || 'PIN change failed');
+    }
+    // Refresh config to get updated PIN
+    await fetchConfig();
+    return await r.json();
+  }, [fetchConfig]);
+
   return {
     config,
     isOnline,
@@ -112,5 +146,8 @@ export default function useApi() {
     printPhoto,
     saveConfig,
     getQrUrl,
+    getDiagnostics,
+    emergencyAction,
+    changePin,
   };
 }

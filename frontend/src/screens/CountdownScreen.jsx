@@ -4,7 +4,6 @@ import ProgressDots from '../components/ProgressDots';
 import { playShutterSound } from '../utils/sounds';
 import './CountdownScreen.css';
 
-const COUNTDOWN_FROM = 3;
 const BETWEEN_SHOT_DELAY = 3000; // ms between collage shots
 
 /**
@@ -20,7 +19,10 @@ export default function CountdownScreen({
   layoutMode,
   captureFrame,
   onComplete,
+  config,
 }) {
+  const COUNTDOWN_FROM = config?.countdown_duration || 3;
+  const flashEnabled = config?.flash_enabled !== false;
   const [phase, setPhase] = useState('COUNTDOWN'); // COUNTDOWN | BETWEEN
   const [count, setCount] = useState(COUNTDOWN_FROM);
   const [shotIndex, setShotIndex] = useState(0);
@@ -49,9 +51,11 @@ export default function CountdownScreen({
 
   // Fire shutter: flash + sound + capture
   const fireShutter = useCallback(() => {
-    setFlashActive(true);
+    if (flashEnabled) {
+      setFlashActive(true);
+      setTimeout(() => setFlashActive(false), 250);
+    }
     playShutterSound();
-    setTimeout(() => setFlashActive(false), 250);
 
     const frame = captureFrame();
     imagesRef.current = [...imagesRef.current, frame];

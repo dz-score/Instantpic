@@ -83,6 +83,16 @@
 .print-badge--success .print-badge__icon { background: var(--success); }
 .print-badge--error .print-badge__icon { background: var(--error); }
 
+/* Thank you message */
+.print-thankyou {
+  font-family: var(--font-display);
+  font-size: var(--text-h3);
+  font-style: italic;
+  color: var(--dusty-rose);
+  text-align: center;
+  animation: fade-up 0.6s var(--ease-out) 0.3s both;
+}
+
 /* QR Code */
 .print-qr {
   display: flex;

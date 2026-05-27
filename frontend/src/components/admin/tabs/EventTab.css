@@ -1,0 +1,83 @@
+/* ── EventTab ── */
+
+.event-tab {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.event-tab__fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.event-tab__divider {
+  height: 1px;
+  background: var(--surface-border);
+  margin: var(--space-xs) 0;
+}
+
+/* ── Shared field styles (used across all tabs) ── */
+
+.tab-header {
+  margin-bottom: var(--space-sm);
+}
+
+.tab-header__title {
+  font-family: var(--font-display);
+  font-size: var(--text-h2);
+  font-weight: 400;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.tab-header__subtitle {
+  font-size: var(--text-caption);
+  color: var(--text-secondary);
+}
+
+.admin-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.admin-field__label {
+  font-size: var(--text-caption);
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: 0.2px;
+}
+
+.admin-field__input {
+  width: 100%;
+  height: var(--touch-min);
+  padding: 0 var(--space-sm);
+  border-radius: var(--radius-sm);
+  border: 1.5px solid var(--surface-border);
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  color: var(--text-primary);
+  background: var(--bg-elevated);
+  transition: border-color var(--duration-fast) ease;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.admin-field__input:focus {
+  outline: none;
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px rgba(201, 169, 110, 0.12);
+}
+
+.admin-field__input::placeholder {
+  color: var(--champagne);
+}
+
+.admin-field__hint {
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+  font-weight: 400;
+  line-height: 1.4;
+}

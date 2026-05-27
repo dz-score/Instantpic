@@ -44,6 +44,12 @@ class ConfigUpdateRequest(BaseModel):
     event_date: Optional[str] = None
     default_text: Optional[str] = None
     selected_overlay: Optional[str] = None
+    welcome_message: Optional[str] = None
+    thank_you_message: Optional[str] = None
+    countdown_duration: Optional[int] = None
+    flash_enabled: Optional[bool] = None
+    max_photos_per_session: Optional[int] = None
+    session_timeout: Optional[int] = None
 
 class SavePhotoRequest(BaseModel):
     images: List[str]  # Base64 data URIs
@@ -124,6 +130,37 @@ async def trigger_print(filename: str):
 async def health_check():
     """Health check endpoint for connection watchdog."""
     return {"status": "ok"}
+
+# --- Diagnostics ---
+@app.get("/api/diagnostics")
+async def get_diagnostics():
+    from backend.diagnostics import get_diagnostics
+    return get_diagnostics()
+
+# --- Emergency Controls ---
+class EmergencyRequest(BaseModel):
+    action: str  # 'restart_booth', 'restart_camera', 'restart_printer', 'clear_queue'
+
+@app.post("/api/emergency")
+async def emergency_action(req: EmergencyRequest):
+    from backend.diagnostics import execute_emergency
+    result = execute_emergency(req.action)
+    return result
+
+# --- Change PIN ---
+class ChangePinRequest(BaseModel):
+    current_pin: str
+    new_pin: str
+
+@app.post("/api/change-pin")
+async def change_pin(req: ChangePinRequest):
+    settings = load_settings()
+    if req.current_pin != settings.admin_pin:
+        raise HTTPException(status_code=403, detail="Invalid current PIN")
+    if len(req.new_pin) < 4:
+        raise HTTPException(status_code=400, detail="PIN must be at least 4 digits")
+    updated = update_settings({"admin_pin": req.new_pin})
+    return {"status": "success", "detail": "PIN updated"}
 
 @app.get("/api/qrcode")
 async def get_qrcode(text: str):
