@@ -64,6 +64,7 @@ export default function AdminPanel({
         selected_overlay: form.selected_overlay,
         max_photos: form.max_photos,
         disk_min_free_gb: form.disk_min_free_gb,
+        show_names_on_photo: form.show_names_on_photo,
       });
       setDirty(false);
       setSaved(true);

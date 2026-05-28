@@ -1,4 +1,5 @@
 import React from 'react';
+import ToggleSwitch from '../controls/ToggleSwitch';
 import './EventTab.css';
 
 /**
@@ -39,6 +40,18 @@ export default function EventTab({ form, onChange }) {
           />
           <span className="admin-field__hint">Shown below the couple names</span>
         </label>
+
+        <ToggleSwitch
+          id="names-on-photo"
+          label="Print names on photo"
+          checked={form.show_names_on_photo !== false}
+          onChange={(v) => update('show_names_on_photo', v)}
+        />
+        <span className="admin-field__hint" style={{ marginTop: '-8px' }}>
+          {form.show_names_on_photo !== false
+            ? 'Couple names & date will appear on printed photos'
+            : 'Photos will print without names or date'}
+        </span>
 
         <div className="event-tab__divider" />
 

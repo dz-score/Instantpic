@@ -60,7 +60,10 @@ export default function useApi() {
   /* ── Save photo (process on backend) ── */
   const savePhoto = useCallback(async (images, layout, overlayId) => {
     const cfg = configRef.current || {};
-    const text = [cfg.couple_names, cfg.event_date].filter(Boolean).join(' · ') || cfg.default_text || '';
+    const showNames = cfg.show_names_on_photo !== false;
+    const text = showNames
+      ? ([cfg.couple_names, cfg.event_date].filter(Boolean).join(' · ') || cfg.default_text || '')
+      : '';
     const r = await fetch(`${API}/api/save-photo`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

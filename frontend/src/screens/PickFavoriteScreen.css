@@ -1,0 +1,115 @@
+/* ── PickFavoriteScreen ── */
+
+.pick-fav-screen {
+  background: var(--bg-base);
+  padding: var(--space-lg);
+  gap: var(--space-md);
+}
+
+.pick-fav__title {
+  font-family: var(--font-display);
+  font-size: var(--text-h1);
+  font-weight: 400;
+  color: var(--text-primary);
+  text-align: center;
+}
+
+.pick-fav__subtitle {
+  font-size: var(--text-body);
+  color: var(--text-secondary);
+  text-align: center;
+  margin-bottom: var(--space-sm);
+}
+
+/* Photo grid — responsive, max 3 columns */
+.pick-fav__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-md);
+  width: 100%;
+  max-width: 900px;
+  justify-items: center;
+}
+
+.pick-fav__card {
+  position: relative;
+  width: 100%;
+  border-radius: var(--radius-md);
+  border: 3px solid var(--surface-border);
+  background: var(--bg-elevated);
+  overflow: hidden;
+  cursor: pointer;
+  transition: all var(--duration-normal) var(--ease-out);
+  padding: 0;
+  box-shadow: var(--shadow-sm);
+}
+
+.pick-fav__card:active {
+  transform: scale(0.97);
+}
+
+.pick-fav__card--selected {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 4px rgba(201, 169, 110, 0.2), var(--shadow-md);
+  transform: scale(1.02);
+}
+
+.pick-fav__img {
+  width: 100%;
+  display: block;
+  aspect-ratio: 3 / 2;
+  object-fit: cover;
+}
+
+/* Number badge (top-left) */
+.pick-fav__badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--bg-frosted-strong);
+  color: var(--text-primary);
+  font-size: var(--text-small);
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(8px);
+}
+
+.pick-fav__card--selected .pick-fav__badge {
+  background: var(--gold);
+  color: white;
+}
+
+/* Checkmark (center, on selected) */
+.pick-fav__check {
+  position: absolute;
+  bottom: 10px;
+  right: 10px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--gold);
+  color: white;
+  font-size: 18px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  animation: pop-in 0.25s var(--ease-spring);
+}
+
+/* Actions */
+.pick-fav__actions {
+  margin-top: var(--space-sm);
+}
+
+/* Pop-in keyframe */
+@keyframes pop-in {
+  0% { transform: scale(0); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}

@@ -73,8 +73,8 @@ export default function BoothTab({ form, onChange }) {
           <span className="booth-stepper__value">{form.max_photos_per_session || 5}</span>
           <button
             className="booth-stepper__btn"
-            onClick={() => update('max_photos_per_session', Math.min(10, (form.max_photos_per_session || 5) + 1))}
-            disabled={(form.max_photos_per_session || 5) >= 10}
+            onClick={() => update('max_photos_per_session', Math.min(5, (form.max_photos_per_session || 3) + 1))}
+            disabled={(form.max_photos_per_session || 3) >= 5}
           >
             +
           </button>

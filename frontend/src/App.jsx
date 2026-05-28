@@ -7,6 +7,7 @@ import AttractScreen from './screens/AttractScreen';
 import ChooseStyleScreen from './screens/ChooseStyleScreen';
 import CountdownScreen from './screens/CountdownScreen';
 import RevealScreen from './screens/RevealScreen';
+import PickFavoriteScreen from './screens/PickFavoriteScreen';
 import FramePickerScreen from './screens/FramePickerScreen';
 import PrintingScreen from './screens/PrintingScreen';
 import DownloadScreen from './screens/DownloadScreen';
@@ -20,6 +21,7 @@ const SCREENS = {
   CHOOSE_STYLE: 'CHOOSE_STYLE',
   COUNTDOWN: 'COUNTDOWN',
   REVEAL: 'REVEAL',
+  PICK_FAVORITE: 'PICK_FAVORITE',
   FRAME_PICKER: 'FRAME_PICKER',
   PRINTING: 'PRINTING',
   DOWNLOAD: 'DOWNLOAD',
@@ -31,6 +33,7 @@ export default function App() {
   const [capturedImages, setCapturedImages] = useState([]);
   const [finalPhoto, setFinalPhoto] = useState(null);
   const [retakeCount, setRetakeCount] = useState(0);
+  const [allSessionPhotos, setAllSessionPhotos] = useState([]); // tracks ALL processed filenames in this session
   const [isProcessing, setIsProcessing] = useState(false);
   const [showAdmin, setShowAdmin] = useState(false);
   const [adminTapCount, setAdminTapCount] = useState(0);
@@ -60,14 +63,11 @@ export default function App() {
   }, [screen, camera]);
 
   // ─── Inactivity Timeout ───
-  // Resets to attract screen after config.session_timeout seconds of no touch
   const resetInactivityTimer = useCallback(() => {
     if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
 
-    // Only apply timeout when NOT on attract or download screen
     const timeoutSec = api.config?.session_timeout || 120;
     inactivityTimer.current = setTimeout(() => {
-      // Only reset if we're in a guest screen (not attract, not download, not admin)
       setScreen((currentScreen) => {
         if (
           currentScreen !== SCREENS.ATTRACT &&
@@ -82,7 +82,6 @@ export default function App() {
     }, timeoutSec * 1000);
   }, [api.config, showAdmin]);
 
-  // Start/restart timer on screen change or any touch
   useEffect(() => {
     if (screen === SCREENS.ATTRACT || screen === SCREENS.DOWNLOAD) {
       if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
@@ -106,7 +105,6 @@ export default function App() {
         setShowAdmin(true);
         return 0;
       }
-      // Reset after 2 seconds of inactivity
       setTimeout(() => setAdminTapCount(0), 2000);
       return next;
     });
@@ -123,6 +121,7 @@ export default function App() {
     setCapturedImages([]);
     setRetakeCount(0);
     setFinalPhoto(null);
+    setAllSessionPhotos([]);
     setScreen(SCREENS.COUNTDOWN);
   }, []);
 
@@ -134,6 +133,8 @@ export default function App() {
       const overlayId = api.config?.selected_overlay || 'none';
       const result = await api.savePhoto(images, layoutMode, overlayId);
       setFinalPhoto(result.filename);
+      // Add to session history
+      setAllSessionPhotos((prev) => [...prev, result.filename]);
     } catch (err) {
       console.error('Photo processing failed:', err);
       setFinalPhoto(null);
@@ -150,6 +151,16 @@ export default function App() {
   }, []);
 
   const handlePrintFromReveal = useCallback(() => {
+    // If user took multiple photos, let them pick their favorite
+    if (allSessionPhotos.length > 1) {
+      setScreen(SCREENS.PICK_FAVORITE);
+      return;
+    }
+    // Otherwise go straight to frame picker / printing
+    proceedToPrintFlow();
+  }, [allSessionPhotos]);
+
+  const proceedToPrintFlow = useCallback(() => {
     const overlays = api.config?.overlays || [];
     const hasFrameOptions = overlays.filter((o) => o.id !== 'none').length > 0;
     if (hasFrameOptions && overlays.length > 1) {
@@ -158,6 +169,11 @@ export default function App() {
       setScreen(SCREENS.PRINTING);
     }
   }, [api.config]);
+
+  const handleFavoriteSelect = useCallback((selectedFilename) => {
+    setFinalPhoto(selectedFilename);
+    proceedToPrintFlow();
+  }, [proceedToPrintFlow]);
 
   const handleFrameSelect = useCallback(async (overlayId) => {
     setIsProcessing(true);
@@ -190,6 +206,7 @@ export default function App() {
     setFinalPhoto(null);
     setCapturedImages([]);
     setRetakeCount(0);
+    setAllSessionPhotos([]);
     setIsProcessing(false);
     setLayoutMode('single');
   };
@@ -259,6 +276,14 @@ export default function App() {
           maxRetakes={api.config?.max_photos_per_session || 5}
           onRetake={handleRetake}
           onPrint={handlePrintFromReveal}
+        />
+      )}
+
+      {screen === SCREENS.PICK_FAVORITE && (
+        <PickFavoriteScreen
+          allPhotos={allSessionPhotos}
+          onSelect={handleFavoriteSelect}
+          isProcessing={isProcessing}
         />
       )}
 

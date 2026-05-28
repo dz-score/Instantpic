@@ -13,13 +13,14 @@ class OverlayConfig(BaseModel):
     filename: str
 
 class AppSettings(BaseModel):
-    admin_pin: str = "1234"
+    admin_pin: str = "123456"
     welcome_message: str = "Create a Beautiful Memory"
     thank_you_message: str = "Thank you for celebrating with us!"
     countdown_duration: int = 3
     flash_enabled: bool = True
-    max_photos_per_session: int = 5
+    max_photos_per_session: int = 3
     session_timeout: int = 120
+    show_names_on_photo: bool = True
     printer_name: str
     max_photos: int
     disk_min_free_gb: float
@@ -35,13 +36,14 @@ def load_settings() -> AppSettings:
     if not os.path.exists(CONFIG_PATH):
         # Fallback default values
         return AppSettings(
-            admin_pin="1234",
+            admin_pin="123456",
             welcome_message="Create a Beautiful Memory",
             thank_you_message="Thank you for celebrating with us!",
             countdown_duration=3,
             flash_enabled=True,
-            max_photos_per_session=5,
+            max_photos_per_session=3,
             session_timeout=120,
+            show_names_on_photo=True,
             printer_name="mock",
             max_photos=1000,
             disk_min_free_gb=2.0,

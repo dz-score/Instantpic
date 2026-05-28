@@ -50,6 +50,7 @@ class ConfigUpdateRequest(BaseModel):
     flash_enabled: Optional[bool] = None
     max_photos_per_session: Optional[int] = None
     session_timeout: Optional[int] = None
+    show_names_on_photo: Optional[bool] = None
 
 class SavePhotoRequest(BaseModel):
     images: List[str]  # Base64 data URIs
@@ -157,8 +158,8 @@ async def change_pin(req: ChangePinRequest):
     settings = load_settings()
     if req.current_pin != settings.admin_pin:
         raise HTTPException(status_code=403, detail="Invalid current PIN")
-    if len(req.new_pin) < 4:
-        raise HTTPException(status_code=400, detail="PIN must be at least 4 digits")
+    if len(req.new_pin) < 6:
+        raise HTTPException(status_code=400, detail="PIN must be at least 6 digits")
     updated = update_settings({"admin_pin": req.new_pin})
     return {"status": "success", "detail": "PIN updated"}
 

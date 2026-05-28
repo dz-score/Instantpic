@@ -41,7 +41,7 @@ export default function AdminPinGate({ correctPin, onSuccess, onCancel }) {
 
         {/* PIN dots */}
         <div className="pin-gate__dots">
-          {Array.from({ length: 4 }, (_, i) => (
+          {Array.from({ length: 6 }, (_, i) => (
             <span
               key={i}
               className={[
@@ -75,7 +75,7 @@ export default function AdminPinGate({ correctPin, onSuccess, onCancel }) {
                   key="enter"
                   className="pin-gate__key pin-gate__key--action pin-gate__key--submit"
                   onClick={handleSubmit}
-                  disabled={pin.length < 4}
+                  disabled={pin.length < 6}
                 >
                   Enter
                 </button>

@@ -60,8 +60,8 @@ export default function SystemTab({ getDiagnostics, emergencyAction, changePin, 
   // PIN change
   const handlePinChange = async () => {
     setPinError('');
-    if (newPin.length < 4) {
-      setPinError('PIN must be at least 4 digits');
+    if (newPin.length < 6) {
+      setPinError('PIN must be exactly 6 digits');
       return;
     }
     if (newPin !== confirmPin) {
@@ -193,7 +193,7 @@ export default function SystemTab({ getDiagnostics, emergencyAction, changePin, 
 
         {!showPinChange ? (
           <div className="sys-pin-row">
-            <span className="sys-pin-current">Current PIN: ••••</span>
+            <span className="sys-pin-current">Current PIN: ••••••</span>
             <button className="sys-pin-change-btn" onClick={() => setShowPinChange(true)}>
               Change PIN
             </button>
@@ -207,7 +207,7 @@ export default function SystemTab({ getDiagnostics, emergencyAction, changePin, 
                 type="password"
                 value={newPin}
                 onChange={(e) => setNewPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                placeholder="••••"
+                placeholder="••••••"
                 inputMode="numeric"
               />
             </label>
@@ -218,7 +218,7 @@ export default function SystemTab({ getDiagnostics, emergencyAction, changePin, 
                 type="password"
                 value={confirmPin}
                 onChange={(e) => setConfirmPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                placeholder="••••"
+                placeholder="••••••"
                 inputMode="numeric"
               />
             </label>
