@@ -14,6 +14,12 @@
     opacity var(--duration-slow) var(--ease-out),
     transform var(--duration-slow) var(--ease-out);
   overflow: hidden;
+
+  /* ── Shared wedding background ── */
+  background-image: url('/bg-wedding.png');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
 }
 
 .screen-shell--visible {

@@ -1,54 +1,12 @@
-/* ── AttractScreen ── */
+/* ══════════════════════════════════════════════
+   AttractScreen — Wedding Welcome
+   ══════════════════════════════════════════════ */
 
 .attract-screen {
-  background: var(--bg-base);
   position: relative;
 }
 
-/* ── Slideshow ── */
-.attract-slideshow {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-}
-.attract-slide {
-  position: absolute;
-  inset: 0;
-  background-size: cover;
-  background-position: center;
-  opacity: 0;
-  transition: opacity 2s ease-in-out;
-}
-.attract-slide--active {
-  opacity: 0.15;
-}
-.attract-slideshow__overlay {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    180deg,
-    var(--bg-base) 0%,
-    rgba(250, 247, 242, 0.7) 40%,
-    rgba(250, 247, 242, 0.7) 60%,
-    var(--bg-base) 100%
-  );
-}
-
-/* ── Particles ── */
-.attract-particles {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  z-index: 1;
-}
-.attract-particle {
-  position: absolute;
-  color: var(--gold-light);
-  animation: float-particle 6s ease-in-out infinite;
-  opacity: 0.3;
-}
-
-/* ── Content (full-screen tap target) ── */
+/* ── Full-screen invisible tap target ── */
 .attract-content {
   display: flex;
   flex-direction: column;
@@ -56,92 +14,185 @@
   justify-content: center;
   text-align: center;
   z-index: 2;
-  padding: var(--space-xl);
+  padding: var(--space-lg) var(--space-xl);
   width: 100%;
   height: 100%;
   cursor: pointer;
   background: none;
   border: none;
+  gap: 0;
 }
 
-.attract-title {
-  font-family: var(--font-display);
-  font-size: var(--text-hero);
-  font-weight: 400;
-  color: var(--text-primary);
-  letter-spacing: 1px;
-  line-height: 1.15;
-  margin-bottom: var(--space-md);
-}
-
-/* ── Gold divider ── */
-.attract-divider {
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm);
-  margin-bottom: var(--space-lg);
-}
-.attract-divider__line {
-  display: block;
-  width: 60px;
-  height: 1px;
-  background: var(--gold-light);
-}
-.attract-divider__star {
-  color: var(--gold);
-  font-size: var(--text-h3);
-}
-
-/* ── Couple & Date ── */
-.attract-couple {
-  font-family: var(--font-display);
-  font-size: var(--text-h1);
-  font-weight: 500;
-  font-style: italic;
-  color: var(--dusty-rose);
-  margin-bottom: var(--space-xs);
-}
-.attract-date {
-  font-family: var(--font-body);
-  font-size: var(--text-body);
-  color: var(--text-secondary);
-  font-weight: 400;
-  letter-spacing: 2px;
-  text-transform: uppercase;
-  margin-bottom: var(--space-xl);
-}
-
-/* ── CTA ── */
-.attract-cta {
+/* ═══ Decorative Flourish ═══ */
+.attract-flourish {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--space-sm);
-}
-.attract-cta__ring {
-  width: 56px;
-  height: 56px;
-  border-radius: 50%;
-  border: 2px solid var(--gold-light);
-  animation: pulse-glow 2.5s infinite;
-}
-.attract-cta__text {
-  font-family: var(--font-body);
-  font-size: var(--text-body);
-  color: var(--text-secondary);
-  font-weight: 500;
-  animation: text-breathe 3s ease-in-out infinite;
+  gap: 4px;
+  margin-bottom: var(--space-sm);
 }
 
-/* ── Branding ── */
-.attract-branding {
-  position: absolute;
-  bottom: var(--space-md);
-  left: 50%;
-  transform: translateX(-50%);
+.attract-flourish__hearts {
+  font-size: 1.3rem;
+  color: var(--dusty-rose);
+  letter-spacing: 6px;
+  opacity: 0.7;
+}
+
+.attract-flourish__line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.attract-flourish__curl {
+  font-size: 1.2rem;
+  color: var(--gold);
+  opacity: 0.6;
+}
+
+.attract-flourish__curl--flip {
+  transform: scaleX(-1);
+}
+
+.attract-flourish__dash {
+  width: 80px;
+  height: 1px;
+  background: var(--gold-light);
+}
+
+/* ═══ Heading Block ═══ */
+.attract-kicker {
+  font-family: var(--font-body);
+  font-size: 1.3rem;
+  font-weight: 400;
+  letter-spacing: 6px;
+  text-transform: uppercase;
+  color: var(--gold);
+  margin-bottom: var(--space-xs);
+}
+
+.attract-names {
   font-family: var(--font-display);
-  font-size: var(--text-small);
-  color: var(--gold-light);
+  font-size: clamp(3rem, 7vw, 5.5rem);
+  font-weight: 400;
+  font-style: italic;
+  color: var(--gold);
+  line-height: 1.1;
+  margin-bottom: 4px;
+  text-shadow: 0 2px 12px rgba(201, 169, 110, 0.15);
+
+  /* Subtle gold shimmer effect */
+  background: linear-gradient(
+    135deg,
+    #C9A96E 0%,
+    #D4B896 30%,
+    #C9A96E 50%,
+    #BFA05F 70%,
+    #C9A96E 100%
+  );
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.attract-label {
+  font-family: var(--font-body);
+  font-size: 1.1rem;
+  font-weight: 500;
+  letter-spacing: 8px;
+  text-transform: uppercase;
+  color: var(--gold);
+  margin-top: 4px;
+  margin-bottom: var(--space-sm);
+}
+
+/* ═══ Heart Divider ═══ */
+.attract-heart {
+  font-size: 1rem;
+  color: var(--dusty-rose);
+  opacity: 0.6;
+  margin-bottom: var(--space-sm);
+}
+
+/* ═══ Subtitle / Welcome Message ═══ */
+.attract-subtitle {
+  font-family: var(--font-body);
+  font-size: 1.05rem;
+  font-weight: 400;
   letter-spacing: 3px;
-  z-index: 2;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  line-height: 1.8;
+  max-width: 600px;
+  margin-bottom: var(--space-lg);
+}
+
+/* ═══ CTA Button ═══ */
+.attract-cta {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  min-width: 380px;
+  height: 80px;
+  padding: 0 var(--space-xl);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+
+  /* Blush pink fill with gold border */
+  background: linear-gradient(135deg, #D4A0A0 0%, #C8908E 40%, #D4A0A0 100%);
+  border: 3px solid var(--gold);
+  box-shadow:
+    0 0 0 1px var(--gold-light),
+    0 8px 32px rgba(201, 169, 110, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25);
+
+  /* Breathing pulse animation */
+  animation: cta-breathe 3s ease-in-out infinite;
+}
+
+.attract-cta__icon {
+  font-size: 1.5rem;
+  color: white;
+  z-index: 1;
+}
+
+.attract-cta__text {
+  font-family: var(--font-body);
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: white;
+  z-index: 1;
+}
+
+/* Shimmer sweep */
+.attract-cta__shimmer {
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 60%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.25) 50%,
+    transparent 100%
+  );
+  animation: shimmer-sweep 4s ease-in-out infinite;
+}
+
+/* ═══ Animations ═══ */
+@keyframes cta-breathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.02); box-shadow: 0 0 0 1px var(--gold-light), 0 12px 40px rgba(201, 169, 110, 0.35), inset 0 1px 0 rgba(255,255,255,0.25); }
+}
+
+@keyframes shimmer-sweep {
+  0% { left: -100%; }
+  40% { left: 150%; }
+  100% { left: 150%; }
 }

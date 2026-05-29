@@ -1,105 +1,229 @@
-/* ── ChooseStyleScreen ── */
+/* ══════════════════════════════════════════════
+   ChooseStyleScreen — Mode Selection
+   ══════════════════════════════════════════════ */
 
 .choose-screen {
-  background: var(--bg-base);
-  padding: var(--space-xl) var(--space-lg);
-  gap: var(--space-md);
+  position: relative;
+  padding: var(--space-lg) var(--space-lg);
+  gap: 0;
+}
+
+/* ═══ Decorative Flourish ═══ */
+.choose-flourish {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: var(--space-sm);
+}
+
+.choose-flourish__hearts {
+  font-size: 1.3rem;
+  color: var(--dusty-rose);
+  opacity: 0.7;
+}
+
+.choose-flourish__line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.choose-flourish__curl {
+  font-size: 1.2rem;
+  color: var(--gold);
+  opacity: 0.6;
+}
+
+.choose-flourish__curl--flip {
+  transform: scaleX(-1);
+}
+
+.choose-flourish__dash {
+  width: 80px;
+  height: 1px;
+  background: var(--gold-light);
+}
+
+/* ═══ Heading ═══ */
+.choose-kicker {
+  font-family: var(--font-body);
+  font-size: 1.15rem;
+  font-weight: 400;
+  letter-spacing: 6px;
+  text-transform: uppercase;
+  color: var(--gold);
+  margin-bottom: 4px;
 }
 
 .choose-title {
   font-family: var(--font-display);
-  font-size: var(--text-h1);
+  font-size: clamp(2.5rem, 5vw, 4rem);
   font-weight: 400;
-  color: var(--text-primary);
+  font-style: italic;
+  line-height: 1.1;
+  margin-bottom: 0;
+
+  /* Gold gradient text */
+  background: linear-gradient(
+    135deg,
+    #C9A96E 0%,
+    #D4B896 30%,
+    #C9A96E 50%,
+    #BFA05F 70%,
+    #C9A96E 100%
+  );
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.choose-title__heart {
+  font-size: 0.9rem;
+  color: var(--dusty-rose);
+  opacity: 0.6;
+  margin-bottom: var(--space-xs);
 }
 
 .choose-subtitle {
-  font-size: var(--text-body);
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  font-weight: 400;
+  letter-spacing: 3px;
+  text-transform: uppercase;
   color: var(--text-secondary);
   margin-bottom: var(--space-md);
 }
 
-/* ── Cards container ── */
+/* ═══ Cards Container ═══ */
 .choose-cards {
   display: flex;
   gap: var(--space-lg);
   width: 100%;
-  max-width: 800px;
+  max-width: 880px;
   justify-content: center;
+  margin-bottom: var(--space-md);
 }
 
-/* ── Individual card ── */
+/* ═══ Individual Card ═══ */
 .choose-card {
+  position: relative;
   flex: 1;
-  max-width: 360px;
+  max-width: 400px;
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
-  padding: var(--space-lg) var(--space-md);
+  padding: var(--space-lg) var(--space-md) var(--space-md);
   border-radius: var(--radius-md);
-  background: var(--bg-elevated);
-  border: 2px solid var(--surface-border);
-  box-shadow: var(--shadow-sm);
   cursor: pointer;
   transition:
     transform var(--duration-normal) var(--ease-out),
     box-shadow var(--duration-normal) var(--ease-out),
     border-color var(--duration-normal) var(--ease-out);
+
+  /* Cream/ivory background with gold border */
+  background: rgba(255, 253, 248, 0.88);
+  border: 2px solid rgba(201, 169, 110, 0.25);
+  box-shadow: 0 4px 24px rgba(45, 36, 32, 0.06);
+  backdrop-filter: blur(8px);
 }
 
 .choose-card:active {
   transform: scale(0.97);
-  box-shadow: var(--shadow-md);
   border-color: var(--gold);
+  box-shadow: 0 8px 40px rgba(201, 169, 110, 0.2);
 }
 
+/* ── Icon badge (circle on top of card) ── */
+.choose-card__badge {
+  position: absolute;
+  top: -24px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  background: linear-gradient(135deg, #D4A0A0 0%, #C8908E 100%);
+  color: white;
+  border: 3px solid rgba(255, 253, 248, 0.9);
+  box-shadow: 0 4px 16px rgba(212, 160, 160, 0.3);
+}
+
+/* ── Preview image ── */
+.choose-card__preview {
+  width: 100%;
+  height: 200px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: var(--space-sm);
+  overflow: hidden;
+}
+
+.choose-card__img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 8px;
+}
+
+/* ── Card text ── */
 .choose-card__title {
-  font-family: var(--font-display);
-  font-size: var(--text-h3);
-  font-weight: 500;
-  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 1.1rem;
+  font-weight: 700;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  color: var(--gold);
   margin-bottom: 4px;
 }
 
 .choose-card__desc {
-  font-size: var(--text-caption);
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  font-weight: 400;
+  letter-spacing: 2px;
+  text-transform: uppercase;
   color: var(--text-secondary);
 }
 
-/* ── Layout previews ── */
-.choose-card__preview {
-  width: 180px;
-  height: 140px;
-  margin-bottom: var(--space-md);
+/* ═══ Back Button (blush pill) ═══ */
+.choose-back {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: var(--space-sm);
+  min-width: 260px;
+  height: 60px;
+  padding: 0 var(--space-lg);
+  border-radius: var(--radius-full);
+  border: none;
+  cursor: pointer;
+  transition: all var(--duration-normal) var(--ease-out);
+
+  background: linear-gradient(135deg, #D4A0A0 0%, #C8908E 40%, #D4A0A0 100%);
+  box-shadow: 0 4px 20px rgba(212, 160, 160, 0.25);
 }
 
-/* Single: one large frame */
-.choose-card__preview--single .choose-card__frame {
-  width: 140px;
-  height: 100px;
-  border-radius: 6px;
-  border: 3px solid var(--gold-light);
-  background: linear-gradient(135deg, var(--champagne-light) 0%, var(--champagne) 100%);
+.choose-back:active {
+  transform: scale(0.97);
 }
 
-/* Collage: three vertical strips */
-.choose-card__preview--collage {
-  gap: 6px;
-}
-.choose-card__strip {
-  width: 48px;
-  height: 120px;
-  border-radius: 4px;
-  border: 3px solid var(--gold-light);
-  background: linear-gradient(180deg, var(--champagne-light) 0%, var(--champagne) 100%);
+.choose-back__icon {
+  font-size: 1.3rem;
+  color: white;
 }
 
-/* ── Back button ── */
-.choose-back {
-  margin-top: var(--space-md);
+.choose-back__text {
+  font-family: var(--font-body);
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: white;
 }
