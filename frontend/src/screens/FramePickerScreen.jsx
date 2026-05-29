@@ -1,12 +1,20 @@
 import React, { useState } from 'react';
 import ScreenShell from '../components/ScreenShell';
-import Button from '../components/Button';
 import './FramePickerScreen.css';
 
 /**
- * Optional frame picker — shown before printing.
- * 3 visual thumbnail cards showing the overlay applied over a preview.
- * Users tap a card to select a frame and proceed to print.
+ * Frame selection screen — shown before printing.
+ *
+ * Layout (matching mockup):
+ *   - "Back to Home" pill (top-left)
+ *   - Decorative flourish + hearts
+ *   - "MAKE IT YOURS" kicker
+ *   - "Choose Your Frame" (large gold script)
+ *   - Subtitle
+ *   - Left: large photo preview with gold border
+ *   - Right: "CHOOSE A FRAME" section header + frame thumbnail cards
+ *   - Bottom: blush "Print & Share" + gold "Retake Photo" buttons
+ *   - Footer text
  */
 export default function FramePickerScreen({
   finalPhoto,
@@ -14,6 +22,7 @@ export default function FramePickerScreen({
   currentOverlay,
   onSelect,
   onSkip,
+  onBack,
   isProcessing,
 }) {
   const [selected, setSelected] = useState(currentOverlay || 'none');
@@ -22,58 +31,116 @@ export default function FramePickerScreen({
     if (selected !== currentOverlay) {
       onSelect(selected);
     } else {
-      onSkip(); // No change, skip re-processing
+      onSkip();
     }
   };
 
   return (
     <ScreenShell className="frame-screen">
-      <h1 className="frame-title">Pick a Frame</h1>
-      <p className="frame-subtitle">Choose a border for your keepsake</p>
 
-      <div className="frame-cards">
-        {overlays.map((overlay) => (
-          <button
-            key={overlay.id}
-            className={`frame-card ${selected === overlay.id ? 'frame-card--selected' : ''}`}
-            onClick={() => setSelected(overlay.id)}
-            disabled={isProcessing}
-          >
-            <div className="frame-card__preview">
-              {/* Show the photo as background */}
-              <img
-                src={`/photos/${finalPhoto}?t=${Date.now()}`}
-                alt=""
-                className="frame-card__photo"
-              />
-              {/* Show the overlay on top */}
-              {overlay.filename && (
-                <img
-                  src={`/overlays/${overlay.filename}`}
-                  alt=""
-                  className="frame-card__overlay-img"
-                />
-              )}
-            </div>
-            <span className="frame-card__name">{overlay.name}</span>
-            {selected === overlay.id && (
-              <span className="frame-card__check">✓</span>
-            )}
-          </button>
-        ))}
+      {/* ── Back to Home (top-left) ── */}
+      {onBack && (
+        <button className="frame__home" onClick={onBack}>
+          <span className="frame__home-icon">⌂</span>
+          <span className="frame__home-text">Back to Home</span>
+        </button>
+      )}
+
+      {/* ── Decorative flourish ── */}
+      <div className="frame__flourish" aria-hidden="true">
+        <span className="frame__flourish-hearts">♡♡</span>
+        <div className="frame__flourish-line">
+          <span className="frame__flourish-curl">❧</span>
+          <span className="frame__flourish-dash" />
+          <span className="frame__flourish-curl frame__flourish-curl--flip">❧</span>
+        </div>
       </div>
 
-      <div className="frame-actions">
-        <Button
-          variant="primary"
-          size="large"
-          glow
+      {/* ── Heading ── */}
+      <p className="frame__kicker">♥ Make it Yours ♥</p>
+      <h1 className="frame__title">Choose Your Frame</h1>
+      <p className="frame__subtitle">Pick a style you love!</p>
+
+      {/* ── Main content: preview + frame cards ── */}
+      <div className="frame__body">
+
+        {/* Large photo preview */}
+        <div className="frame__preview-wrap">
+          <div className="frame__preview">
+            <img
+              src={`/photos/${finalPhoto}?t=${Date.now()}`}
+              alt="Your photo"
+              className="frame__preview-img"
+            />
+          </div>
+        </div>
+
+        {/* Frame options panel */}
+        <div className="frame__options">
+          <div className="frame__options-header">
+            <span className="frame__options-dash" />
+            <span className="frame__options-label">Choose a Frame</span>
+            <span className="frame__options-dash" />
+          </div>
+
+          <div className="frame__cards">
+            {overlays.map((overlay) => (
+              <button
+                key={overlay.id}
+                className={`frame__card ${selected === overlay.id ? 'frame__card--selected' : ''}`}
+                onClick={() => setSelected(overlay.id)}
+                disabled={isProcessing}
+              >
+                <div className="frame__card-preview">
+                  {overlay.filename ? (
+                    <img
+                      src={`/overlays/${overlay.filename}`}
+                      alt=""
+                      className="frame__card-overlay"
+                    />
+                  ) : (
+                    /* No frame — show empty frame outline */
+                    <div className="frame__card-empty">
+                      <div className="frame__card-empty-inner" />
+                    </div>
+                  )}
+                </div>
+                {selected === overlay.id && (
+                  <span className="frame__card-check">✓</span>
+                )}
+                <span className="frame__card-name">{overlay.name}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Actions ── */}
+      <div className="frame__actions">
+        <button
+          className="frame__btn-print"
           onClick={handleConfirm}
           disabled={isProcessing}
         >
-          {isProcessing ? 'Applying…' : 'Print with this Frame'}
-        </Button>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="6" y="14" width="12" height="8" rx="1" />
+            <path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2" />
+            <path d="M6 9V2h12v7" />
+          </svg>
+          <div className="frame__btn-print-text">
+            <span className="frame__btn-print-main">
+              {isProcessing ? 'Applying…' : 'Print & Share'}
+            </span>
+            <span className="frame__btn-print-sub">Get Your Photo</span>
+          </div>
+        </button>
       </div>
+
+      {/* ── Footer ── */}
+      <p className="frame__footer">
+        — Thank you for celebrating with us! —
+      </p>
+
     </ScreenShell>
   );
 }

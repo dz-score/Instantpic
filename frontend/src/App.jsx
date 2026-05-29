@@ -283,6 +283,7 @@ export default function App() {
         <PickFavoriteScreen
           allPhotos={allSessionPhotos}
           onSelect={handleFavoriteSelect}
+          onBack={handleFinish}
           isProcessing={isProcessing}
         />
       )}
@@ -294,6 +295,7 @@ export default function App() {
           currentOverlay={api.config?.selected_overlay || 'none'}
           onSelect={handleFrameSelect}
           onSkip={handleFrameSkip}
+          onBack={handleFinish}
           isProcessing={isProcessing}
         />
       )}
