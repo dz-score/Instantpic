@@ -190,12 +190,20 @@ FRONTEND_DIST = os.path.join(BASE_DIR, "frontend", "dist")
 if os.path.exists(FRONTEND_DIST):
     app.mount("/assets", StaticFiles(directory=os.path.join(FRONTEND_DIST, "assets")), name="assets")
     
-    # Catch-all route to serve the built index.html for SPA routing (e.g. /download/:id, /admin, etc.)
+    # Catch-all route: serve static files from dist/ if they exist,
+    # otherwise fall back to index.html for SPA routing.
     @app.get("/{catchall:path}")
     async def serve_frontend(catchall: str):
-        # Allow static endpoints to pass through if they start with api/photos/overlays
+        # Skip API / photo / overlay routes
         if catchall.startswith("api/") or catchall.startswith("photos/") or catchall.startswith("overlays/"):
             return JSONResponse(status_code=404, content={"detail": "Not found"})
+        
+        # Check if the file exists in dist/ (e.g. bg-wedding.png, preview-single.png)
+        file_path = os.path.join(FRONTEND_DIST, catchall)
+        if catchall and os.path.isfile(file_path):
+            return FileResponse(file_path)
+        
+        # SPA fallback
         return FileResponse(os.path.join(FRONTEND_DIST, "index.html"))
 else:
     @app.get("/")
