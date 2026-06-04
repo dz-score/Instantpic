@@ -2,16 +2,23 @@ import React, { useState, useEffect, useMemo } from 'react';
 import ScreenShell from '../components/ScreenShell';
 import PhotoFrame from '../components/PhotoFrame';
 import ConfettiOverlay from '../components/ConfettiOverlay';
-import Button from '../components/Button';
 import { getRandomCompliment } from '../utils/compliments';
 import './RevealScreen.css';
 
-
-
 /**
  * Photo reveal screen — the emotional peak.
- * Shows the processed photo with confetti and a compliment.
- * Two actions: Retake or Print (→ Frame Picker).
+ *
+ * Layout (wedding theme):
+ *   - Decorative flourish + hearts
+ *   - "YOUR MOMENT" kicker
+ *   - "Beautifully Captured" (large gold script)
+ *   - Large photo preview with gold border
+ *   - Compliment text (gold italic)
+ *   - Blush "Print It!" button + ghost "Retake" button
+ *   - Retake count indicator
+ *   - Confetti overlay when photo appears
+ *
+ * Background from ScreenShell (bg-wedding.png).
  */
 export default function RevealScreen({
   finalPhoto,
@@ -26,7 +33,6 @@ export default function RevealScreen({
   const isLastRetake = retakeCount >= maxRetakes - 1;
   const canRetake = retakeCount < maxRetakes;
 
-  // Trigger reveal animation after processing completes
   useEffect(() => {
     if (finalPhoto && !isProcessing) {
       const t = setTimeout(() => setShowPhoto(true), 100);
@@ -37,42 +43,84 @@ export default function RevealScreen({
 
   return (
     <ScreenShell className="reveal-screen">
-      {/* Confetti — only when photo is ready */}
+      {/* Confetti */}
       {showPhoto && <ConfettiOverlay />}
 
       {isProcessing ? (
-        /* Loading state */
+        /* ── Loading State ── */
         <div className="reveal-loading">
           <div className="reveal-spinner" />
-          <p className="reveal-loading__text">Creating your keepsake…</p>
+          <p className="reveal-loading__kicker">Creating Your Keepsake</p>
+          <p className="reveal-loading__sub">Just a moment…</p>
         </div>
       ) : finalPhoto ? (
-        /* Photo reveal */
+        /* ── Photo Reveal ── */
         <div className={`reveal-content ${showPhoto ? 'reveal-content--visible' : ''}`}>
-          <PhotoFrame
-            src={`/photos/${finalPhoto}?t=${Date.now()}`}
-            alt="Your photo"
-            size="large"
-            className="photo-frame--reveal"
-          />
 
+          {/* Flourish */}
+          <div className="reveal-flourish" aria-hidden="true">
+            <span className="reveal-flourish__hearts">♡♡</span>
+            <div className="reveal-flourish__line">
+              <span className="reveal-flourish__curl">❧</span>
+              <span className="reveal-flourish__dash" />
+              <span className="reveal-flourish__curl reveal-flourish__curl--flip">❧</span>
+            </div>
+          </div>
+
+          {/* Heading */}
+          <p className="reveal-kicker">Your Moment</p>
+          <h1 className="reveal-title">Beautifully Captured</h1>
+
+          {/* Photo */}
+          <div className="reveal-photo-wrap">
+            <PhotoFrame
+              src={`/photos/${finalPhoto}?t=${Date.now()}`}
+              alt="Your photo"
+              size="large"
+              className="photo-frame--reveal"
+            />
+          </div>
+
+          {/* Compliment */}
           <p className="reveal-compliment">{compliment}</p>
 
+          {/* Actions */}
           <div className="reveal-actions">
             {canRetake && (
-              <Button variant="ghost" onClick={onRetake}>
-                {isLastRetake ? '↺ Last try!' : '↺ Retake'}
-              </Button>
+              <button className="reveal-btn-retake" onClick={onRetake}>
+                <span className="reveal-btn-retake__icon">↺</span>
+                <div className="reveal-btn-retake__text">
+                  <span className="reveal-btn-retake__main">
+                    {isLastRetake ? 'Last Try!' : 'Retake Photo'}
+                  </span>
+                  <span className="reveal-btn-retake__sub">Try Again</span>
+                </div>
+              </button>
             )}
-            <Button variant="primary" size="large" glow onClick={onPrint}>
-              Print It!
-            </Button>
+            <button className="reveal-btn-print" onClick={onPrint}>
+              <span className="reveal-btn-print__icon">♡</span>
+              <div className="reveal-btn-print__text">
+                <span className="reveal-btn-print__main">Love It!</span>
+                <span className="reveal-btn-print__sub">Continue to Print</span>
+              </div>
+            </button>
           </div>
+
+          {/* Retake indicator */}
+          {canRetake && (
+            <p className="reveal-retake-info">
+              {retakeCount} of {maxRetakes} retakes used
+            </p>
+          )}
         </div>
       ) : (
+        /* ── Error State ── */
         <div className="reveal-error">
-          <p>Something went wrong. Please try again.</p>
-          <Button variant="ghost" onClick={onRetake}>↺ Retake</Button>
+          <p className="reveal-error__text">Something went wrong. Please try again.</p>
+          <button className="reveal-btn-retake" onClick={onRetake}>
+            <span className="reveal-btn-retake__icon">↺</span>
+            <span className="reveal-btn-retake__main">Retake</span>
+          </button>
         </div>
       )}
     </ScreenShell>

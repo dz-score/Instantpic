@@ -1,15 +1,26 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ScreenShell from '../components/ScreenShell';
-import PhotoFrame from '../components/PhotoFrame';
-import Button from '../components/Button';
 import './PrintingScreen.css';
 
 const AUTO_RESET_SECONDS = 25;
 
 /**
- * Two-phase printing screen:
- * Phase 1 — Printing animation with progress
- * Phase 2 — QR code + "Take Another" / auto-reset countdown
+ * Printing & Share screen — the final step.
+ *
+ * Phase 1 (PRINTING):
+ *   - Animated printer icon
+ *   - "Printing Your Memory" heading
+ *   - Warm patience message
+ *
+ * Phase 2 (DONE/ERROR):
+ *   - "Your Print is on its Way!" heading
+ *   - Thank you message (from config)
+ *   - Photo preview with gold border
+ *   - QR code to download
+ *   - Blush "Take Another" button
+ *   - Auto-reset countdown
+ *
+ * Background from ScreenShell (bg-wedding.png).
  */
 export default function PrintingScreen({
   finalPhoto,
@@ -19,36 +30,28 @@ export default function PrintingScreen({
   onFinish,
   onAnother,
 }) {
-  const [phase, setPhase] = useState('PRINTING'); // PRINTING | DONE | ERROR
-  const [printMsg, setPrintMsg] = useState('Printing your keepsake…');
+  const [phase, setPhase] = useState('PRINTING');
   const [countdown, setCountdown] = useState(AUTO_RESET_SECONDS);
   const countdownRef = useRef(null);
 
-  // Build download link
   const downloadUrl = `${window.location.origin}/download/${finalPhoto}`;
   const qrSrc = getQrUrl(downloadUrl);
 
-  // Trigger print on mount
+  // Trigger print
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         await printPhoto(finalPhoto);
-        if (!cancelled) {
-          setPhase('DONE');
-          setPrintMsg('Your print is on its way!');
-        }
+        if (!cancelled) setPhase('DONE');
       } catch {
-        if (!cancelled) {
-          setPhase('ERROR');
-          setPrintMsg('Printing unavailable — scan the QR to save your photo!');
-        }
+        if (!cancelled) setPhase('ERROR');
       }
     })();
     return () => { cancelled = true; };
   }, [finalPhoto, printPhoto]);
 
-  // Start auto-reset countdown once printing phase resolves
+  // Auto-reset countdown
   useEffect(() => {
     if (phase === 'PRINTING') return;
     setCountdown(AUTO_RESET_SECONDS);
@@ -72,62 +75,132 @@ export default function PrintingScreen({
 
   return (
     <ScreenShell className="print-screen">
-      {/* Small preview */}
-      <PhotoFrame
-        src={`/photos/${finalPhoto}`}
-        alt="Your photo"
-        size="small"
-        className="print-preview"
-      />
 
-      {/* Phase: Printing */}
+      {/* ── Phase: Printing ── */}
       {phase === 'PRINTING' && (
-        <div className="print-status">
-          <div className="print-spinner" />
-          <p className="print-status__msg">{printMsg}</p>
+        <div className="print-loading">
+          {/* Animated printer icon */}
+          <div className="print-loading__icon">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="6" y="14" width="12" height="8" rx="1" />
+              <path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2" />
+              <path d="M6 9V2h12v7" />
+            </svg>
+          </div>
+
+          <div className="print-loading__flourish">
+            <span className="print-loading__curl">❧</span>
+            <span className="print-loading__dash" />
+            <span className="print-loading__curl print-loading__curl--flip">❧</span>
+          </div>
+
+          <h1 className="print-loading__title">Printing Your Memory</h1>
+          <p className="print-loading__sub">This will just take a moment…</p>
+
+          <div className="print-loading__dots">
+            <span className="print-loading__dot" />
+            <span className="print-loading__dot" />
+            <span className="print-loading__dot" />
+          </div>
         </div>
       )}
 
-      {/* Phase: Done or Error → show QR */}
+      {/* ── Phase: Done / Error ── */}
       {(phase === 'DONE' || phase === 'ERROR') && (
-        <div className="print-complete">
-          {/* Status message */}
-          <div className={`print-badge print-badge--${phase === 'DONE' ? 'success' : 'error'}`}>
-            <span className="print-badge__icon">{phase === 'DONE' ? '✓' : '!'}</span>
-            <span className="print-badge__text">{printMsg}</span>
+        <div className="print-done">
+
+          {/* Flourish */}
+          <div className="print-done__flourish" aria-hidden="true">
+            <span className="print-done__hearts">♡♡</span>
+            <div className="print-done__flourish-line">
+              <span className="print-done__curl">❧</span>
+              <span className="print-done__dash" />
+              <span className="print-done__curl print-done__curl--flip">❧</span>
+            </div>
           </div>
 
-          {/* Thank you message */}
-          {phase === 'DONE' && (
-            <p className="print-thankyou">
-              {config?.thank_you_message || 'Thank you for celebrating with us!'}
-            </p>
+          {/* Heading */}
+          {phase === 'DONE' ? (
+            <>
+              <p className="print-done__kicker">♥ All Done! ♥</p>
+              <h1 className="print-done__title">Your Print is on its Way!</h1>
+            </>
+          ) : (
+            <>
+              <p className="print-done__kicker">♥ Almost There ♥</p>
+              <h1 className="print-done__title">Save Your Photo</h1>
+            </>
           )}
 
-          {/* QR Code */}
-          <div className="print-qr">
-            <div className="print-qr__frame">
-              <img src={qrSrc} alt="Scan to download" className="print-qr__img" />
+          {/* Thank you */}
+          <p className="print-done__thankyou">
+            {config?.thank_you_message || 'Thank you for celebrating with us!'}
+          </p>
+
+          {/* Photo + QR side by side */}
+          <div className="print-done__body">
+            {/* Photo preview */}
+            <div className="print-done__photo-wrap">
+              <img
+                src={`/photos/${finalPhoto}`}
+                alt="Your photo"
+                className="print-done__photo"
+              />
             </div>
-            <div className="print-qr__instructions">
-              <p className="print-qr__step">1. Connect to WiFi</p>
-              <p className="print-qr__step">2. Scan this code to save your photo</p>
+
+            {/* QR Section */}
+            <div className="print-done__qr-section">
+              <div className="print-done__qr-header">
+                <span className="print-done__qr-dash" />
+                <span className="print-done__qr-label">Save to Phone</span>
+                <span className="print-done__qr-dash" />
+              </div>
+              <div className="print-done__qr-frame">
+                <img src={qrSrc} alt="Scan to download" className="print-done__qr-img" />
+              </div>
+              <div className="print-done__qr-steps">
+                <p className="print-done__qr-step">
+                  <span className="print-done__qr-num">1</span>
+                  Connect to WiFi
+                </p>
+                <p className="print-done__qr-step">
+                  <span className="print-done__qr-num">2</span>
+                  Scan this code
+                </p>
+              </div>
             </div>
+          </div>
+
+          {/* Camera divider */}
+          <div className="print-done__cam-line" aria-hidden="true">
+            <span className="print-done__cam-curl">»»»</span>
+            <span className="print-done__cam-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <rect x="3" y="3" width="18" height="18" rx="2" />
+                <circle cx="12" cy="12" r="3" />
+              </svg>
+            </span>
+            <span className="print-done__cam-curl">«««</span>
           </div>
 
           {/* Actions */}
-          <div className="print-actions">
-            <Button variant="primary" onClick={handleAnother}>
-              Take Another Photo!
-            </Button>
+          <div className="print-done__actions">
+            <button className="print-done__btn-another" onClick={handleAnother}>
+              <span className="print-done__btn-icon">📸</span>
+              <div className="print-done__btn-text">
+                <span className="print-done__btn-main">Take Another Photo!</span>
+                <span className="print-done__btn-sub">Start New Session</span>
+              </div>
+            </button>
           </div>
 
-          {/* Auto-reset countdown */}
-          <p className="print-countdown">
+          {/* Countdown */}
+          <p className="print-done__countdown">
             Returning home in {countdown}s…
           </p>
         </div>
       )}
+
     </ScreenShell>
   );
 }

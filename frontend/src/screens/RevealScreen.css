@@ -1,16 +1,19 @@
-/* ── RevealScreen ── */
+/* ══════════════════════════════════════════════
+   RevealScreen — Photo Preview
+   ══════════════════════════════════════════════ */
 
 .reveal-screen {
-  background: var(--bg-base);
-  gap: var(--space-md);
+  position: relative;
+  padding: var(--space-md) var(--space-lg);
+  gap: 0;
 }
 
-/* Loading */
+/* ═══ Loading State ═══ */
 .reveal-loading {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--space-md);
+  gap: 8px;
 }
 
 .reveal-spinner {
@@ -20,21 +23,104 @@
   border-top-color: var(--gold);
   border-radius: 50%;
   animation: spin 0.9s linear infinite;
+  margin-bottom: var(--space-sm);
 }
 
-.reveal-loading__text {
+.reveal-loading__kicker {
   font-family: var(--font-display);
-  font-size: var(--text-h3);
+  font-size: var(--text-h2);
+  font-weight: 400;
   font-style: italic;
+  color: var(--gold);
+}
+
+.reveal-loading__sub {
+  font-family: var(--font-body);
+  font-size: var(--text-caption);
+  letter-spacing: 3px;
+  text-transform: uppercase;
   color: var(--text-secondary);
 }
 
-/* Content wrapper (fade+slide in) */
+/* ═══ Flourish ═══ */
+.reveal-flourish {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.reveal-flourish__hearts {
+  font-size: 1.2rem;
+  color: var(--dusty-rose);
+  letter-spacing: 6px;
+  opacity: 0.7;
+}
+
+.reveal-flourish__line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.reveal-flourish__curl {
+  font-size: 1.1rem;
+  color: var(--gold);
+  opacity: 0.6;
+}
+
+.reveal-flourish__curl--flip {
+  transform: scaleX(-1);
+}
+
+.reveal-flourish__dash {
+  width: 70px;
+  height: 1px;
+  background: var(--gold-light);
+}
+
+/* ═══ Heading ═══ */
+.reveal-kicker {
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  font-weight: 500;
+  letter-spacing: 5px;
+  text-transform: uppercase;
+  color: var(--gold);
+  margin-bottom: 2px;
+}
+
+.reveal-title {
+  font-family: var(--font-display);
+  font-size: clamp(1.8rem, 4vw, 3rem);
+  font-weight: 400;
+  font-style: italic;
+  line-height: 1.1;
+  margin-bottom: var(--space-sm);
+  background: linear-gradient(135deg, #C9A96E 0%, #D4B896 30%, #C9A96E 50%, #BFA05F 70%, #C9A96E 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ═══ Photo ═══ */
+.reveal-photo-wrap {
+  margin-bottom: var(--space-sm);
+}
+
+.reveal-photo-wrap .photo-frame--reveal {
+  border: 3px solid var(--gold);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 40px rgba(45, 36, 32, 0.12), var(--shadow-glow);
+}
+
+/* ═══ Content (fade+slide in) ═══ */
 .reveal-content {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--space-md);
+  gap: 0;
   opacity: 0;
   transform: translateY(20px);
   transition:
@@ -47,31 +133,147 @@
   transform: translateY(0);
 }
 
-/* Compliment text */
+/* ═══ Compliment ═══ */
 .reveal-compliment {
   font-family: var(--font-display);
-  font-size: var(--text-h2);
+  font-size: var(--text-h3);
   font-weight: 500;
   font-style: italic;
   color: var(--gold);
   letter-spacing: 0.5px;
+  margin-bottom: var(--space-md);
   animation: fade-up 0.8s var(--ease-out) 0.4s both;
 }
 
-/* Actions */
+/* ═══ Actions ═══ */
 .reveal-actions {
   display: flex;
   gap: var(--space-md);
   align-items: center;
   animation: fade-up 0.8s var(--ease-out) 0.6s both;
+  margin-bottom: var(--space-xs);
 }
 
-/* Error */
+/* Blush "Love It!" button */
+.reveal-btn-print {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  min-width: 260px;
+  height: 68px;
+  padding: 0 var(--space-lg);
+  border-radius: var(--radius-full);
+  border: 3px solid var(--gold);
+  cursor: pointer;
+  background: linear-gradient(135deg, #D4A0A0 0%, #C8908E 40%, #D4A0A0 100%);
+  box-shadow: 0 0 0 1px var(--gold-light), 0 8px 32px rgba(201, 169, 110, 0.25);
+  color: white;
+  transition: all var(--duration-normal) var(--ease-out);
+}
+
+.reveal-btn-print:active {
+  transform: scale(0.97);
+}
+
+.reveal-btn-print__icon {
+  font-size: 1.4rem;
+}
+
+.reveal-btn-print__text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.reveal-btn-print__main {
+  font-family: var(--font-body);
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+}
+
+.reveal-btn-print__sub {
+  font-family: var(--font-body);
+  font-size: 0.65rem;
+  font-weight: 400;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  opacity: 0.8;
+}
+
+/* Gold "Retake" button */
+.reveal-btn-retake {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-width: 200px;
+  height: 60px;
+  padding: 0 var(--space-md);
+  border-radius: var(--radius-full);
+  border: 2px solid var(--gold);
+  cursor: pointer;
+  background: linear-gradient(135deg, #C9A96E 0%, #D4B07A 50%, #DFC9A0 100%);
+  box-shadow: 0 4px 20px rgba(201, 169, 110, 0.2);
+  color: white;
+  transition: all var(--duration-normal) var(--ease-out);
+}
+
+.reveal-btn-retake:active {
+  transform: scale(0.97);
+}
+
+.reveal-btn-retake__icon {
+  font-size: 1.2rem;
+}
+
+.reveal-btn-retake__text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.reveal-btn-retake__main {
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+
+.reveal-btn-retake__sub {
+  font-family: var(--font-body);
+  font-size: 0.6rem;
+  font-weight: 400;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  opacity: 0.8;
+}
+
+/* ═══ Retake Info ═══ */
+.reveal-retake-info {
+  font-family: var(--font-body);
+  font-size: 0.75rem;
+  font-weight: 400;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  opacity: 0.6;
+}
+
+/* ═══ Error ═══ */
 .reveal-error {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: var(--space-md);
-  color: var(--error);
+}
+
+.reveal-error__text {
+  font-family: var(--font-body);
   font-size: var(--text-body);
+  color: var(--dusty-rose);
+  text-align: center;
 }
