@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { logger } from '../utils/logger';
 
 const API = '';
 
@@ -33,9 +34,10 @@ export default function useApi() {
       const data = await r.json();
       setConfig(data);
       configRef.current = data;
+      logger.debug('config', 'config_loaded', 'Config loaded from backend');
       return data;
     } catch (e) {
-      console.error('Failed to load config:', e);
+      logger.error('api', 'api_error', `Failed to load config: ${e.message}`, { endpoint: '/api/config', error: e.message });
       return null;
     }
   }, []);
@@ -50,7 +52,7 @@ export default function useApi() {
       setGallery(data);
       return data;
     } catch (e) {
-      console.error('Failed to load gallery:', e);
+      logger.warn('api', 'api_error', `Failed to load gallery: ${e.message}`, { endpoint: '/api/photos' });
       return [];
     }
   }, []);
@@ -64,6 +66,7 @@ export default function useApi() {
     const text = showNames
       ? ([cfg.couple_names, cfg.event_date].filter(Boolean).join(' · ') || cfg.default_text || '')
       : '';
+    const t0 = performance.now();
     const r = await fetch(`${API}/api/save-photo`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -74,14 +77,25 @@ export default function useApi() {
         overlay_id: overlayId || cfg.selected_overlay || 'none',
       }),
     });
-    if (!r.ok) throw new Error((await r.json()).detail || 'Processing failed');
-    return await r.json();
+    const dur = Math.round(performance.now() - t0);
+    if (!r.ok) {
+      logger.error('api', 'api_error', `Save photo failed (${r.status})`, { endpoint: '/api/save-photo', status: r.status });
+      throw new Error((await r.json()).detail || 'Processing failed');
+    }
+    const result = await r.json();
+    logger.info('api', 'api_request', `Photo saved: ${result.filename}`, { endpoint: '/api/save-photo', filename: result.filename }, dur);
+    return result;
   }, []);
 
   /* ── Print ── */
   const printPhoto = useCallback(async (filename) => {
+    logger.info('printer', 'printer_sent', `Print requested: ${filename}`, { filename });
     const r = await fetch(`${API}/api/print/${filename}`, { method: 'POST' });
-    if (!r.ok) throw new Error('Print failed');
+    if (!r.ok) {
+      logger.error('printer', 'printer_fail', `Print failed: ${filename}`, { filename });
+      throw new Error('Print failed');
+    }
+    logger.info('printer', 'printer_done', `Print completed: ${filename}`, { filename });
     fetchGallery();
     return await r.json();
   }, [fetchGallery]);

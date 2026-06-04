@@ -1,4 +1,5 @@
 import { useRef, useCallback } from 'react';
+import { logger } from '../utils/logger';
 
 /**
  * Manages persistent WebRTC camera stream.
@@ -24,8 +25,9 @@ export default function useCamera() {
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
       }
+      logger.info('camera', 'camera_init_ok', 'Camera initialized', { width: 1920, height: 1080 });
     } catch (err) {
-      console.error('Camera access failed:', err);
+      logger.error('camera', 'camera_init_fail', `Camera access failed: ${err.message}`, { error: err.message });
     }
   }, []);
 

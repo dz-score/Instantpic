@@ -20,6 +20,7 @@ from backend.storage import (
 )
 from backend.photo_processor import process_photo_layout
 from backend.printer import print_photo
+from backend.logger import log
 
 app = FastAPI(title="Embedded Photo Booth API", version="1.0.0")
 
@@ -34,6 +35,9 @@ app.add_middleware(
 
 # Ensure folders exist
 ensure_directories()
+
+# Log startup
+log.info("system", "system_boot", f"Backend started", data={"version": "1.0.0"})
 
 # Request schemas
 class ConfigUpdateRequest(BaseModel):
@@ -62,15 +66,20 @@ class SavePhotoRequest(BaseModel):
 @app.get("/api/config", response_model=AppSettings)
 async def get_config():
     """Retrieve current application settings."""
-    return load_settings()
+    settings = load_settings()
+    log.debug("config", "config_loaded", "Config loaded")
+    return settings
 
 @app.post("/api/config", response_model=AppSettings)
 async def post_config(updates: ConfigUpdateRequest):
     """Update configurations."""
     try:
-        updated = update_settings(updates.model_dump(exclude_unset=True))
+        changed = {k: v for k, v in updates.model_dump(exclude_unset=True).items() if v is not None}
+        updated = update_settings(changed)
+        log.info("config", "config_updated", f"Config updated: {list(changed.keys())}", data=changed)
         return updated
     except Exception as e:
+        log.error("config", "config_update_fail", f"Config update failed: {e}")
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.get("/api/photos")
@@ -91,27 +100,31 @@ async def save_photo(req: SavePhotoRequest, background_tasks: BackgroundTasks):
         raise HTTPException(status_code=400, detail="No images provided")
     if req.layout not in ("single", "collage"):
         raise HTTPException(status_code=400, detail="Invalid layout type")
-        
+
+    import time as _time
+    t0 = _time.monotonic()
+    log.info("photo", "photo_process_start", f"Processing {req.layout} photo", data={"layout": req.layout, "overlay": req.overlay_id, "image_count": len(req.images)})
+
     try:
-        # Run Pillow processor
         filename = process_photo_layout(
             images_base64=req.images,
             layout_type=req.layout,
             text=req.text,
             overlay_id=req.overlay_id
         )
-        
-        # Enforce FIFO limits in background to avoid blocking API response
+        dur = int((_time.monotonic() - t0) * 1000)
+        log.info("photo", "photo_process_done", f"Photo processed: {filename}", dur=dur, data={"filename": filename, "layout": req.layout, "overlay": req.overlay_id})
+
         background_tasks.add_task(enforce_circular_storage)
-        
+
         return {
             "status": "success",
             "filename": filename,
             "url": f"/photos/{filename}"
         }
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        dur = int((_time.monotonic() - t0) * 1000)
+        log.error("photo", "photo_process_fail", f"Photo processing failed: {e}", dur=dur, data={"error": str(e)})
         raise HTTPException(status_code=500, detail=f"Image processing failed: {str(e)}")
 
 @app.post("/api/print/{filename}")
@@ -119,12 +132,16 @@ async def trigger_print(filename: str):
     """Trigger a print job for a specific saved photo."""
     filepath = os.path.join(PHOTOS_DIR, filename)
     if not os.path.exists(filepath):
+        log.warn("printer", "printer_file_missing", f"Print requested for missing file: {filename}")
         raise HTTPException(status_code=404, detail="Photo not found")
-        
+
+    log.info("printer", "printer_sent", f"Print job sent: {filename}", data={"filename": filename})
     success = print_photo(filepath)
     if success:
+        log.info("printer", "printer_done", f"Print completed: {filename}", data={"filename": filename})
         return {"status": "success", "detail": f"Printed {filename}"}
     else:
+        log.error("printer", "printer_fail", f"Print failed: {filename}", data={"filename": filename})
         raise HTTPException(status_code=500, detail="Printing failed. Check CUPS setup.")
 
 @app.get("/api/health")
@@ -145,6 +162,7 @@ class EmergencyRequest(BaseModel):
 @app.post("/api/emergency")
 async def emergency_action(req: EmergencyRequest):
     from backend.diagnostics import execute_emergency
+    log.warn("system", "system_emergency", f"Emergency action triggered: {req.action}", data={"action": req.action})
     result = execute_emergency(req.action)
     return result
 
@@ -157,11 +175,24 @@ class ChangePinRequest(BaseModel):
 async def change_pin(req: ChangePinRequest):
     settings = load_settings()
     if req.current_pin != settings.admin_pin:
+        log.warn("config", "config_pin_fail", "PIN change attempted with wrong current PIN")
         raise HTTPException(status_code=403, detail="Invalid current PIN")
     if len(req.new_pin) < 6:
         raise HTTPException(status_code=400, detail="PIN must be at least 6 digits")
     updated = update_settings({"admin_pin": req.new_pin})
+    log.info("config", "config_pin_changed", "Admin PIN changed")
     return {"status": "success", "detail": "PIN updated"}
+
+# --- Frontend Log Ingestion ---
+class FrontendLogBatch(BaseModel):
+    lines: List[str]  # Pre-formatted JSONL lines from the frontend
+
+@app.post("/api/logs")
+async def receive_frontend_logs(batch: FrontendLogBatch):
+    """Receive a batch of JSONL log lines from the frontend and write to frontend.log."""
+    for line in batch.lines:
+        log.write_frontend_line(line)
+    return {"status": "ok", "count": len(batch.lines)}
 
 @app.get("/api/qrcode")
 async def get_qrcode(text: str):

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import useCamera from './hooks/useCamera';
 import useApi from './hooks/useApi';
+import { logger, startSession, endSession } from './utils/logger';
 
 // Screens
 import AttractScreen from './screens/AttractScreen';
@@ -74,6 +75,8 @@ export default function App() {
           currentScreen !== SCREENS.DOWNLOAD &&
           !showAdmin
         ) {
+          logger.info('session', 'session_timeout', 'Inactivity timeout — resetting to attract');
+          endSession('timeout');
           resetSession();
           return SCREENS.ATTRACT;
         }
@@ -113,10 +116,13 @@ export default function App() {
   // ─── Flow Handlers ───
 
   const handleStart = useCallback(() => {
+    startSession();
+    logger.info('ui', 'ui_tap_start', 'Guest tapped start');
     setScreen(SCREENS.CHOOSE_STYLE);
   }, []);
 
   const handleSelectLayout = useCallback((mode) => {
+    logger.info('ui', 'ui_select_layout', `Selected ${mode} layout`, { layout: mode });
     setLayoutMode(mode);
     setCapturedImages([]);
     setRetakeCount(0);
@@ -126,6 +132,7 @@ export default function App() {
   }, []);
 
   const handleCaptureComplete = useCallback(async (images) => {
+    logger.info('camera', 'camera_capture', `Captured ${images.length} image(s)`);
     setCapturedImages(images);
     setScreen(SCREENS.REVEAL);
     setIsProcessing(true);
@@ -133,10 +140,9 @@ export default function App() {
       const overlayId = api.config?.selected_overlay || 'none';
       const result = await api.savePhoto(images, layoutMode, overlayId);
       setFinalPhoto(result.filename);
-      // Add to session history
       setAllSessionPhotos((prev) => [...prev, result.filename]);
     } catch (err) {
-      console.error('Photo processing failed:', err);
+      logger.error('photo', 'photo_process_fail', `Photo processing failed: ${err.message}`, { error: err.message });
       setFinalPhoto(null);
     } finally {
       setIsProcessing(false);
@@ -144,7 +150,10 @@ export default function App() {
   }, [api, layoutMode]);
 
   const handleRetake = useCallback(() => {
-    setRetakeCount((c) => c + 1);
+    setRetakeCount((c) => {
+      logger.info('ui', 'ui_retake', `Retake #${c + 1}`);
+      return c + 1;
+    });
     setCapturedImages([]);
     setFinalPhoto(null);
     setScreen(SCREENS.COUNTDOWN);
@@ -182,7 +191,7 @@ export default function App() {
       setFinalPhoto(result.filename);
       setScreen(SCREENS.PRINTING);
     } catch (err) {
-      console.error('Frame apply failed:', err);
+      logger.error('photo', 'frame_apply_fail', `Frame apply failed: ${err.message}`, { error: err.message });
     } finally {
       setIsProcessing(false);
     }
@@ -193,11 +202,16 @@ export default function App() {
   }, []);
 
   const handleFinish = useCallback(() => {
+    logger.info('session', 'session_end', 'Session finished normally');
+    endSession('completed');
     resetSession();
   }, []);
 
   const handleAnother = useCallback(() => {
+    logger.info('session', 'session_end', 'Guest chose to take another photo');
+    endSession('another');
     resetSession();
+    startSession();
     setScreen(SCREENS.CHOOSE_STYLE);
   }, []);
 
