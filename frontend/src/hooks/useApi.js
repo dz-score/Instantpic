@@ -34,7 +34,6 @@ export default function useApi() {
       const data = await r.json();
       setConfig(data);
       configRef.current = data;
-      logger.debug('config', 'config_loaded', 'Config loaded from backend');
       return data;
     } catch (e) {
       logger.error('api', 'api_error', `Failed to load config: ${e.message}`, { endpoint: '/api/config', error: e.message });

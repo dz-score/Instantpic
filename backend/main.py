@@ -67,7 +67,6 @@ class SavePhotoRequest(BaseModel):
 async def get_config():
     """Retrieve current application settings."""
     settings = load_settings()
-    log.debug("config", "config_loaded", "Config loaded")
     return settings
 
 @app.post("/api/config", response_model=AppSettings)
