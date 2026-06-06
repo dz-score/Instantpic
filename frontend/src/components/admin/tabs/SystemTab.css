@@ -254,3 +254,173 @@
 .sys-pin-cancel:active {
   transform: scale(0.97);
 }
+
+/* ── Log Viewer ── */
+.sys-log-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-sm);
+  flex-wrap: wrap;
+}
+
+.sys-log-filters {
+  display: flex;
+  gap: var(--space-xs);
+}
+
+.sys-log-select {
+  height: 36px;
+  padding: 0 var(--space-sm);
+  border-radius: var(--radius-sm);
+  border: 1.5px solid var(--surface-border);
+  background: var(--bg-elevated);
+  font-family: var(--font-body);
+  font-size: var(--text-small);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.sys-log-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.sys-log-auto {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.sys-log-auto input {
+  accent-color: var(--gold);
+}
+
+.sys-log-refresh {
+  height: 36px;
+  padding: 0 var(--space-sm);
+  border-radius: var(--radius-sm);
+  border: 1.5px solid var(--surface-border);
+  background: var(--bg-elevated);
+  font-size: var(--text-small);
+  font-weight: 600;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all var(--duration-fast) ease;
+}
+
+.sys-log-refresh:active {
+  transform: scale(0.97);
+  background: var(--champagne-light);
+}
+
+.sys-log-refresh:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Table wrapper — scrollable */
+.sys-log-table-wrap {
+  max-height: 400px;
+  overflow-y: auto;
+  overflow-x: auto;
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-base);
+}
+
+.sys-log-empty {
+  padding: var(--space-lg);
+  text-align: center;
+  font-size: var(--text-caption);
+  color: var(--text-secondary);
+}
+
+.sys-log-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: 'Menlo', 'Consolas', 'Monaco', monospace;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.sys-log-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.sys-log-table th {
+  background: var(--bg-elevated);
+  padding: 6px 10px;
+  text-align: left;
+  font-weight: 600;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-secondary);
+  border-bottom: 2px solid var(--surface-border);
+  white-space: nowrap;
+}
+
+.sys-log-table td {
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--surface-border);
+  white-space: nowrap;
+  color: var(--text-primary);
+}
+
+.sys-log-msg {
+  white-space: normal !important;
+  word-break: break-word;
+  max-width: 400px;
+}
+
+/* ── Row colors by level ── */
+.sys-log-row--error {
+  background: rgba(194, 112, 112, 0.08);
+}
+
+.sys-log-row--error .sys-log-level {
+  color: var(--error);
+  font-weight: 700;
+}
+
+.sys-log-row--warn {
+  background: rgba(240, 173, 78, 0.08);
+}
+
+.sys-log-row--warn .sys-log-level {
+  color: #d4940a;
+  font-weight: 700;
+}
+
+.sys-log-row--info .sys-log-level {
+  color: var(--text-secondary);
+}
+
+.sys-log-row--debug .sys-log-level {
+  color: var(--champagne);
+}
+
+/* ── Cell-specific ── */
+.sys-log-ts {
+  color: var(--text-secondary);
+}
+
+.sys-log-src {
+  font-weight: 600;
+  font-size: 10px;
+}
+
+.sys-log-mod,
+.sys-log-evt {
+  color: var(--gold);
+  font-size: 10px;
+}

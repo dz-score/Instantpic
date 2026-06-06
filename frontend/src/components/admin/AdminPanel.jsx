@@ -25,6 +25,7 @@ export default function AdminPanel({
   getDiagnostics,
   emergencyAction,
   changePin,
+  getRecentLogs,
 }) {
   const [authed, setAuthed] = useState(false);
   const [activeTab, setActiveTab] = useState('event');
@@ -165,6 +166,7 @@ export default function AdminPanel({
               emergencyAction={emergencyAction}
               changePin={changePin}
               currentPin={adminPin}
+              getRecentLogs={getRecentLogs}
             />
           )}
         </div>

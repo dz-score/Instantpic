@@ -152,6 +152,13 @@ export default function useApi() {
     return await r.json();
   }, [fetchConfig]);
 
+  /* ── Recent Logs ── */
+  const getRecentLogs = useCallback(async (count = 50, source = 'both') => {
+    const r = await fetch(`${API}/api/logs/recent?count=${count}&source=${source}`);
+    if (!r.ok) throw new Error('Failed to fetch logs');
+    return await r.json();
+  }, []);
+
   return {
     config,
     isOnline,
@@ -165,5 +172,6 @@ export default function useApi() {
     getDiagnostics,
     emergencyAction,
     changePin,
+    getRecentLogs,
   };
 }

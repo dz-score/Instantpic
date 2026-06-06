@@ -193,6 +193,51 @@ async def receive_frontend_logs(batch: FrontendLogBatch):
         log.write_frontend_line(line)
     return {"status": "ok", "count": len(batch.lines)}
 
+@app.get("/api/logs/recent")
+async def get_recent_logs(count: int = 50, source: str = "both"):
+    """Tail the last N lines from log files. source: 'backend', 'frontend', or 'both'."""
+    import json as _json
+    from backend.logger import BACKEND_LOG, FRONTEND_LOG
+
+    def tail_file(filepath, n):
+        """Read last n lines from a file efficiently."""
+        try:
+            with open(filepath, "rb") as f:
+                # Seek to end
+                f.seek(0, 2)
+                size = f.tell()
+                if size == 0:
+                    return []
+                # Read last chunk (generous: 1KB per line estimate)
+                chunk_size = min(size, n * 1024)
+                f.seek(max(0, size - chunk_size))
+                data = f.read().decode("utf-8", errors="replace")
+                lines = data.strip().split("\n")
+                return lines[-n:]
+        except FileNotFoundError:
+            return []
+
+    entries = []
+
+    if source in ("backend", "both"):
+        for line in tail_file(BACKEND_LOG, count):
+            try:
+                entries.append(_json.loads(line))
+            except _json.JSONDecodeError:
+                pass
+
+    if source in ("frontend", "both"):
+        for line in tail_file(FRONTEND_LOG, count):
+            try:
+                entries.append(_json.loads(line))
+            except _json.JSONDecodeError:
+                pass
+
+    # Sort by timestamp descending (newest first) and cap
+    entries.sort(key=lambda e: e.get("ts", ""), reverse=True)
+    return entries[:count]
+
+
 @app.get("/api/qrcode")
 async def get_qrcode(text: str):
     """Generate a QR code dynamically for the local download link."""

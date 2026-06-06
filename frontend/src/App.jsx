@@ -363,6 +363,7 @@ export default function App() {
           getDiagnostics={api.getDiagnostics}
           emergencyAction={api.emergencyAction}
           changePin={api.changePin}
+          getRecentLogs={api.getRecentLogs}
         />
       )}
     </div>

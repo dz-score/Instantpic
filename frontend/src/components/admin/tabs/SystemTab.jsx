@@ -2,10 +2,10 @@ import React, { useState, useEffect, useCallback } from 'react';
 import './SystemTab.css';
 
 /**
- * System tab — live diagnostics, emergency controls, PIN change.
+ * System tab — live diagnostics, emergency controls, PIN change, log viewer.
  * Auto-refreshes diagnostics every 5 seconds.
  */
-export default function SystemTab({ getDiagnostics, emergencyAction, changePin, currentPin }) {
+export default function SystemTab({ getDiagnostics, emergencyAction, changePin, currentPin, getRecentLogs }) {
   const [diagnostics, setDiagnostics] = useState(null);
   const [loading, setLoading] = useState({});
   const [confirmAction, setConfirmAction] = useState(null);
@@ -17,6 +17,13 @@ export default function SystemTab({ getDiagnostics, emergencyAction, changePin, 
   const [confirmPin, setConfirmPin] = useState('');
   const [pinError, setPinError] = useState('');
   const [pinSuccess, setPinSuccess] = useState(false);
+
+  // Log viewer state
+  const [logs, setLogs] = useState([]);
+  const [logSource, setLogSource] = useState('both');
+  const [logLevel, setLogLevel] = useState('all');
+  const [logLoading, setLogLoading] = useState(false);
+  const [logAutoRefresh, setLogAutoRefresh] = useState(false);
 
   // Fetch diagnostics on mount and every 5s
   const fetchDiag = useCallback(async () => {
@@ -33,6 +40,25 @@ export default function SystemTab({ getDiagnostics, emergencyAction, changePin, 
     const id = setInterval(fetchDiag, 5000);
     return () => clearInterval(id);
   }, [fetchDiag]);
+
+  // Fetch logs
+  const fetchLogs = useCallback(async () => {
+    if (!getRecentLogs) return;
+    setLogLoading(true);
+    try {
+      const data = await getRecentLogs(80, logSource);
+      setLogs(data);
+    } catch { /* silent */ }
+    finally { setLogLoading(false); }
+  }, [getRecentLogs, logSource]);
+
+  // Auto-refresh logs
+  useEffect(() => {
+    if (!logAutoRefresh) return;
+    fetchLogs();
+    const id = setInterval(fetchLogs, 5000);
+    return () => clearInterval(id);
+  }, [logAutoRefresh, fetchLogs]);
 
   // Emergency action with confirmation
   const handleEmergency = async (action) => {
@@ -234,6 +260,89 @@ export default function SystemTab({ getDiagnostics, emergencyAction, changePin, 
             </div>
           </div>
         )}
+      </section>
+
+      {/* ═══ Recent Logs ═══ */}
+      <section className="sys-section">
+        <h3 className="sys-section__title">Recent Logs</h3>
+
+        <div className="sys-log-controls">
+          <div className="sys-log-filters">
+            <select
+              className="sys-log-select"
+              value={logSource}
+              onChange={(e) => setLogSource(e.target.value)}
+            >
+              <option value="both">All Sources</option>
+              <option value="backend">Backend</option>
+              <option value="frontend">Frontend</option>
+            </select>
+            <select
+              className="sys-log-select"
+              value={logLevel}
+              onChange={(e) => setLogLevel(e.target.value)}
+            >
+              <option value="all">All Levels</option>
+              <option value="ERROR">Errors</option>
+              <option value="WARN">Warnings</option>
+              <option value="INFO">Info</option>
+            </select>
+          </div>
+          <div className="sys-log-actions">
+            <label className="sys-log-auto">
+              <input
+                type="checkbox"
+                checked={logAutoRefresh}
+                onChange={(e) => setLogAutoRefresh(e.target.checked)}
+              />
+              Auto
+            </label>
+            <button
+              className="sys-log-refresh"
+              onClick={fetchLogs}
+              disabled={logLoading}
+            >
+              {logLoading ? '…' : '↻ Refresh'}
+            </button>
+          </div>
+        </div>
+
+        <div className="sys-log-table-wrap">
+          {logs.length === 0 ? (
+            <p className="sys-log-empty">
+              {logLoading ? 'Loading…' : 'No logs yet. Tap Refresh to load.'}
+            </p>
+          ) : (
+            <table className="sys-log-table">
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Lvl</th>
+                  <th>Src</th>
+                  <th>Module</th>
+                  <th>Event</th>
+                  <th>Message</th>
+                </tr>
+              </thead>
+              <tbody>
+                {logs
+                  .filter((l) => logLevel === 'all' || l.level === logLevel)
+                  .map((entry, i) => (
+                    <tr key={i} className={`sys-log-row sys-log-row--${(entry.level || '').toLowerCase()}`}>
+                      <td className="sys-log-ts">
+                        {entry.ts ? new Date(entry.ts).toLocaleTimeString() : '—'}
+                      </td>
+                      <td className="sys-log-level">{entry.level}</td>
+                      <td className="sys-log-src">{entry.source === 'backend' ? 'BE' : 'FE'}</td>
+                      <td className="sys-log-mod">{entry.module}</td>
+                      <td className="sys-log-evt">{entry.event}</td>
+                      <td className="sys-log-msg">{entry.msg}</td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          )}
+        </div>
       </section>
     </div>
   );
