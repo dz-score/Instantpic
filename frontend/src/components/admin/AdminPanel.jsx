@@ -66,6 +66,7 @@ export default function AdminPanel({
         max_photos: form.max_photos,
         disk_min_free_gb: form.disk_min_free_gb,
         show_names_on_photo: form.show_names_on_photo,
+        wifi_network_name: form.wifi_network_name,
       });
       setDirty(false);
       setSaved(true);
