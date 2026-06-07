@@ -319,6 +319,7 @@ export default function App() {
           finalPhoto={finalPhoto}
           printPhoto={api.printPhoto}
           getQrUrl={api.getQrUrl}
+          getDownloadUrl={api.getDownloadUrl}
           config={api.config}
           onFinish={handleFinish}
           onAnother={handleAnother}

@@ -26,6 +26,7 @@ export default function PrintingScreen({
   finalPhoto,
   printPhoto,
   getQrUrl,
+  getDownloadUrl,
   config,
   onFinish,
   onAnother,
@@ -34,7 +35,7 @@ export default function PrintingScreen({
   const [countdown, setCountdown] = useState(AUTO_RESET_SECONDS);
   const countdownRef = useRef(null);
 
-  const downloadUrl = `${window.location.origin}/download/${finalPhoto}`;
+  const downloadUrl = getDownloadUrl(finalPhoto);
   const qrSrc = getQrUrl(downloadUrl);
 
   // Trigger print

@@ -10,6 +10,7 @@ export default function useApi() {
   const [config, setConfig] = useState(null);
   const [isOnline, setIsOnline] = useState(true);
   const [gallery, setGallery] = useState([]);
+  const [boothBaseUrl, setBoothBaseUrl] = useState('');
   const configRef = useRef(null);
 
   /* ── Health check ── */
@@ -42,6 +43,20 @@ export default function useApi() {
   }, []);
 
   useEffect(() => { fetchConfig(); }, [fetchConfig]);
+
+  /* ── Fetch booth LAN IP on mount ── */
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await fetch(`${API}/api/network-info`);
+        const data = await r.json();
+        setBoothBaseUrl(data.base_url || '');
+      } catch {
+        // Fallback: use current origin (works for same-device access)
+        setBoothBaseUrl(window.location.origin);
+      }
+    })();
+  }, []);
 
   /* ── Gallery ── */
   const fetchGallery = useCallback(async () => {
@@ -113,7 +128,12 @@ export default function useApi() {
     return data;
   }, []);
 
-  /* ── QR helper ── */
+  /* ── QR / download helpers ── */
+  const getDownloadUrl = useCallback((filename) => {
+    const base = boothBaseUrl || window.location.origin;
+    return `${base}/download/${filename}`;
+  }, [boothBaseUrl]);
+
   const getQrUrl = useCallback((downloadUrl) => {
     return `${API}/api/qrcode?text=${encodeURIComponent(downloadUrl)}`;
   }, []);
@@ -169,6 +189,7 @@ export default function useApi() {
     printPhoto,
     saveConfig,
     getQrUrl,
+    getDownloadUrl,
     getDiagnostics,
     emergencyAction,
     changePin,

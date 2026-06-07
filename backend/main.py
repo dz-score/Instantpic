@@ -253,6 +253,47 @@ async def get_qrcode(text: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"QR generation failed: {str(e)}")
 
+# --- Network Info (for QR code URLs) ---
+def _get_lan_ip():
+    """Get the machine's LAN IP address."""
+    import socket
+    try:
+        # Connect to an external address to determine the outbound interface
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.settimeout(0.5)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return "127.0.0.1"
+
+@app.get("/api/network-info")
+async def get_network_info():
+    """Return the booth's LAN IP and port for QR code URL generation."""
+    settings = load_settings()
+    ip = _get_lan_ip()
+    port = getattr(settings, "port", 8000)
+    return {
+        "ip": ip,
+        "port": port,
+        "base_url": f"http://{ip}:{port}",
+    }
+
+# --- Photo Download (for guests scanning QR) ---
+@app.get("/download/{filename}")
+async def download_photo(filename: str):
+    """Serve a photo as a downloadable file for guest phones."""
+    filepath = os.path.join(PHOTOS_DIR, filename)
+    if not os.path.exists(filepath):
+        raise HTTPException(status_code=404, detail="Photo not found")
+    return FileResponse(
+        filepath,
+        media_type="image/jpeg",
+        filename=filename,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
 # Serve Static Folders
 app.mount("/photos", StaticFiles(directory=PHOTOS_DIR), name="photos")
 app.mount("/overlays", StaticFiles(directory=OVERLAYS_DIR), name="overlays")
