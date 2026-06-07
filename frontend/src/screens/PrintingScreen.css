@@ -383,3 +383,17 @@
   color: var(--text-secondary);
   opacity: 0.6;
 }
+
+/* WiFi Pill */
+.print-done__wifi-pill {
+  display: inline-block;
+  background-color: var(--gold-light);
+  color: var(--text-main);
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  font-weight: 700;
+  font-size: 0.8rem;
+  margin-left: 6px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  border: 1px solid var(--gold);
+}

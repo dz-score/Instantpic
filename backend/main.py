@@ -55,6 +55,7 @@ class ConfigUpdateRequest(BaseModel):
     max_photos_per_session: Optional[int] = None
     session_timeout: Optional[int] = None
     show_names_on_photo: Optional[bool] = None
+    wifi_network_name: Optional[str] = None
 
 class SavePhotoRequest(BaseModel):
     images: List[str]  # Base64 data URIs

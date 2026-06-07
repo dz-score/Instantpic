@@ -164,7 +164,10 @@ export default function PrintingScreen({
               <div className="print-done__qr-steps">
                 <p className="print-done__qr-step">
                   <span className="print-done__qr-num">1</span>
-                  {t('printing.step1', language).replace('{wifiName}', config?.wifi_network_name || '')}
+                  {t('printing.step1', language).replace('{wifiName}', '').trim()}
+                  {config?.wifi_network_name && (
+                    <span className="print-done__wifi-pill">{config.wifi_network_name}</span>
+                  )}
                 </p>
                 <p className="print-done__qr-step">
                   <span className="print-done__qr-num">2</span>
