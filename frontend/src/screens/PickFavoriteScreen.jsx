@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import ScreenShell from '../components/ScreenShell';
+import { t } from '../utils/i18n';
 import './PickFavoriteScreen.css';
 
 /**
@@ -20,6 +21,7 @@ export default function PickFavoriteScreen({
   onSelect,
   onBack,
   isProcessing,
+  language,
 }) {
   const [selected, setSelected] = useState(allPhotos.length - 1);
 
@@ -30,7 +32,7 @@ export default function PickFavoriteScreen({
       {onBack && (
         <button className="pick-fav__home" onClick={onBack}>
           <span className="pick-fav__home-icon">⌂</span>
-          <span className="pick-fav__home-text">Back to Home</span>
+          <span className="pick-fav__home-text">{t('framePicker.home', language)}</span>
         </button>
       )}
 
@@ -45,12 +47,11 @@ export default function PickFavoriteScreen({
       </div>
 
       {/* ── Heading ── */}
-      <p className="pick-fav__kicker">♥ That's a Wrap! ♥</p>
-      <h1 className="pick-fav__title">Choose Your Favorite</h1>
+      <p className="pick-fav__kicker">{t('pickFavorite.kicker', language)}</p>
+      <h1 className="pick-fav__title">{t('pickFavorite.title', language)}</h1>
       <span className="pick-fav__heart" aria-hidden="true">♥</span>
       <p className="pick-fav__subtitle">
-        You've reached the max retakes.<br />
-        Pick the photo you'd like to keep!
+        {t('pickFavorite.subtitle', language)}
       </p>
 
       {/* ── Photo grid ── */}
@@ -86,8 +87,8 @@ export default function PickFavoriteScreen({
           </span>
           <span className="pick-fav__cam-curl pick-fav__cam-curl--flip">«««</span>
         </div>
-        <p className="pick-fav__tagline">Every smile, every moment, beautifully you.</p>
-        <p className="pick-fav__tagline-script">We can't wait for you to see it!</p>
+        <p className="pick-fav__tagline">{t('pickFavorite.tagline', language)}</p>
+        <p className="pick-fav__tagline-script">{t('pickFavorite.taglineScript', language)}</p>
       </div>
 
       {/* ── Actions ── */}
@@ -99,7 +100,7 @@ export default function PickFavoriteScreen({
         >
           <span className="pick-fav__confirm-icon">✓</span>
           <span className="pick-fav__confirm-text">
-            {isProcessing ? 'Processing…' : 'Confirm Selection'}
+            {isProcessing ? t('pickFavorite.processing', language) : t('pickFavorite.confirm', language)}
           </span>
         </button>
       </div>

@@ -1,24 +1,12 @@
 import React from 'react';
 import ScreenShell from '../components/ScreenShell';
+import { t } from '../utils/i18n';
 import './ChooseStyleScreen.css';
 
 /**
  * Mode selection — Single Classic vs 3-Photo Collage.
- *
- * Layout:
- *   - Decorative hearts + flourish (top)
- *   - "CHOOSE YOUR" (small caps)
- *   - "Photo Experience" (large script, gold)
- *   - Subtitle
- *   - Two large cards side by side:
- *     - Circle icon badge on top
- *     - Preview image inside (polaroid / strip)
- *     - Title + subtitle below
- *   - Back button (blush pill)
- *
- * Background from ScreenShell (bg-wedding.png).
  */
-export default function ChooseStyleScreen({ onSelect, onBack }) {
+export default function ChooseStyleScreen({ onSelect, onBack, language }) {
   return (
     <ScreenShell className="choose-screen">
 
@@ -33,10 +21,10 @@ export default function ChooseStyleScreen({ onSelect, onBack }) {
       </div>
 
       {/* ── Heading ── */}
-      <p className="choose-kicker">Choose Your</p>
-      <h1 className="choose-title">Photo Experience</h1>
+      <p className="choose-kicker">{t('chooseStyle.kicker', language)}</p>
+      <h1 className="choose-title">{t('chooseStyle.title', language)}</h1>
       <span className="choose-title__heart" aria-hidden="true">♥</span>
-      <p className="choose-subtitle">Pick your favorite way to capture memories!</p>
+      <p className="choose-subtitle">{t('chooseStyle.subtitle', language) || 'Pick your favorite way to capture memories!'}</p>
 
       {/* ── Cards ── */}
       <div className="choose-cards">
@@ -53,8 +41,8 @@ export default function ChooseStyleScreen({ onSelect, onBack }) {
           <div className="choose-card__preview">
             <img src="/preview-single.png" alt="Single photo" className="choose-card__img" />
           </div>
-          <h2 className="choose-card__title">Single Classic</h2>
-          <p className="choose-card__desc">One Beautiful Photo</p>
+          <h2 className="choose-card__title">{t('chooseStyle.singleTitle', language)}</h2>
+          <p className="choose-card__desc">{t('chooseStyle.singleDesc', language)}</p>
         </button>
 
         {/* Collage Strip Card */}
@@ -69,8 +57,8 @@ export default function ChooseStyleScreen({ onSelect, onBack }) {
           <div className="choose-card__preview">
             <img src="/preview-collage.png" alt="Photo strip" className="choose-card__img" />
           </div>
-          <h2 className="choose-card__title">3-Photo Collage</h2>
-          <p className="choose-card__desc">Three Moments, One Strip</p>
+          <h2 className="choose-card__title">{t('chooseStyle.collageTitle', language)}</h2>
+          <p className="choose-card__desc">{t('chooseStyle.collageDesc', language)}</p>
         </button>
 
       </div>
@@ -78,7 +66,7 @@ export default function ChooseStyleScreen({ onSelect, onBack }) {
       {/* ── Back Button ── */}
       <button className="choose-back" onClick={onBack}>
         <span className="choose-back__icon">⌂</span>
-        <span className="choose-back__text">Back to Home</span>
+        <span className="choose-back__text">{t('framePicker.home', language)}</span>
       </button>
 
     </ScreenShell>

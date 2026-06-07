@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ScreenShell from '../components/ScreenShell';
+import { t } from '../utils/i18n';
 import './PrintingScreen.css';
 
 const AUTO_RESET_SECONDS = 25;
@@ -30,6 +31,7 @@ export default function PrintingScreen({
   config,
   onFinish,
   onAnother,
+  language,
 }) {
   const [phase, setPhase] = useState('PRINTING');
   const [countdown, setCountdown] = useState(AUTO_RESET_SECONDS);
@@ -95,8 +97,8 @@ export default function PrintingScreen({
             <span className="print-loading__curl print-loading__curl--flip">❧</span>
           </div>
 
-          <h1 className="print-loading__title">Printing Your Memory</h1>
-          <p className="print-loading__sub">This will just take a moment…</p>
+          <h1 className="print-loading__title">{t('printing.printMemory', language)}</h1>
+          <p className="print-loading__sub">{t('printing.justAMoment', language)}</p>
 
           <div className="print-loading__dots">
             <span className="print-loading__dot" />
@@ -123,13 +125,13 @@ export default function PrintingScreen({
           {/* Heading */}
           {phase === 'DONE' ? (
             <>
-              <p className="print-done__kicker">♥ All Done! ♥</p>
-              <h1 className="print-done__title">Your Print is on its Way!</h1>
+              <p className="print-done__kicker">{t('printing.doneKicker', language)}</p>
+              <h1 className="print-done__title">{t('printing.doneTitle', language)}</h1>
             </>
           ) : (
             <>
-              <p className="print-done__kicker">♥ Almost There ♥</p>
-              <h1 className="print-done__title">Save Your Photo</h1>
+              <p className="print-done__kicker">{t('printing.almostThereKicker', language)}</p>
+              <h1 className="print-done__title">{t('printing.savePhotoTitle', language)}</h1>
             </>
           )}
 
@@ -153,7 +155,7 @@ export default function PrintingScreen({
             <div className="print-done__qr-section">
               <div className="print-done__qr-header">
                 <span className="print-done__qr-dash" />
-                <span className="print-done__qr-label">Save to Phone</span>
+                <span className="print-done__qr-label">{t('printing.saveToPhone', language)}</span>
                 <span className="print-done__qr-dash" />
               </div>
               <div className="print-done__qr-frame">
@@ -162,11 +164,11 @@ export default function PrintingScreen({
               <div className="print-done__qr-steps">
                 <p className="print-done__qr-step">
                   <span className="print-done__qr-num">1</span>
-                  Connect to WiFi
+                  {t('printing.step1', language)}
                 </p>
                 <p className="print-done__qr-step">
                   <span className="print-done__qr-num">2</span>
-                  Scan this code
+                  {t('printing.step2', language)}
                 </p>
               </div>
             </div>
@@ -189,15 +191,15 @@ export default function PrintingScreen({
             <button className="print-done__btn-another" onClick={handleAnother}>
               <span className="print-done__btn-icon">📸</span>
               <div className="print-done__btn-text">
-                <span className="print-done__btn-main">Take Another Photo!</span>
-                <span className="print-done__btn-sub">Start New Session</span>
+                <span className="print-done__btn-main">{t('printing.takeAnother', language)}</span>
+                <span className="print-done__btn-sub">{t('printing.startNew', language)}</span>
               </div>
             </button>
           </div>
 
           {/* Countdown */}
           <p className="print-done__countdown">
-            Returning home in {countdown}s…
+            {t('printing.returning', language).replace('{countdown}', countdown)}
           </p>
         </div>
       )}

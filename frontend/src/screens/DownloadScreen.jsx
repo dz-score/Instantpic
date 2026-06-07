@@ -1,18 +1,19 @@
 import React from 'react';
 import Button from '../components/Button';
+import { t } from '../utils/i18n';
 import './DownloadScreen.css';
 
 /**
  * Mobile guest download page (accessed via QR code / /download/:filename URL).
  * Standalone — no header, no kiosk layout.
  */
-export default function DownloadScreen({ filename }) {
+export default function DownloadScreen({ filename, language = 'en' }) {
   if (!filename) {
     return (
       <div className="download-screen">
         <div className="download-card">
-          <h1 className="download-title">Photo Not Found</h1>
-          <p className="download-text">This link may have expired.</p>
+          <h1 className="download-title">{t('download.notFound', language)}</h1>
+          <p className="download-text">{t('download.expired', language)}</p>
         </div>
       </div>
     );
@@ -22,8 +23,8 @@ export default function DownloadScreen({ filename }) {
     <div className="download-screen">
       <div className="download-card">
         <div className="download-header">
-          <h1 className="download-title">Your Keepsake</h1>
-          <p className="download-text">Thank you for celebrating with us!</p>
+          <h1 className="download-title">{t('download.keepsake', language)}</h1>
+          <p className="download-text">{t('download.thankYou', language)}</p>
         </div>
 
         <div className="download-photo">
@@ -39,11 +40,11 @@ export default function DownloadScreen({ filename }) {
           download={filename}
           className="download-save-btn"
         >
-          Save to Device
+          {t('download.saveBtn', language)}
         </a>
 
         <p className="download-tip">
-          Tip: If the download doesn't start, tap and hold the image to save it to your photo library.
+          {t('download.tip', language)}
         </p>
       </div>
     </div>

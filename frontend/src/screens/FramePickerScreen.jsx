@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import ScreenShell from '../components/ScreenShell';
+import { t } from '../utils/i18n';
 import './FramePickerScreen.css';
 
 /**
@@ -24,6 +25,7 @@ export default function FramePickerScreen({
   onSkip,
   onBack,
   isProcessing,
+  language,
 }) {
   const [selected, setSelected] = useState(currentOverlay || 'none');
   const selectedOverlay = overlays.find((o) => o.id === selected) || null;
@@ -43,7 +45,7 @@ export default function FramePickerScreen({
       {onBack && (
         <button className="frame__home" onClick={onBack}>
           <span className="frame__home-icon">⌂</span>
-          <span className="frame__home-text">Back to Home</span>
+          <span className="frame__home-text">{t('framePicker.home', language)}</span>
         </button>
       )}
 
@@ -58,9 +60,9 @@ export default function FramePickerScreen({
       </div>
 
       {/* ── Heading ── */}
-      <p className="frame__kicker">♥ Make it Yours ♥</p>
-      <h1 className="frame__title">Choose Your Frame</h1>
-      <p className="frame__subtitle">Pick a style you love!</p>
+      <p className="frame__kicker">{t('framePicker.kicker', language)}</p>
+      <h1 className="frame__title">{t('framePicker.title', language)}</h1>
+      <p className="frame__subtitle">{t('framePicker.subtitle', language)}</p>
 
       {/* ── Main content: preview + frame cards ── */}
       <div className="frame__body">
@@ -88,7 +90,7 @@ export default function FramePickerScreen({
         <div className="frame__options">
           <div className="frame__options-header">
             <span className="frame__options-dash" />
-            <span className="frame__options-label">Choose a Frame</span>
+            <span className="frame__options-label">{t('framePicker.chooseLabel', language)}</span>
             <span className="frame__options-dash" />
           </div>
 
@@ -138,16 +140,16 @@ export default function FramePickerScreen({
           </svg>
           <div className="frame__btn-print-text">
             <span className="frame__btn-print-main">
-              {isProcessing ? 'Applying…' : 'Print & Share'}
+              {isProcessing ? t('framePicker.applying', language) : t('framePicker.printBtn', language)}
             </span>
-            <span className="frame__btn-print-sub">Get Your Photo</span>
+            <span className="frame__btn-print-sub">{t('framePicker.printSub', language)}</span>
           </div>
         </button>
       </div>
 
       {/* ── Footer ── */}
       <p className="frame__footer">
-        — Thank you for celebrating with us! —
+        {t('framePicker.footer', language)}
       </p>
 
     </ScreenShell>

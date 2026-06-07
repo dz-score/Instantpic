@@ -3,6 +3,7 @@ import ScreenShell from '../components/ScreenShell';
 import PhotoFrame from '../components/PhotoFrame';
 import ConfettiOverlay from '../components/ConfettiOverlay';
 import { getRandomCompliment } from '../utils/compliments';
+import { t } from '../utils/i18n';
 import './RevealScreen.css';
 
 /**
@@ -27,6 +28,7 @@ export default function RevealScreen({
   maxRetakes = 3,
   onRetake,
   onPrint,
+  language,
 }) {
   const compliment = useMemo(() => getRandomCompliment(), [finalPhoto]);
   const [showPhoto, setShowPhoto] = useState(false);
@@ -50,8 +52,8 @@ export default function RevealScreen({
         /* ── Loading State ── */
         <div className="reveal-loading">
           <div className="reveal-spinner" />
-          <p className="reveal-loading__kicker">Creating Your Keepsake</p>
-          <p className="reveal-loading__sub">Just a moment…</p>
+          <p className="reveal-loading__kicker">{t('reveal.creatingKeepsake', language)}</p>
+          <p className="reveal-loading__sub">{t('reveal.justAMoment', language)}</p>
         </div>
       ) : finalPhoto ? (
         /* ── Photo Reveal ── */
@@ -68,8 +70,8 @@ export default function RevealScreen({
           </div>
 
           {/* Heading */}
-          <p className="reveal-kicker">Your Moment</p>
-          <h1 className="reveal-title">Beautifully Captured</h1>
+          <p className="reveal-kicker">{t('reveal.kicker', language)}</p>
+          <h1 className="reveal-title">{t('reveal.title', language)}</h1>
 
           {/* Photo */}
           <div className="reveal-photo-wrap">
@@ -91,17 +93,17 @@ export default function RevealScreen({
                 <span className="reveal-btn-retake__icon">↺</span>
                 <div className="reveal-btn-retake__text">
                   <span className="reveal-btn-retake__main">
-                    {isLastRetake ? 'Last Try!' : 'Retake Photo'}
+                    {isLastRetake ? t('reveal.lastTry', language) : t('reveal.retake', language)}
                   </span>
-                  <span className="reveal-btn-retake__sub">Try Again</span>
+                  <span className="reveal-btn-retake__sub">{t('reveal.tryAgain', language)}</span>
                 </div>
               </button>
             )}
             <button className="reveal-btn-print" onClick={onPrint}>
               <span className="reveal-btn-print__icon">♡</span>
               <div className="reveal-btn-print__text">
-                <span className="reveal-btn-print__main">Love It!</span>
-                <span className="reveal-btn-print__sub">Continue to Print</span>
+                <span className="reveal-btn-print__main">{t('reveal.loveIt', language)}</span>
+                <span className="reveal-btn-print__sub">{t('reveal.continuePrint', language)}</span>
               </div>
             </button>
           </div>
@@ -109,17 +111,17 @@ export default function RevealScreen({
           {/* Retake indicator */}
           {canRetake && (
             <p className="reveal-retake-info">
-              {retakeCount} of {maxRetakes} retakes used
+              {t('reveal.retakeInfo', language).replace('{count}', retakeCount).replace('{max}', maxRetakes)}
             </p>
           )}
         </div>
       ) : (
         /* ── Error State ── */
         <div className="reveal-error">
-          <p className="reveal-error__text">Something went wrong. Please try again.</p>
+          <p className="reveal-error__text">{t('reveal.error', language)}</p>
           <button className="reveal-btn-retake" onClick={onRetake}>
             <span className="reveal-btn-retake__icon">↺</span>
-            <span className="reveal-btn-retake__main">Retake</span>
+            <span className="reveal-btn-retake__main">{t('reveal.retakeMain', language)}</span>
           </button>
         </div>
       )}

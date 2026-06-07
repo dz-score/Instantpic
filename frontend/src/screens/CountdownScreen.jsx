@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import CountdownRing from '../components/CountdownRing';
 import ProgressDots from '../components/ProgressDots';
 import { playShutterSound } from '../utils/sounds';
+import { t } from '../utils/i18n';
 import './CountdownScreen.css';
 
 const BETWEEN_SHOT_DELAY = 3000; // ms between collage shots
@@ -20,6 +21,7 @@ export default function CountdownScreen({
   captureFrame,
   onComplete,
   config,
+  language,
 }) {
   const COUNTDOWN_FROM = config?.countdown_duration || 3;
   const flashEnabled = config?.flash_enabled !== false;
@@ -127,8 +129,8 @@ export default function CountdownScreen({
             </div>
             <p className="countdown-between__text">
               {totalShots - (shotIndex + 1) === 1
-                ? 'Beautiful! 1 more to go — get ready!'
-                : `Great shot! ${totalShots - (shotIndex + 1)} more — get ready!`
+                ? t('countdown.oneMore', language)
+                : t('countdown.moreToGo', language).replace('{n}', totalShots - (shotIndex + 1))
               }
             </p>
           </div>

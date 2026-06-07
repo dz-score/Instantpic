@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import useCamera from './hooks/useCamera';
 import useApi from './hooks/useApi';
 import { logger, startSession, endSession } from './utils/logger';
+import { t } from './utils/i18n';
 
 // Screens
 import AttractScreen from './screens/AttractScreen';
@@ -29,6 +30,7 @@ const SCREENS = {
 };
 
 export default function App() {
+  const [language, setLanguage] = useState('en');
   const [screen, setScreen] = useState(SCREENS.ATTRACT);
   const [layoutMode, setLayoutMode] = useState('single');
   const [capturedImages, setCapturedImages] = useState([]);
@@ -258,17 +260,19 @@ export default function App() {
       {/* ─── Screen Router ─── */}
 
       {screen === SCREENS.ATTRACT && (
-        <AttractScreen
-          config={api.config}
-          gallery={api.gallery}
-          onStart={handleStart}
+        <AttractScreen 
+          config={api.config} 
+          onStart={handleStart} 
+          language={language}
+          setLanguage={setLanguage}
         />
       )}
 
       {screen === SCREENS.CHOOSE_STYLE && (
-        <ChooseStyleScreen
-          onSelect={handleSelectLayout}
+        <ChooseStyleScreen 
+          onSelect={handleSelectLayout} 
           onBack={() => setScreen(SCREENS.ATTRACT)}
+          language={language}
         />
       )}
 
@@ -279,6 +283,7 @@ export default function App() {
           captureFrame={camera.captureFrame}
           onComplete={handleCaptureComplete}
           config={api.config}
+          language={language}
         />
       )}
 
@@ -290,6 +295,7 @@ export default function App() {
           maxRetakes={api.config?.max_photos_per_session || 5}
           onRetake={handleRetake}
           onPrint={handlePrintFromReveal}
+          language={language}
         />
       )}
 
@@ -299,6 +305,7 @@ export default function App() {
           onSelect={handleFavoriteSelect}
           onBack={handleFinish}
           isProcessing={isProcessing}
+          language={language}
         />
       )}
 
@@ -311,6 +318,7 @@ export default function App() {
           onSkip={handleFrameSkip}
           onBack={handleFinish}
           isProcessing={isProcessing}
+          language={language}
         />
       )}
 
@@ -323,11 +331,12 @@ export default function App() {
           config={api.config}
           onFinish={handleFinish}
           onAnother={handleAnother}
+          language={language}
         />
       )}
 
       {screen === SCREENS.DOWNLOAD && (
-        <DownloadScreen filename={downloadFilename} />
+        <DownloadScreen filename={downloadFilename} language={language} />
       )}
 
       {/* ─── Offline Overlay ─── */}
@@ -339,8 +348,8 @@ export default function App() {
               <path d="M15 9l-6 6M9 9l6 6" />
             </svg>
           </div>
-          <h2 className="offline-title">Reconnecting…</h2>
-          <p className="offline-text">The photo booth will be back in a moment.</p>
+          <h2 className="offline-title">{t('offline.title', language) || 'Reconnecting...'}</h2>
+          <p className="offline-text">{t('offline.text', language) || 'The photo booth will be back in a moment.'}</p>
         </div>
       )}
 
