@@ -26,6 +26,7 @@ export default function FramePickerScreen({
   isProcessing,
 }) {
   const [selected, setSelected] = useState(currentOverlay || 'none');
+  const selectedOverlay = overlays.find((o) => o.id === selected) || null;
 
   const handleConfirm = () => {
     if (selected !== currentOverlay) {
@@ -64,7 +65,7 @@ export default function FramePickerScreen({
       {/* ── Main content: preview + frame cards ── */}
       <div className="frame__body">
 
-        {/* Large photo preview */}
+        {/* Large photo preview with live overlay */}
         <div className="frame__preview-wrap">
           <div className="frame__preview">
             <img
@@ -72,6 +73,14 @@ export default function FramePickerScreen({
               alt="Your photo"
               className="frame__preview-img"
             />
+            {/* Live overlay preview */}
+            {selectedOverlay && selectedOverlay.filename && (
+              <img
+                src={`/overlays/${selectedOverlay.filename}`}
+                alt=""
+                className="frame__preview-overlay"
+              />
+            )}
           </div>
         </div>
 

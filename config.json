@@ -4,20 +4,32 @@
   "thank_you_message": "Thank you for celebrating with us!",
   "countdown_duration": 3,
   "flash_enabled": true,
-  "max_photos_per_session": 3,
+  "max_photos_per_session": 2,
   "session_timeout": 120,
   "show_names_on_photo": true,
   "printer_name": "mock",
   "max_photos": 1000,
   "disk_min_free_gb": 2.0,
-  "couple_names": "Sarah & Michael",
-  "event_date": "June 14, 2026",
-  "default_text": "Sarah & Michael · June 14, 2026",
+  "couple_names": "jhaa & 3ati9a",
+  "event_date": "June 14, 2030",
+  "default_text": "jhaa & 3ati9a \u00b7 June 14, 2030",
   "port": 8000,
   "selected_overlay": "none",
   "overlays": [
-    {"id": "none", "name": "No Frame", "filename": ""},
-    {"id": "blush_floral", "name": "Chic Blush Floral", "filename": "blush_floral.png"},
-    {"id": "gold_glitter", "name": "Elegant Gold Frame", "filename": "gold_glitter.png"}
+    {
+      "id": "none",
+      "name": "No Frame",
+      "filename": ""
+    },
+    {
+      "id": "blush_floral",
+      "name": "Chic Blush Floral",
+      "filename": "frame_floral.png"
+    },
+    {
+      "id": "gold_glitter",
+      "name": "Elegant Gold Frame",
+      "filename": "frame_gold_elegant.png"
+    }
   ]
 }
