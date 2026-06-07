@@ -121,7 +121,9 @@ def process_photo_layout(images_base64: list, layout_type: str, text: str, overl
         if os.path.exists(overlay_path):
             try:
                 overlay_img = Image.open(overlay_path).convert("RGBA")
-                # Paste overlay using it's own alpha channel as a mask
+                # Resize overlay to match canvas dimensions
+                overlay_img = overlay_img.resize((1800, 1200), Image.LANCZOS)
+                # Paste overlay using its own alpha channel as a mask
                 canvas.paste(overlay_img, (0, 0), overlay_img)
             except Exception as e:
                 print(f"Error applying overlay template: {e}")

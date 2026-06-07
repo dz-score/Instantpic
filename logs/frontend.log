@@ -88,3 +88,31 @@
 {"ts":"2026-06-06T13:29:26.861Z","level":"INFO","source":"frontend","module":"session","event":"session_end","msg":"Guest chose to take another photo","sid":"s_78b26c","dur":null,"data":null}
 {"ts":"2026-06-06T13:29:26.861Z","level":"INFO","source":"frontend","module":"session","event":"session_end","msg":"Session ended: another","sid":"s_78b26c","dur":null,"data":{"reason":"another"}}
 {"ts":"2026-06-06T13:29:26.861Z","level":"INFO","source":"frontend","module":"session","event":"session_start","msg":"Guest tapped start","sid":"s_89222b","dur":null,"data":null}
+{"ts":"2026-06-06T13:31:27.615Z","level":"INFO","source":"frontend","module":"session","event":"session_start","msg":"Guest tapped start","sid":"s_3574de","dur":null,"data":null}
+{"ts":"2026-06-06T13:31:27.615Z","level":"INFO","source":"frontend","module":"ui","event":"ui_tap_start","msg":"Guest tapped start","sid":"s_3574de","dur":null,"data":null}
+{"ts":"2026-06-06T13:31:28.732Z","level":"INFO","source":"frontend","module":"ui","event":"ui_select_layout","msg":"Selected single layout","sid":"s_3574de","dur":null,"data":{"layout":"single"}}
+{"ts":"2026-06-06T13:31:32.160Z","level":"INFO","source":"frontend","module":"camera","event":"camera_capture","msg":"Captured 1 image(s)","sid":"s_3574de","dur":null,"data":null}
+{"ts":"2026-06-06T13:31:32.257Z","level":"INFO","source":"frontend","module":"api","event":"api_request","msg":"Photo saved: photo_d26616180d.jpg","sid":"s_3574de","dur":97,"data":{"endpoint":"/api/save-photo","filename":"photo_d26616180d.jpg"}}
+{"ts":"2026-06-06T13:31:35.295Z","level":"INFO","source":"frontend","module":"ui","event":"ui_retake","msg":"Retake #1","sid":"s_3574de","dur":null,"data":null}
+{"ts":"2026-06-06T13:31:38.736Z","level":"INFO","source":"frontend","module":"camera","event":"camera_capture","msg":"Captured 1 image(s)","sid":"s_3574de","dur":null,"data":null}
+{"ts":"2026-06-06T13:31:38.823Z","level":"INFO","source":"frontend","module":"api","event":"api_request","msg":"Photo saved: photo_ced561aa23.jpg","sid":"s_3574de","dur":87,"data":{"endpoint":"/api/save-photo","filename":"photo_ced561aa23.jpg"}}
+{"ts":"2026-06-06T13:31:44.790Z","level":"INFO","source":"frontend","module":"session","event":"session_end","msg":"Session finished normally","sid":"s_3574de","dur":null,"data":null}
+{"ts":"2026-06-06T13:31:44.790Z","level":"INFO","source":"frontend","module":"session","event":"session_end","msg":"Session ended: completed","sid":"s_3574de","dur":null,"data":{"reason":"completed"}}
+{"ts":"2026-06-06T13:33:48.386Z","level":"INFO","source":"frontend","module":"session","event":"session_start","msg":"Guest tapped start","sid":"s_c1bbbc","dur":null,"data":null}
+{"ts":"2026-06-06T13:33:48.386Z","level":"INFO","source":"frontend","module":"ui","event":"ui_tap_start","msg":"Guest tapped start","sid":"s_c1bbbc","dur":null,"data":null}
+{"ts":"2026-06-06T13:33:50.036Z","level":"INFO","source":"frontend","module":"ui","event":"ui_select_layout","msg":"Selected single layout","sid":"s_c1bbbc","dur":null,"data":{"layout":"single"}}
+{"ts":"2026-06-06T13:33:53.475Z","level":"INFO","source":"frontend","module":"camera","event":"camera_capture","msg":"Captured 1 image(s)","sid":"s_c1bbbc","dur":null,"data":null}
+{"ts":"2026-06-06T13:33:53.579Z","level":"INFO","source":"frontend","module":"api","event":"api_request","msg":"Photo saved: photo_bd0f1b8719.jpg","sid":"s_c1bbbc","dur":103,"data":{"endpoint":"/api/save-photo","filename":"photo_bd0f1b8719.jpg"}}
+{"ts":"2026-06-06T13:34:11.816Z","level":"INFO","source":"frontend","module":"ui","event":"ui_retake","msg":"Retake #1","sid":"s_c1bbbc","dur":null,"data":null}
+{"ts":"2026-06-06T13:34:15.237Z","level":"INFO","source":"frontend","module":"camera","event":"camera_capture","msg":"Captured 1 image(s)","sid":"s_c1bbbc","dur":null,"data":null}
+{"ts":"2026-06-06T13:34:15.350Z","level":"INFO","source":"frontend","module":"api","event":"api_request","msg":"Photo saved: photo_cfb6da0883.jpg","sid":"s_c1bbbc","dur":112,"data":{"endpoint":"/api/save-photo","filename":"photo_cfb6da0883.jpg"}}
+{"ts":"2026-06-06T14:22:01.900Z","level":"INFO","source":"frontend","module":"session","event":"session_start","msg":"Guest tapped start","sid":"s_7e7d67","dur":null,"data":null}
+{"ts":"2026-06-06T14:22:01.901Z","level":"INFO","source":"frontend","module":"ui","event":"ui_tap_start","msg":"Guest tapped start","sid":"s_7e7d67","dur":null,"data":null}
+{"ts":"2026-06-06T14:22:03.052Z","level":"INFO","source":"frontend","module":"ui","event":"ui_select_layout","msg":"Selected collage layout","sid":"s_7e7d67","dur":null,"data":{"layout":"collage"}}
+{"ts":"2026-06-06T14:22:17.242Z","level":"INFO","source":"frontend","module":"camera","event":"camera_init_ok","msg":"Camera initialized","sid":"s_7e7d67","dur":null,"data":{"width":1920,"height":1080}}
+{"ts":"2026-06-06T14:22:18.563Z","level":"INFO","source":"frontend","module":"camera","event":"camera_capture","msg":"Captured 3 image(s)","sid":"s_7e7d67","dur":null,"data":null}
+{"ts":"2026-06-06T14:22:18.722Z","level":"INFO","source":"frontend","module":"api","event":"api_request","msg":"Photo saved: photo_5a556ffced.jpg","sid":"s_7e7d67","dur":159,"data":{"endpoint":"/api/save-photo","filename":"photo_5a556ffced.jpg"}}
+{"ts":"2026-06-06T14:22:32.403Z","level":"INFO","source":"frontend","module":"printer","event":"printer_sent","msg":"Print requested: photo_5a556ffced.jpg","sid":"s_7e7d67","dur":null,"data":{"filename":"photo_5a556ffced.jpg"}}
+{"ts":"2026-06-06T14:22:32.407Z","level":"INFO","source":"frontend","module":"printer","event":"printer_done","msg":"Print completed: photo_5a556ffced.jpg","sid":"s_7e7d67","dur":null,"data":{"filename":"photo_5a556ffced.jpg"}}
+{"ts":"2026-06-06T14:22:57.563Z","level":"INFO","source":"frontend","module":"session","event":"session_end","msg":"Session finished normally","sid":"s_7e7d67","dur":null,"data":null}
+{"ts":"2026-06-06T14:22:57.563Z","level":"INFO","source":"frontend","module":"session","event":"session_end","msg":"Session ended: completed","sid":"s_7e7d67","dur":null,"data":{"reason":"completed"}}
