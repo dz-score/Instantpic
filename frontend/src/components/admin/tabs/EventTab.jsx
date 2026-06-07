@@ -56,6 +56,18 @@ export default function EventTab({ form, onChange }) {
         <div className="event-tab__divider" />
 
         <label className="admin-field">
+          <span className="admin-field__label">WiFi Network Name</span>
+          <input
+            className="admin-field__input"
+            type="text"
+            value={form.wifi_network_name || ''}
+            onChange={(e) => update('wifi_network_name', e.target.value)}
+            placeholder="Our Wedding WiFi"
+          />
+          <span className="admin-field__hint">Shown on the print screen so guests know which WiFi to connect to</span>
+        </label>
+
+        <label className="admin-field">
           <span className="admin-field__label">Welcome Message</span>
           <input
             className="admin-field__input"

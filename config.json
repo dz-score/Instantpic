@@ -15,6 +15,7 @@
   "default_text": "jhaa & 3ati9a \u00b7 June 14, 2030",
   "port": 8000,
   "selected_overlay": "none",
+  "wifi_network_name": "Our Wedding WiFi",
   "overlays": [
     {
       "id": "none",

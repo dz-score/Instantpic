@@ -29,6 +29,7 @@ class AppSettings(BaseModel):
     default_text: str
     port: int
     selected_overlay: str
+    wifi_network_name: str = "Our Wedding WiFi"
     overlays: List[OverlayConfig]
 
 def load_settings() -> AppSettings:
@@ -52,6 +53,7 @@ def load_settings() -> AppSettings:
             default_text="Sarah & Michael \u00b7 June 14, 2026",
             port=8000,
             selected_overlay="none",
+            wifi_network_name="Our Wedding WiFi",
             overlays=[
                 OverlayConfig(id="none", name="No Frame", filename=""),
                 OverlayConfig(id="blush_floral", name="Chic Blush Floral", filename="blush_floral.png"),
