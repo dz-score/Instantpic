@@ -87,11 +87,6 @@ export default function FramePickerScreen({
 
         {/* Frame options panel */}
         <div className="frame__options">
-          <div className="frame__options-header">
-            <span className="frame__options-dash" />
-            <span className="frame__options-label">{t('framePicker.chooseLabel', language)}</span>
-            <span className="frame__options-dash" />
-          </div>
 
           <div className="frame__cards">
             {overlays.map((overlay) => (
@@ -142,11 +137,6 @@ export default function FramePickerScreen({
           </span>
         </button>
       </div>
-
-      {/* ── Footer ── */}
-      <p className="frame__footer">
-        {t('framePicker.footer', language)}
-      </p>
 
     </ScreenShell>
   );

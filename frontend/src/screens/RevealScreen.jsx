@@ -30,7 +30,7 @@ export default function RevealScreen({
   onPrint,
   language,
 }) {
-  const compliment = useMemo(() => getRandomCompliment(), [finalPhoto]);
+  const compliment = useMemo(() => getRandomCompliment(language), [finalPhoto, language]);
   const [showPhoto, setShowPhoto] = useState(false);
   const isLastRetake = retakeCount >= maxRetakes - 1;
   const canRetake = retakeCount < maxRetakes;

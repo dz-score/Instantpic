@@ -1,7 +1,7 @@
 export const translations = {
   en: {
     welcome: {
-      kicker: 'Welcome to our',
+      kicker: 'Welcome to our wedding',
       label: '— Photo Booth —',
       cta: 'Tap to Start the Fun!',
     },
@@ -72,7 +72,7 @@ export const translations = {
       savePhotoTitle: 'Save Your Photo',
       saveToPhone: 'Save to Phone',
       step1: 'Connect to WiFi {wifiName}',
-      step2: 'Scan this code',
+      step2: 'Scan to download',
       takeAnother: 'Take Another Photo!',
       startNew: 'Start New Session',
       returning: 'Returning home in {countdown}s…',
@@ -92,7 +92,7 @@ export const translations = {
   },
   fr: {
     welcome: {
-      kicker: 'Bienvenue à notre',
+      kicker: 'Bienvenue à notre mariage',
       label: '— Borne Photo —',
       cta: 'Touchez pour commencer !',
     },
@@ -163,7 +163,7 @@ export const translations = {
       savePhotoTitle: 'Enregistrez votre photo',
       saveToPhone: 'Enregistrer sur le téléphone',
       step1: 'Connectez-vous au WiFi {wifiName}',
-      step2: 'Scannez ce code',
+      step2: 'Scannez pour télécharger',
       takeAnother: 'Prendre une autre photo !',
       startNew: 'Nouvelle session',
       returning: 'Retour à l\'accueil dans {countdown}s…',

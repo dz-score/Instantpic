@@ -50,9 +50,6 @@ export default function PickFavoriteScreen({
       <p className="pick-fav__kicker">{t('pickFavorite.kicker', language)}</p>
       <h1 className="pick-fav__title">{t('pickFavorite.title', language)}</h1>
       <span className="pick-fav__heart" aria-hidden="true">♥</span>
-      <p className="pick-fav__subtitle">
-        {t('pickFavorite.subtitle', language)}
-      </p>
 
       {/* ── Photo grid ── */}
       <div className="pick-fav__grid">
@@ -73,22 +70,6 @@ export default function PickFavoriteScreen({
             <span className={`pick-fav__radio ${selected === index ? 'pick-fav__radio--active' : ''}`} />
           </div>
         ))}
-      </div>
-
-      {/* ── Encouragement ── */}
-      <div className="pick-fav__encouragement">
-        <div className="pick-fav__cam-line">
-          <span className="pick-fav__cam-curl">»»»</span>
-          <span className="pick-fav__cam-icon">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <rect x="3" y="3" width="18" height="18" rx="2" />
-              <circle cx="12" cy="12" r="3" />
-            </svg>
-          </span>
-          <span className="pick-fav__cam-curl pick-fav__cam-curl--flip">«««</span>
-        </div>
-        <p className="pick-fav__tagline">{t('pickFavorite.tagline', language)}</p>
-        <p className="pick-fav__tagline-script">{t('pickFavorite.taglineScript', language)}</p>
       </div>
 
       {/* ── Actions ── */}
