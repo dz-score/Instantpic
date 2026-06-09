@@ -76,9 +76,9 @@
   font-size: clamp(3.5rem, 8vw, 6.5rem);
   font-weight: 400;
   color: var(--gold);
-  line-height: 1.1;
+  line-height: 1.4;
   margin-bottom: 4px;
-  padding: 10px 20px;
+  padding: 20px;
   text-shadow: 0 2px 12px rgba(201, 169, 110, 0.15);
 
   /* Subtle gold shimmer effect */

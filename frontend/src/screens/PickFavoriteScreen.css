@@ -96,9 +96,9 @@
   font-family: var(--font-script);
   font-size: clamp(3rem, 6vw, 4.8rem);
   font-weight: 400;
-  line-height: 1.1;
+  line-height: 1.4;
   margin-bottom: 0;
-  padding: 10px 20px;
+  padding: 20px;
   background: linear-gradient(135deg, #C9A96E 0%, #D4B896 30%, #C9A96E 50%, #BFA05F 70%, #C9A96E 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
