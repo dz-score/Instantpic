@@ -93,10 +93,9 @@
 }
 
 .pick-fav__title {
-  font-family: var(--font-display);
-  font-size: clamp(2.2rem, 5vw, 3.8rem);
+  font-family: var(--font-script);
+  font-size: clamp(3rem, 6vw, 4.8rem);
   font-weight: 400;
-  font-style: italic;
   line-height: 1.1;
   margin-bottom: 0;
   background: linear-gradient(135deg, #C9A96E 0%, #D4B896 30%, #C9A96E 50%, #BFA05F 70%, #C9A96E 100%);

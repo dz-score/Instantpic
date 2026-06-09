@@ -63,13 +63,12 @@
 
 /* ═══ Heading Block ═══ */
 .attract-kicker {
-  font-family: var(--font-body);
-  font-size: 1.3rem;
+  font-family: var(--font-script);
+  font-size: clamp(3rem, 5vw, 4.5rem);
   font-weight: 400;
-  letter-spacing: 6px;
-  text-transform: uppercase;
   color: var(--gold);
   margin-bottom: var(--space-xs);
+  line-height: 1.1;
 }
 
 .attract-names {
