@@ -24,7 +24,6 @@ export default function ChooseStyleScreen({ onSelect, onBack, language }) {
       <p className="choose-kicker">{t('chooseStyle.kicker', language)}</p>
       <h1 className="choose-title">{t('chooseStyle.title', language)}</h1>
       <span className="choose-title__heart" aria-hidden="true">♥</span>
-      <p className="choose-subtitle">{t('chooseStyle.subtitle', language) || 'Pick your favorite way to capture memories!'}</p>
 
       {/* ── Cards ── */}
       <div className="choose-cards">
@@ -42,7 +41,6 @@ export default function ChooseStyleScreen({ onSelect, onBack, language }) {
             <img src="/preview-single.png" alt="Single photo" className="choose-card__img" />
           </div>
           <h2 className="choose-card__title">{t('chooseStyle.singleTitle', language)}</h2>
-          <p className="choose-card__desc">{t('chooseStyle.singleDesc', language)}</p>
         </button>
 
         {/* Collage Strip Card */}
@@ -58,7 +56,6 @@ export default function ChooseStyleScreen({ onSelect, onBack, language }) {
             <img src="/preview-collage.png" alt="Photo strip" className="choose-card__img" />
           </div>
           <h2 className="choose-card__title">{t('chooseStyle.collageTitle', language)}</h2>
-          <p className="choose-card__desc">{t('chooseStyle.collageDesc', language)}</p>
         </button>
 
       </div>

@@ -193,10 +193,7 @@ export default function PrintingScreen({
           <div className="print-done__actions">
             <button className="print-done__btn-another" onClick={handleAnother}>
               <span className="print-done__btn-icon">📸</span>
-              <div className="print-done__btn-text">
-                <span className="print-done__btn-main">{t('printing.takeAnother', language)}</span>
-                <span className="print-done__btn-sub">{t('printing.startNew', language)}</span>
-              </div>
+              <span className="print-done__btn-main">{t('printing.takeAnother', language)}</span>
             </button>
           </div>
 

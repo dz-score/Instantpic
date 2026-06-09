@@ -91,20 +91,14 @@ export default function RevealScreen({
             {canRetake && (
               <button className="reveal-btn-retake" onClick={onRetake}>
                 <span className="reveal-btn-retake__icon">↺</span>
-                <div className="reveal-btn-retake__text">
-                  <span className="reveal-btn-retake__main">
-                    {isLastRetake ? t('reveal.lastTry', language) : t('reveal.retake', language)}
-                  </span>
-                  <span className="reveal-btn-retake__sub">{t('reveal.tryAgain', language)}</span>
-                </div>
+                <span className="reveal-btn-retake__main">
+                  {isLastRetake ? t('reveal.lastTry', language) : t('reveal.retake', language)}
+                </span>
               </button>
             )}
             <button className="reveal-btn-print" onClick={onPrint}>
               <span className="reveal-btn-print__icon">♡</span>
-              <div className="reveal-btn-print__text">
-                <span className="reveal-btn-print__main">{t('reveal.loveIt', language)}</span>
-                <span className="reveal-btn-print__sub">{t('reveal.continuePrint', language)}</span>
-              </div>
+              <span className="reveal-btn-print__main">{t('reveal.loveIt', language)}</span>
             </button>
           </div>
 

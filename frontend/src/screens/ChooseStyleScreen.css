@@ -82,7 +82,7 @@
   font-size: 0.9rem;
   color: var(--dusty-rose);
   opacity: 0.6;
-  margin-bottom: var(--space-xs);
+  margin-bottom: var(--space-xl);
 }
 
 .choose-subtitle {
@@ -180,7 +180,7 @@
   letter-spacing: 4px;
   text-transform: uppercase;
   color: var(--gold);
-  margin-bottom: 4px;
+  margin-bottom: 0;
 }
 
 .choose-card__desc {

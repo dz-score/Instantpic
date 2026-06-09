@@ -62,7 +62,6 @@ export default function FramePickerScreen({
       {/* ── Heading ── */}
       <p className="frame__kicker">{t('framePicker.kicker', language)}</p>
       <h1 className="frame__title">{t('framePicker.title', language)}</h1>
-      <p className="frame__subtitle">{t('framePicker.subtitle', language)}</p>
 
       {/* ── Main content: preview + frame cards ── */}
       <div className="frame__body">
@@ -138,12 +137,9 @@ export default function FramePickerScreen({
             <path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2" />
             <path d="M6 9V2h12v7" />
           </svg>
-          <div className="frame__btn-print-text">
-            <span className="frame__btn-print-main">
-              {isProcessing ? t('framePicker.applying', language) : t('framePicker.printBtn', language)}
-            </span>
-            <span className="frame__btn-print-sub">{t('framePicker.printSub', language)}</span>
-          </div>
+          <span className="frame__btn-print-main">
+            {isProcessing ? t('framePicker.applying', language) : t('framePicker.printBtn', language)}
+          </span>
         </button>
       </div>
 

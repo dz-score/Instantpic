@@ -98,21 +98,11 @@
   font-weight: 400;
   font-style: italic;
   line-height: 1.1;
-  margin-bottom: 4px;
+  margin-bottom: var(--space-md);
   background: linear-gradient(135deg, #C9A96E 0%, #D4B896 30%, #C9A96E 50%, #BFA05F 70%, #C9A96E 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-}
-
-.frame__subtitle {
-  font-family: var(--font-body);
-  font-size: 0.85rem;
-  font-weight: 400;
-  letter-spacing: 3px;
-  text-transform: uppercase;
-  color: var(--text-secondary);
-  margin-bottom: var(--space-md);
 }
 
 /* ═══ Body — Split Layout ═══ */
@@ -306,7 +296,7 @@
   justify-content: center;
   gap: var(--space-sm);
   min-width: 280px;
-  height: 68px;
+  height: 60px;
   padding: 0 var(--space-lg);
   border-radius: var(--radius-full);
   border: 3px solid var(--gold);
@@ -326,27 +316,12 @@
   cursor: not-allowed;
 }
 
-.frame__btn-print-text {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-}
-
 .frame__btn-print-main {
   font-family: var(--font-body);
   font-size: 1rem;
   font-weight: 700;
   letter-spacing: 3px;
   text-transform: uppercase;
-}
-
-.frame__btn-print-sub {
-  font-family: var(--font-body);
-  font-size: 0.7rem;
-  font-weight: 400;
-  letter-spacing: 2px;
-  text-transform: uppercase;
-  opacity: 0.8;
 }
 
 /* ═══ Footer ═══ */

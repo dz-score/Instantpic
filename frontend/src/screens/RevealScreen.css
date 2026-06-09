@@ -161,7 +161,7 @@
   justify-content: center;
   gap: var(--space-sm);
   min-width: 260px;
-  height: 68px;
+  height: 60px;
   padding: 0 var(--space-lg);
   border-radius: var(--radius-full);
   border: 3px solid var(--gold);
@@ -180,27 +180,12 @@
   font-size: 1.4rem;
 }
 
-.reveal-btn-print__text {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-}
-
 .reveal-btn-print__main {
   font-family: var(--font-body);
   font-size: 1.05rem;
   font-weight: 700;
   letter-spacing: 3px;
   text-transform: uppercase;
-}
-
-.reveal-btn-print__sub {
-  font-family: var(--font-body);
-  font-size: 0.65rem;
-  font-weight: 400;
-  letter-spacing: 2px;
-  text-transform: uppercase;
-  opacity: 0.8;
 }
 
 /* Gold "Retake" button */
@@ -210,7 +195,7 @@
   justify-content: center;
   gap: 10px;
   min-width: 200px;
-  height: 60px;
+  height: 54px;
   padding: 0 var(--space-md);
   border-radius: var(--radius-full);
   border: 2px solid var(--gold);
@@ -229,27 +214,12 @@
   font-size: 1.2rem;
 }
 
-.reveal-btn-retake__text {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-}
-
 .reveal-btn-retake__main {
   font-family: var(--font-body);
   font-size: 0.9rem;
   font-weight: 700;
   letter-spacing: 2px;
   text-transform: uppercase;
-}
-
-.reveal-btn-retake__sub {
-  font-family: var(--font-body);
-  font-size: 0.6rem;
-  font-weight: 400;
-  letter-spacing: 2px;
-  text-transform: uppercase;
-  opacity: 0.8;
 }
 
 /* ═══ Retake Info ═══ */
