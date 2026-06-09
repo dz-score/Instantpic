@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import CountdownRing from '../components/CountdownRing';
 import ProgressDots from '../components/ProgressDots';
 import { playShutterSound } from '../utils/sounds';
 import { t } from '../utils/i18n';
@@ -113,10 +112,17 @@ export default function CountdownScreen({
         {/* Flash effect (warm champagne) */}
         <div className={`countdown-flash ${flashActive ? 'countdown-flash--active' : ''}`} />
 
-        {/* Countdown ring or between-shots message */}
+        {/* Countdown video or between-shots message */}
         {phase === 'COUNTDOWN' && (
           <div className="countdown-center">
-            <CountdownRing count={count} total={COUNTDOWN_FROM} />
+            <video 
+              key={`countdown-${shotIndex}`}
+              src="/coutndown.webm" 
+              autoPlay 
+              muted 
+              playsInline 
+              className="countdown-ring-video" 
+            />
           </div>
         )}
 
