@@ -63,12 +63,13 @@
   height: 60px;
   padding: 0 var(--space-lg);
   border-radius: var(--radius-full);
-  border: 2px solid var(--gold);
+  border: 1px solid #d4a75e;
   cursor: pointer;
-  background: linear-gradient(135deg, #D4A0A0 0%, #C8908E 40%, #D4A0A0 100%);
+  background: linear-gradient(180deg, #dd9f93 0%, #c47b6f 100%);
   box-shadow: 
-    0 8px 24px rgba(201, 169, 110, 0.25),
-    inset 0 2px 4px rgba(255, 255, 255, 0.6),
+    0 10px 20px rgba(196, 123, 111, 0.3),
+    inset 0 0 0 1.5px rgba(255, 255, 255, 0.4),
+    inset 0 2px 8px rgba(255, 255, 255, 0.5),
     inset 0 -4px 8px rgba(0, 0, 0, 0.15);
   color: white;
   font-family: var(--font-body);
@@ -83,9 +84,10 @@
 .download-save-btn:active {
   transform: scale(0.97);
   box-shadow: 
-    0 2px 8px rgba(201, 169, 110, 0.15),
+    0 2px 8px rgba(196, 123, 111, 0.2),
+    inset 0 0 0 1.5px rgba(255, 255, 255, 0.2),
     inset 0 4px 8px rgba(0, 0, 0, 0.15),
-    inset 0 -2px 4px rgba(255, 255, 255, 0.3);
+    inset 0 -2px 4px rgba(255, 255, 255, 0.2);
 }
 
 .download-tip {

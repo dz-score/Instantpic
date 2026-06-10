@@ -127,12 +127,12 @@
   border-radius: var(--radius-full);
   overflow: hidden;
 
-  /* Blush pink fill with gold border */
-  background: linear-gradient(135deg, #D4A0A0 0%, #C8908E 40%, #D4A0A0 100%);
-  border: 2px solid var(--gold);
-  box-shadow:
-    0 8px 24px rgba(201, 169, 110, 0.25),
-    inset 0 2px 4px rgba(255, 255, 255, 0.6),
+  background: linear-gradient(180deg, #dd9f93 0%, #c47b6f 100%);
+  border: 1px solid #d4a75e;
+  box-shadow: 
+    0 10px 20px rgba(196, 123, 111, 0.3),
+    inset 0 0 0 1.5px rgba(255, 255, 255, 0.4),
+    inset 0 2px 8px rgba(255, 255, 255, 0.5),
     inset 0 -4px 8px rgba(0, 0, 0, 0.15);
 
   /* Breathing pulse animation */
