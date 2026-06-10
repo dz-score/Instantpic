@@ -66,7 +66,10 @@
   border: 2px solid var(--gold);
   cursor: pointer;
   background: linear-gradient(135deg, #D4A0A0 0%, #C8908E 40%, #D4A0A0 100%);
-  box-shadow: 0 4px 20px rgba(201, 169, 110, 0.2);
+  box-shadow: 
+    0 8px 24px rgba(201, 169, 110, 0.25),
+    inset 0 2px 4px rgba(255, 255, 255, 0.6),
+    inset 0 -4px 8px rgba(0, 0, 0, 0.15);
   color: white;
   font-family: var(--font-body);
   font-weight: 700;
@@ -79,6 +82,10 @@
 
 .download-save-btn:active {
   transform: scale(0.97);
+  box-shadow: 
+    0 2px 8px rgba(201, 169, 110, 0.15),
+    inset 0 4px 8px rgba(0, 0, 0, 0.15),
+    inset 0 -2px 4px rgba(255, 255, 255, 0.3);
 }
 
 .download-tip {
