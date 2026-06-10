@@ -103,8 +103,13 @@
 }
 
 .countdown-ring-video {
-  width: 400px;
-  height: 400px;
+  width: 800px;
+  height: 800px;
+  max-width: 90vw;
+  max-height: 90vh;
   object-fit: contain;
   pointer-events: none;
+  mix-blend-mode: screen;
+  will-change: transform, opacity;
+  transform: translateZ(0); /* Force hardware acceleration */
 }

@@ -32,12 +32,19 @@ export default function CountdownScreen({
   const imagesRef = useRef([]);
   const totalShots = layoutMode === 'collage' ? 3 : 1;
   const timerRef = useRef(null);
+  const countdownVideoRef = useRef(null);
 
   // Run a single countdown round
   const runCountdown = useCallback((onDone) => {
     setPhase('COUNTDOWN');
     let c = COUNTDOWN_FROM;
     setCount(c);
+
+    // Hardware accelerated restart of video
+    if (countdownVideoRef.current) {
+      countdownVideoRef.current.currentTime = 0;
+      countdownVideoRef.current.play().catch(err => console.log('Video playback error:', err));
+    }
 
     timerRef.current = setInterval(() => {
       c -= 1;
@@ -48,7 +55,7 @@ export default function CountdownScreen({
         onDone();
       }
     }, 1000);
-  }, []);
+  }, [COUNTDOWN_FROM]);
 
   // Fire shutter: flash + sound + capture
   const fireShutter = useCallback(() => {
@@ -112,19 +119,20 @@ export default function CountdownScreen({
         {/* Flash effect (warm champagne) */}
         <div className={`countdown-flash ${flashActive ? 'countdown-flash--active' : ''}`} />
 
-        {/* Countdown video or between-shots message */}
-        {phase === 'COUNTDOWN' && (
-          <div className="countdown-center">
-            <video 
-              key={`countdown-${shotIndex}`}
-              src="/coutndown.webm" 
-              autoPlay 
-              muted 
-              playsInline 
-              className="countdown-ring-video" 
-            />
-          </div>
-        )}
+        {/* Countdown video - always mounted for performance, toggled via opacity */}
+        <div 
+          className="countdown-center" 
+          style={{ opacity: phase === 'COUNTDOWN' ? 1 : 0, transition: 'opacity 0.2s' }}
+        >
+          <video 
+            ref={countdownVideoRef}
+            src="/countdown.webm" 
+            muted 
+            playsInline 
+            preload="auto"
+            className="countdown-ring-video" 
+          />
+        </div>
 
         {phase === 'BETWEEN' && (
           <div className="countdown-between">
