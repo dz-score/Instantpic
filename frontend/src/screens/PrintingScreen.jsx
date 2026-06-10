@@ -151,29 +151,31 @@ export default function PrintingScreen({
               />
             </div>
 
-            {/* QR Section */}
-            <div className="print-done__qr-section">
-              <div className="print-done__qr-header">
-                <span className="print-done__qr-dash" />
-                <span className="print-done__qr-label">{t('printing.saveToPhone', language)}</span>
-                <span className="print-done__qr-dash" />
+            {/* Instructions Section */}
+            <div className="print-done__instructions">
+              
+              <div className="print-done__inst-card">
+                <div className="print-done__inst-header">
+                  <span className="print-done__inst-num">1</span>
+                  <span className="print-done__inst-title">{t('printing.step1', language).replace('{wifiName}', '').trim()}</span>
+                </div>
+                <div className="print-done__inst-body">
+                  <span className="print-done__wifi-pill">{config?.wifi_network_name || "Gravity Booth"}</span>
+                </div>
               </div>
-              <div className="print-done__qr-frame">
-                <img src={qrSrc} alt="Scan to download" className="print-done__qr-img" />
+
+              <div className="print-done__inst-card">
+                <div className="print-done__inst-header">
+                  <span className="print-done__inst-num">2</span>
+                  <span className="print-done__inst-title">{t('printing.step2', language)}</span>
+                </div>
+                <div className="print-done__inst-body">
+                  <div className="print-done__qr-frame">
+                    <img src={qrSrc} alt="Scan to download" className="print-done__qr-img" />
+                  </div>
+                </div>
               </div>
-              <div className="print-done__qr-steps">
-                <p className="print-done__qr-step">
-                  <span className="print-done__qr-num">1</span>
-                  {t('printing.step1', language).replace('{wifiName}', '').trim()}
-                  {config?.wifi_network_name && (
-                    <span className="print-done__wifi-pill">{config.wifi_network_name}</span>
-                  )}
-                </p>
-                <p className="print-done__qr-step">
-                  <span className="print-done__qr-num">2</span>
-                  {t('printing.step2', language)}
-                </p>
-              </div>
+
             </div>
           </div>
 
