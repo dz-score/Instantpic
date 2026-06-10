@@ -1,7 +1,7 @@
 /* ── PhotoFrame ── */
 
 .photo-frame {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-sm);
@@ -12,23 +12,23 @@
 }
 
 .photo-frame__img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 100%;
   display: block;
 }
 
-.photo-frame--default {
-  max-width: 100%;
+.photo-frame--default .photo-frame__img {
   max-height: 60vh;
 }
 
-.photo-frame--small {
+.photo-frame--small .photo-frame__img {
   max-width: 280px;
   max-height: 200px;
 }
 
-.photo-frame--large {
+.photo-frame--large .photo-frame__img {
   max-width: 80vw;
   max-height: 45vh;
 }
