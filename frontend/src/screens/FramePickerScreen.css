@@ -292,14 +292,14 @@
   align-items: center;
   justify-content: center;
   gap: var(--space-sm);
-  min-width: 280px;
+  min-width: 260px;
   height: 60px;
   padding: 0 var(--space-lg);
   border-radius: var(--radius-full);
-  border: 3px solid var(--gold);
+  border: 2px solid var(--gold);
   cursor: pointer;
   background: linear-gradient(135deg, #D4A0A0 0%, #C8908E 40%, #D4A0A0 100%);
-  box-shadow: 0 0 0 1px var(--gold-light), 0 8px 32px rgba(201, 169, 110, 0.25);
+  box-shadow: 0 4px 20px rgba(201, 169, 110, 0.2);
   color: white;
   transition: all var(--duration-normal) var(--ease-out);
 }
