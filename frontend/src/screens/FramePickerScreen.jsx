@@ -44,7 +44,7 @@ export default function FramePickerScreen({
       {/* ── Back to Home (top-left) ── */}
       {onBack && (
         <button className="frame__home" onClick={onBack}>
-          <span className="frame__home-icon">⌂</span>
+          <span className="frame__home-icon btn-icon" style={{ WebkitMaskImage: 'url(/icons/maison.png)' }} />
           <span className="frame__home-text">{t('framePicker.home', language)}</span>
         </button>
       )}
@@ -127,11 +127,7 @@ export default function FramePickerScreen({
           onClick={handleConfirm}
           disabled={isProcessing}
         >
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-            <rect x="6" y="14" width="12" height="8" rx="1" />
-            <path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2" />
-            <path d="M6 9V2h12v7" />
-          </svg>
+          <span className="btn-icon" style={{ WebkitMaskImage: 'url(/icons/imprimer.png)' }} />
           <span className="frame__btn-print-main">
             {isProcessing ? t('framePicker.applying', language) : t('framePicker.printBtn', language)}
           </span>

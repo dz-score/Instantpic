@@ -76,7 +76,7 @@ export default function AttractScreen({ config, onStart, language, setLanguage }
         {/* ── CTA Button ── */}
         <div className="attract-cta">
           <span className="attract-cta__shimmer" aria-hidden="true" />
-          <span className="attract-cta__icon">♡</span>
+          <span className="attract-cta__icon btn-icon" style={{ WebkitMaskImage: 'url(/icons/camera.png)' }} />
           <span className="attract-cta__text">{t('welcome.cta', language)}</span>
         </div>
 

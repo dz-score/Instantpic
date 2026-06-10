@@ -62,7 +62,7 @@ export default function ChooseStyleScreen({ onSelect, onBack, language }) {
 
       {/* ── Back Button ── */}
       <button className="choose-back" onClick={onBack}>
-        <span className="choose-back__icon">⌂</span>
+        <span className="choose-back__icon btn-icon" style={{ WebkitMaskImage: 'url(/icons/maison.png)' }} />
         <span className="choose-back__text">{t('framePicker.home', language)}</span>
       </button>
 

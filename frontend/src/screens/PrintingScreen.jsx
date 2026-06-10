@@ -192,7 +192,7 @@ export default function PrintingScreen({
           {/* Actions */}
           <div className="print-done__actions">
             <button className="print-done__btn-another" onClick={handleAnother}>
-              <span className="print-done__btn-icon">📸</span>
+              <span className="print-done__btn-icon btn-icon" style={{ WebkitMaskImage: 'url(/icons/camera.png)' }} />
               <span className="print-done__btn-main">{t('printing.takeAnother', language)}</span>
             </button>
           </div>

@@ -90,14 +90,14 @@ export default function RevealScreen({
           <div className="reveal-actions">
             {canRetake && (
               <button className="reveal-btn-retake" onClick={onRetake}>
-                <span className="reveal-btn-retake__icon">↺</span>
+                <span className="reveal-btn-retake__icon btn-icon" style={{ WebkitMaskImage: 'url(/icons/retry.png)' }} />
                 <span className="reveal-btn-retake__main">
                   {isLastRetake ? t('reveal.lastTry', language) : t('reveal.retake', language)}
                 </span>
               </button>
             )}
             <button className="reveal-btn-print" onClick={onPrint}>
-              <span className="reveal-btn-print__icon">♡</span>
+              <span className="reveal-btn-print__icon btn-icon" style={{ WebkitMaskImage: 'url(/icons/star.png)' }} />
               <span className="reveal-btn-print__main">{t('reveal.loveIt', language)}</span>
             </button>
           </div>
@@ -114,7 +114,7 @@ export default function RevealScreen({
         <div className="reveal-error">
           <p className="reveal-error__text">{t('reveal.error', language)}</p>
           <button className="reveal-btn-retake" onClick={onRetake}>
-            <span className="reveal-btn-retake__icon">↺</span>
+            <span className="reveal-btn-retake__icon btn-icon" style={{ WebkitMaskImage: 'url(/icons/retry.png)' }} />
             <span className="reveal-btn-retake__main">{t('reveal.retakeMain', language)}</span>
           </button>
         </div>
