@@ -80,19 +80,6 @@
   margin-bottom: 4px;
   padding: 20px;
   text-shadow: 0 2px 12px rgba(201, 169, 110, 0.15);
-
-  /* Subtle gold shimmer effect */
-  background: linear-gradient(
-    135deg,
-    #C9A96E 0%,
-    #D4B896 30%,
-    #C9A96E 50%,
-    #BFA05F 70%,
-    #C9A96E 100%
-  );
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
 }
 
 .attract-label {
