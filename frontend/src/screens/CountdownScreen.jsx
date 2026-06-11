@@ -40,9 +40,16 @@ export default function CountdownScreen({
     let c = COUNTDOWN_FROM;
     setCount(c);
 
+    // Calculate start time based on countdown duration.
+    // Video is 10s. Time offsets provided: 9 is 1.1s, 8 is 2.1s, 3 is 7.1s
+    let startTime = 0;
+    if (COUNTDOWN_FROM <= 10) {
+      startTime = COUNTDOWN_FROM === 10 ? 0 : (10 - COUNTDOWN_FROM) + 0.1;
+    }
+
     // Hardware accelerated restart of video
     if (countdownVideoRef.current) {
-      countdownVideoRef.current.currentTime = 0;
+      countdownVideoRef.current.currentTime = startTime;
       countdownVideoRef.current.play().catch(err => console.log('Video playback error:', err));
     }
 
