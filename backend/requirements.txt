@@ -4,4 +4,6 @@ pillow
 python-multipart
 pydantic
 qrcode
-
+pytest
+pytest-mock
+httpx

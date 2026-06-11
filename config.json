@@ -2,7 +2,7 @@
   "admin_pin": "123456",
   "welcome_message": "Create a Beautiful Memory",
   "thank_you_message": "Thank you for celebrating with us!",
-  "countdown_duration": 3,
+  "countdown_duration": 5,
   "flash_enabled": true,
   "max_photos_per_session": 2,
   "session_timeout": 120,

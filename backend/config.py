@@ -21,46 +21,27 @@ class AppSettings(BaseModel):
     max_photos_per_session: int = 3
     session_timeout: int = 120
     show_names_on_photo: bool = True
-    printer_name: str
-    max_photos: int
-    disk_min_free_gb: float
-    couple_names: str
-    event_date: str
-    default_text: str
-    port: int
-    selected_overlay: str
+    printer_name: str = "mock"
+    max_photos: int = 1000
+    disk_min_free_gb: float = 2.0
+    couple_names: str = "Sarah & Michael"
+    event_date: str = "June 14, 2026"
+    default_text: str = "Sarah & Michael \u00b7 June 14, 2026"
+    port: int = 8000
+    selected_overlay: str = "none"
     wifi_network_name: str = "Our Wedding WiFi"
-    overlays: List[OverlayConfig]
+    overlays: List[OverlayConfig] = [
+        OverlayConfig(id="none", name="No Frame", filename=""),
+        OverlayConfig(id="blush_floral", name="Chic Blush Floral", filename="blush_floral.png"),
+        OverlayConfig(id="gold_glitter", name="Elegant Gold Frame", filename="gold_glitter.png")
+    ]
 
 def load_settings() -> AppSettings:
     """Load settings from config.json."""
     if not os.path.exists(CONFIG_PATH):
         # Fallback default values
-        return AppSettings(
-            admin_pin="123456",
-            welcome_message="Create a Beautiful Memory",
-            thank_you_message="Thank you for celebrating with us!",
-            countdown_duration=3,
-            flash_enabled=True,
-            max_photos_per_session=3,
-            session_timeout=120,
-            show_names_on_photo=True,
-            printer_name="mock",
-            max_photos=1000,
-            disk_min_free_gb=2.0,
-            couple_names="Sarah & Michael",
-            event_date="June 14, 2026",
-            default_text="Sarah & Michael \u00b7 June 14, 2026",
-            port=8000,
-            selected_overlay="none",
-            wifi_network_name="Our Wedding WiFi",
-            overlays=[
-                OverlayConfig(id="none", name="No Frame", filename=""),
-                OverlayConfig(id="blush_floral", name="Chic Blush Floral", filename="blush_floral.png"),
-                OverlayConfig(id="gold_glitter", name="Elegant Gold Frame", filename="gold_glitter.png")
-            ]
-        )
-    
+        return AppSettings()
+
     with open(CONFIG_PATH, "r") as f:
         data = json.load(f)
         return AppSettings(**data)
