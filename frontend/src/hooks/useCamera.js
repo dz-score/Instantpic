@@ -8,6 +8,7 @@ import { logger } from '../utils/logger';
 export default function useCamera() {
   const videoRef = useRef(null);
   const streamRef = useRef(null);
+  const canvasRef = useRef(null);
 
   const initCamera = useCallback(async () => {
     if (streamRef.current) return; // already active
@@ -25,6 +26,14 @@ export default function useCamera() {
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
       }
+      // Monitor for camera disconnection
+      stream.getVideoTracks().forEach((track) => {
+        track.onended = () => {
+          logger.warn('camera', 'camera_disconnected', 'Camera track ended — attempting re-init');
+          streamRef.current = null;
+          initCamera();
+        };
+      });
       logger.info('camera', 'camera_init_ok', 'Camera initialized', { width: 1920, height: 1080 });
     } catch (err) {
       logger.error('camera', 'camera_init_fail', `Camera access failed: ${err.message}`, { error: err.message });
@@ -48,14 +57,19 @@ export default function useCamera() {
   /** Grab a single HD frame from the video feed as a base64 JPEG data URI */
   const captureFrame = useCallback(() => {
     if (!videoRef.current) return null;
-    const canvas = document.createElement('canvas');
-    canvas.width = 1920;
-    canvas.height = 1080;
+    const w = videoRef.current.videoWidth || 1920;
+    const h = videoRef.current.videoHeight || 1080;
+    if (!canvasRef.current) {
+      canvasRef.current = document.createElement('canvas');
+    }
+    const canvas = canvasRef.current;
+    canvas.width = w;
+    canvas.height = h;
     const ctx = canvas.getContext('2d');
     // Mirror for selfie mode
-    ctx.translate(canvas.width, 0);
+    ctx.translate(w, 0);
     ctx.scale(-1, 1);
-    ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+    ctx.drawImage(videoRef.current, 0, 0, w, h);
     return canvas.toDataURL('image/jpeg', 0.95);
   }, []);
 

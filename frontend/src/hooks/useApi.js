@@ -24,7 +24,7 @@ export default function useApi() {
       }
     };
     check();
-    const id = setInterval(check, 5000);
+    const id = setInterval(check, 15000);
     return () => clearInterval(id);
   }, []);
 
@@ -71,7 +71,7 @@ export default function useApi() {
     }
   }, []);
 
-  useEffect(() => { fetchGallery(); }, [fetchGallery]);
+  // Gallery fetched on-demand after print, not on mount
 
   /* ── Save photo (process on backend) ── */
   const savePhoto = useCallback(async (images, layout, overlayId) => {

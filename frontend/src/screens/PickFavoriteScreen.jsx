@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import ScreenShell from '../components/ScreenShell';
 import { t } from '../utils/i18n';
 import './PickFavoriteScreen.css';
@@ -24,6 +24,7 @@ export default function PickFavoriteScreen({
   language,
 }) {
   const [selected, setSelected] = useState(allPhotos.length - 1);
+  const cacheKey = useRef(Date.now());
 
   return (
     <ScreenShell className="pick-fav-screen">
@@ -61,7 +62,7 @@ export default function PickFavoriteScreen({
             >
               <span className="pick-fav__badge">{index + 1}</span>
               <img
-                src={`/photos/${photo}?t=${Date.now()}`}
+                src={`/photos/${photo}?t=${cacheKey.current}`}
                 alt={`Photo ${index + 1}`}
                 className="pick-fav__img"
               />

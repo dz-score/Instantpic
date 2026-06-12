@@ -44,6 +44,7 @@ export default function App() {
   const camera = useCamera();
   const api = useApi();
   const inactivityTimer = useRef(null);
+  const adminTapTimer = useRef(null);
 
   // ─── URL Routing (mobile download) ───
   useEffect(() => {
@@ -107,10 +108,12 @@ export default function App() {
     setAdminTapCount((c) => {
       const next = c + 1;
       if (next >= 5) {
+        clearTimeout(adminTapTimer.current);
         setShowAdmin(true);
         return 0;
       }
-      setTimeout(() => setAdminTapCount(0), 2000);
+      clearTimeout(adminTapTimer.current);
+      adminTapTimer.current = setTimeout(() => setAdminTapCount(0), 2000);
       return next;
     });
   }, []);

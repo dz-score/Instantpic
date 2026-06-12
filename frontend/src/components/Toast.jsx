@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import './Toast.css';
 
 /**
@@ -7,6 +7,7 @@ import './Toast.css';
  */
 export default function Toast({ message, type = 'info', duration = 4000, onDismiss }) {
   const [visible, setVisible] = useState(false);
+  const innerTimerRef = useRef(null);
 
   useEffect(() => {
     // Enter
@@ -15,12 +16,13 @@ export default function Toast({ message, type = 'info', duration = 4000, onDismi
     // Auto-dismiss
     const timer = setTimeout(() => {
       setVisible(false);
-      setTimeout(() => onDismiss?.(), 350);
+      innerTimerRef.current = setTimeout(() => onDismiss?.(), 350);
     }, duration);
 
     return () => {
       cancelAnimationFrame(enterRaf);
       clearTimeout(timer);
+      clearTimeout(innerTimerRef.current);
     };
   }, [duration, onDismiss]);
 

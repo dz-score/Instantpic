@@ -29,10 +29,17 @@ export default function CountdownScreen({
   const [shotIndex, setShotIndex] = useState(0);
   const [flashActive, setFlashActive] = useState(false);
   const [lastCapture, setLastCapture] = useState(null);
+  const pendingTimeouts = useRef([]);
   const imagesRef = useRef([]);
   const totalShots = layoutMode === 'collage' ? 3 : 1;
   const timerRef = useRef(null);
   const countdownVideoRef = useRef(null);
+
+  const safeTimeout = useCallback((fn, ms) => {
+    const id = setTimeout(fn, ms);
+    pendingTimeouts.current.push(id);
+    return id;
+  }, []);
 
   // Run a single countdown round
   const runCountdown = useCallback((onDone) => {
@@ -68,7 +75,7 @@ export default function CountdownScreen({
   const fireShutter = useCallback(() => {
     if (flashEnabled) {
       setFlashActive(true);
-      setTimeout(() => setFlashActive(false), 250);
+      safeTimeout(() => setFlashActive(false), 250);
     }
     playShutterSound();
 
@@ -85,7 +92,11 @@ export default function CountdownScreen({
     setShotIndex(0);
     startRound(0);
 
-    return () => clearInterval(timerRef.current);
+    return () => {
+      clearInterval(timerRef.current);
+      pendingTimeouts.current.forEach(clearTimeout);
+      pendingTimeouts.current = [];
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -95,13 +106,13 @@ export default function CountdownScreen({
       fireShutter();
       if (idx + 1 >= totalShots) {
         // All shots taken — small delay then send results
-        setTimeout(() => {
+        safeTimeout(() => {
           onComplete(imagesRef.current);
         }, 400);
       } else {
         // Show between-shots interstitial
         setPhase('BETWEEN');
-        setTimeout(() => {
+        safeTimeout(() => {
           startRound(idx + 1);
         }, BETWEEN_SHOT_DELAY);
       }

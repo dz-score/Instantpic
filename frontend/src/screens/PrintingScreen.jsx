@@ -36,6 +36,11 @@ export default function PrintingScreen({
   const [phase, setPhase] = useState('PRINTING');
   const [countdown, setCountdown] = useState(AUTO_RESET_SECONDS);
   const countdownRef = useRef(null);
+  const onFinishRef = useRef(onFinish);
+  const printPhotoRef = useRef(printPhoto);
+
+  useEffect(() => { onFinishRef.current = onFinish; }, [onFinish]);
+  useEffect(() => { printPhotoRef.current = printPhoto; }, [printPhoto]);
 
   const downloadUrl = getDownloadUrl(finalPhoto);
   const qrSrc = getQrUrl(downloadUrl);
@@ -45,14 +50,14 @@ export default function PrintingScreen({
     let cancelled = false;
     (async () => {
       try {
-        await printPhoto(finalPhoto);
+        await printPhotoRef.current(finalPhoto);
         if (!cancelled) setPhase('DONE');
       } catch {
         if (!cancelled) setPhase('ERROR');
       }
     })();
     return () => { cancelled = true; };
-  }, [finalPhoto, printPhoto]);
+  }, [finalPhoto]);
 
   // Auto-reset countdown
   useEffect(() => {
@@ -62,14 +67,14 @@ export default function PrintingScreen({
       setCountdown((c) => {
         if (c <= 1) {
           clearInterval(countdownRef.current);
-          onFinish();
+          onFinishRef.current();
           return 0;
         }
         return c - 1;
       });
     }, 1000);
     return () => clearInterval(countdownRef.current);
-  }, [phase, onFinish]);
+  }, [phase]);
 
   const handleAnother = useCallback(() => {
     clearInterval(countdownRef.current);

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import ScreenShell from '../components/ScreenShell';
 import { t } from '../utils/i18n';
 import './FramePickerScreen.css';
@@ -28,6 +28,7 @@ export default function FramePickerScreen({
   language,
 }) {
   const [selected, setSelected] = useState(currentOverlay || 'none');
+  const cacheKey = useRef(Date.now());
   const selectedOverlay = overlays.find((o) => o.id === selected) || null;
 
   const handleConfirm = () => {
@@ -70,7 +71,7 @@ export default function FramePickerScreen({
         <div className="frame__preview-wrap">
           <div className="frame__preview">
             <img
-              src={`/photos/${finalPhoto}?t=${Date.now()}`}
+              src={`/photos/${finalPhoto}?t=${cacheKey.current}`}
               alt="Your photo"
               className="frame__preview-img"
             />

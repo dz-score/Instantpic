@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import ScreenShell from '../components/ScreenShell';
 import PhotoFrame from '../components/PhotoFrame';
 import ConfettiOverlay from '../components/ConfettiOverlay';
@@ -32,6 +32,7 @@ export default function RevealScreen({
 }) {
   const compliment = useMemo(() => getRandomCompliment(language), [finalPhoto, language]);
   const [showPhoto, setShowPhoto] = useState(false);
+  const cacheKey = useRef(Date.now());
   const isLastRetake = retakeCount >= maxRetakes - 1;
   const canRetake = retakeCount < maxRetakes;
 
@@ -76,7 +77,7 @@ export default function RevealScreen({
           {/* Photo */}
           <div className="reveal-photo-wrap">
             <PhotoFrame
-              src={`/photos/${finalPhoto}?t=${Date.now()}`}
+              src={`/photos/${finalPhoto}?t=${cacheKey.current}`}
               alt="Your photo"
               size="large"
               className="photo-frame--reveal"

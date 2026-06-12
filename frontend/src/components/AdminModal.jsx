@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Button from './Button';
 import './AdminModal.css';
 
@@ -13,6 +13,11 @@ export default function AdminModal({ config, onSave, onClose }) {
   const [authed, setAuthed] = useState(false);
   const [form, setForm] = useState({});
   const [toast, setToast] = useState('');
+  const toastTimerRef = useRef(null);
+
+  useEffect(() => {
+    return () => clearTimeout(toastTimerRef.current);
+  }, []);
 
   useEffect(() => {
     if (config) {
@@ -26,7 +31,7 @@ export default function AdminModal({ config, onSave, onClose }) {
     } else {
       setToast('Invalid passcode');
       setPin('');
-      setTimeout(() => setToast(''), 2000);
+      toastTimerRef.current = setTimeout(() => setToast(''), 2000);
     }
   };
 
@@ -42,13 +47,13 @@ export default function AdminModal({ config, onSave, onClose }) {
         disk_min_free_gb: form.disk_min_free_gb,
       });
       setToast('Settings saved!');
-      setTimeout(() => {
+      toastTimerRef.current = setTimeout(() => {
         setToast('');
         handleClose();
       }, 1200);
     } catch {
       setToast('Save failed');
-      setTimeout(() => setToast(''), 2000);
+      toastTimerRef.current = setTimeout(() => setToast(''), 2000);
     }
   };
 
