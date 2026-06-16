@@ -243,23 +243,6 @@ export default function App() {
   return (
     <div className="app-root" style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden' }}>
 
-      {/* Persistent camera <video> — always mounted, hidden when not on countdown */}
-      <video
-        ref={camera.videoRef}
-        autoPlay
-        playsInline
-        muted
-        style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          width: '1px',
-          height: '1px',
-          opacity: 0,
-          pointerEvents: 'none',
-        }}
-      />
-
       {/* ─── Screen Router ─── */}
 
       {screen === SCREENS.ATTRACT && (

@@ -144,7 +144,7 @@ export default function CountdownScreen({
         >
           <video 
             ref={countdownVideoRef}
-            src="/countdown.webm" 
+            src="/countdown.mp4" 
             muted 
             playsInline 
             preload="auto"

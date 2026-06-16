@@ -6,8 +6,8 @@ from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
-from pydantic import BaseModel, Field, field_validator
-from typing import List, Optional, Literal
+from pydantic import BaseModel
+from typing import List, Optional
 
 from backend.config import load_settings, update_settings, AppSettings
 from backend.storage import (
@@ -58,10 +58,10 @@ class ConfigUpdateRequest(BaseModel):
     wifi_network_name: Optional[str] = None
 
 class SavePhotoRequest(BaseModel):
-    images: List[str] = Field(..., min_length=1)  # Base64 data URIs
-    layout: Literal["single", "collage"]          # 'single' or 'collage'
-    text: str                                     # Custom banner text
-    overlay_id: str                               # Selected overlay ID
+    images: List[str]  # Base64 data URIs
+    layout: str        # 'single' or 'collage'
+    text: str          # Custom banner text
+    overlay_id: str    # Selected overlay ID
 
 # Endpoints
 @app.get("/api/config", response_model=AppSettings)
@@ -96,6 +96,10 @@ async def save_photo(req: SavePhotoRequest, background_tasks: BackgroundTasks):
     Stitches base64 images into a collage or formats a single photo,
     adds overlay/text, saves to disk, and runs circular space enforcement.
     """
+    if not req.images:
+        raise HTTPException(status_code=400, detail="No images provided")
+    if req.layout not in ("single", "collage"):
+        raise HTTPException(status_code=400, detail="Invalid layout type")
 
     import time as _time
     t0 = _time.monotonic()
@@ -165,14 +169,7 @@ async def emergency_action(req: EmergencyRequest):
 # --- Change PIN ---
 class ChangePinRequest(BaseModel):
     current_pin: str
-    new_pin: str = Field(..., min_length=6)
-
-    @field_validator("new_pin")
-    @classmethod
-    def validate_pin_numeric(cls, v: str) -> str:
-        if not v.isdigit():
-            raise ValueError("PIN must contain only digits")
-        return v
+    new_pin: str
 
 @app.post("/api/change-pin")
 async def change_pin(req: ChangePinRequest):
@@ -180,6 +177,8 @@ async def change_pin(req: ChangePinRequest):
     if req.current_pin != settings.admin_pin:
         log.warn("config", "config_pin_fail", "PIN change attempted with wrong current PIN")
         raise HTTPException(status_code=403, detail="Invalid current PIN")
+    if len(req.new_pin) < 6:
+        raise HTTPException(status_code=400, detail="PIN must be at least 6 digits")
     updated = update_settings({"admin_pin": req.new_pin})
     log.info("config", "config_pin_changed", "Admin PIN changed")
     return {"status": "success", "detail": "PIN updated"}
