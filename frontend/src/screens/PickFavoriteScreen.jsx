@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import ScreenShell from '../components/ScreenShell';
 import { t } from '../utils/i18n';
+import { Home } from 'lucide-react';
 import './PickFavoriteScreen.css';
 
 /**
@@ -32,7 +33,7 @@ export default function PickFavoriteScreen({
       {/* ── Back to Home (top-left) ── */}
       {onBack && (
         <button className="pick-fav__home" onClick={onBack}>
-          <span className="pick-fav__home-icon">⌂</span>
+          <span className="pick-fav__home-icon btn-icon"><Home strokeWidth={1.5} size={20} /></span>
           <span className="pick-fav__home-text">{t('framePicker.home', language)}</span>
         </button>
       )}

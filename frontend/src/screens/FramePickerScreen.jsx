@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import ScreenShell from '../components/ScreenShell';
 import { t } from '../utils/i18n';
+import { Home, Printer } from 'lucide-react';
 import './FramePickerScreen.css';
 
 /**
@@ -45,7 +46,7 @@ export default function FramePickerScreen({
       {/* ── Back to Home (top-left) ── */}
       {onBack && (
         <button className="frame__home" onClick={onBack}>
-          <span className="frame__home-icon btn-icon" style={{ WebkitMaskImage: 'url(/icons/maison.png)' }} />
+          <span className="frame__home-icon btn-icon"><Home strokeWidth={1.5} size={20} /></span>
           <span className="frame__home-text">{t('framePicker.home', language)}</span>
         </button>
       )}
@@ -128,7 +129,7 @@ export default function FramePickerScreen({
           onClick={handleConfirm}
           disabled={isProcessing}
         >
-          <span className="btn-icon" style={{ WebkitMaskImage: 'url(/icons/imprimer.png)' }} />
+          <span className="btn-icon"><Printer strokeWidth={1.5} size={24} /></span>
           <span className="frame__btn-print-main">
             {isProcessing ? t('framePicker.applying', language) : t('framePicker.printBtn', language)}
           </span>

@@ -2,6 +2,7 @@ import React, { useCallback } from 'react';
 import ScreenShell from '../components/ScreenShell';
 import { unlockAudio } from '../utils/sounds';
 import { t } from '../utils/i18n';
+import { Camera } from 'lucide-react';
 import './AttractScreen.css';
 
 /**
@@ -76,7 +77,7 @@ export default function AttractScreen({ config, onStart, language, setLanguage }
         {/* ── CTA Button ── */}
         <div className="attract-cta">
           <span className="attract-cta__shimmer" aria-hidden="true" />
-          <span className="attract-cta__icon btn-icon" style={{ WebkitMaskImage: 'url(/icons/camera.png)' }} />
+          <span className="attract-cta__icon btn-icon"><Camera strokeWidth={1.5} size={24} /></span>
           <span className="attract-cta__text">{t('welcome.cta', language)}</span>
         </div>
 

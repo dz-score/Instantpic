@@ -1,6 +1,7 @@
 import React from 'react';
 import ScreenShell from '../components/ScreenShell';
 import { t } from '../utils/i18n';
+import { Home } from 'lucide-react';
 import './ChooseStyleScreen.css';
 
 /**
@@ -62,7 +63,7 @@ export default function ChooseStyleScreen({ onSelect, onBack, language }) {
 
       {/* ── Back Button ── */}
       <button className="choose-back" onClick={onBack}>
-        <span className="choose-back__icon btn-icon" style={{ WebkitMaskImage: 'url(/icons/maison.png)' }} />
+        <span className="choose-back__icon btn-icon"><Home strokeWidth={1.5} size={20} /></span>
         <span className="choose-back__text">{t('framePicker.home', language)}</span>
       </button>
 
