@@ -2,42 +2,43 @@
    DESIGN TOKENS — Wedding Photo Booth
    ═══════════════════════════════════════════════════════ */
 
-@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400;1,500&family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=Mea+Culpa&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400;1,500&family=Inter:wght@300;400;500;600;700&family=Mea+Culpa&display=swap');
 
 :root {
   /* ── Background Layers ── */
-  --bg-base:            #FAF7F2;
+  --bg-base:            #F9F5EF;
   --bg-elevated:        #FFFFFF;
   --bg-overlay:         rgba(42, 36, 32, 0.55);
-  --bg-frosted:         rgba(255, 253, 248, 0.85);
-  --bg-frosted-strong:  rgba(255, 253, 248, 0.92);
+  --bg-frosted:         rgba(249, 245, 239, 0.85);
+  --bg-frosted-strong:  rgba(249, 245, 239, 0.92);
 
   /* ── Brand Palette ── */
-  --champagne:          #E8DCCC;
-  --champagne-light:    #F5EFE6;
-  --blush:              #D4A0A0;
-  --blush-muted:        #E8C8C8;
-  --gold:               #C9A96E;
-  --gold-light:         #DFC9A0;
-  --gold-gradient:      linear-gradient(135deg, #C9A96E 0%, #D4B07A 50%, #DFC9A0 100%);
+  --champagne:          #F4EDE3;
+  --champagne-light:    #FAF6F0;
+  --blush:              #F3D9D4;
+  --blush-muted:        #F9EAE8;
+  --gold:               #D4AF6A;
+  --gold-light:         #E3C792;
+  --gold-dark:          #B98B3D;
+  --gold-gradient:      linear-gradient(135deg, #E3C792 0%, #D4AF6A 50%, #B98B3D 100%);
   --sage:               #8B9E8B;
-  --dusty-rose:         #B07D7D;
+  --dusty-rose:         #D9B4AD;
 
   /* ── Text ── */
   --text-primary:       #2D2420;
   --text-secondary:     #6B5E57;
-  --text-on-dark:       #FAF7F2;
-  --text-accent:        #8B6914;
+  --text-on-dark:       #F9F5EF;
+  --text-accent:        #B98B3D;
   --text-on-gold:       #FFFFFF;
 
   /* ── Semantic ── */
   --success:            #7BA37B;
   --error:              #C27070;
-  --surface-border:     rgba(201, 169, 110, 0.20);
+  --surface-border:     rgba(212, 175, 106, 0.20);
 
   /* ── Typography ── */
   --font-display:       'Cormorant Garamond', 'Georgia', serif;
-  --font-body:          'DM Sans', 'system-ui', sans-serif;
+  --font-body:          'Inter', 'system-ui', sans-serif;
   --font-script:        'Mea Culpa', cursive;
 
   --text-hero:          4.5rem;     /* 72px */
@@ -63,18 +64,18 @@
   /* ── Border Radius ── */
   --radius-sm:          12px;
   --radius-md:          20px;
-  --radius-lg:          32px;
+  --radius-lg:          36px;
   --radius-full:        9999px;
 
-  /* ── Shadows ── */
-  --shadow-sm:          0 2px 8px rgba(45, 36, 32, 0.06);
-  --shadow-md:          0 4px 24px rgba(45, 36, 32, 0.08);
-  --shadow-lg:          0 12px 48px rgba(45, 36, 32, 0.12);
-  --shadow-photo:       0 8px 40px rgba(45, 36, 32, 0.15),
-                        0 2px 8px rgba(45, 36, 32, 0.08);
-  --shadow-glow:        0 0 40px rgba(201, 169, 110, 0.15);
-  --shadow-button:      0 4px 24px rgba(201, 169, 110, 0.25);
-  --shadow-button-hover:0 8px 32px rgba(201, 169, 110, 0.35);
+  /* ── Shadows (Soft Luxury) ── */
+  --shadow-sm:          0 8px 30px rgba(0, 0, 0, 0.08);
+  --shadow-md:          0 15px 50px rgba(0, 0, 0, 0.10);
+  --shadow-lg:          0 20px 60px rgba(0, 0, 0, 0.12);
+  --shadow-photo:       0 15px 50px rgba(0, 0, 0, 0.10),
+                        0 4px 12px rgba(0, 0, 0, 0.05);
+  --shadow-glow:        0 0 40px rgba(212, 175, 106, 0.15);
+  --shadow-button:      0 8px 30px rgba(212, 175, 106, 0.25);
+  --shadow-button-hover:0 15px 50px rgba(212, 175, 106, 0.30);
 
   /* ── Transitions ── */
   --ease-out:           cubic-bezier(0.4, 0, 0.2, 1);

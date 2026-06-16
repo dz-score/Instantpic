@@ -18,13 +18,9 @@
   gap: 8px;
   padding: 10px 20px;
   border-radius: var(--radius-full);
-  border: 1px solid #d4a75e;
-  background: linear-gradient(180deg, #e5c47b 0%, #c38f3f 100%);
-  box-shadow: 
-    0 10px 20px rgba(195, 143, 63, 0.3),
-    inset 0 0 0 1.5px rgba(255, 255, 255, 0.4),
-    inset 0 2px 8px rgba(255, 255, 255, 0.6),
-    inset 0 -4px 8px rgba(0, 0, 0, 0.15);
+  border: 1px solid var(--gold);
+  background: linear-gradient(180deg, #FFFFFF 0%, var(--champagne) 100%);
+  box-shadow: var(--shadow-button);
   cursor: pointer;
   z-index: 5;
   transition: all var(--duration-fast) ease;
@@ -32,16 +28,12 @@
 
 .frame__home:active {
   transform: scale(0.96);
-  box-shadow: 
-    0 2px 8px rgba(195, 143, 63, 0.2),
-    inset 0 0 0 1.5px rgba(255, 255, 255, 0.2),
-    inset 0 4px 8px rgba(0, 0, 0, 0.15),
-    inset 0 -2px 4px rgba(255, 255, 255, 0.2);
+  box-shadow: var(--shadow-sm);
 }
 
 .frame__home-icon {
   font-size: 1.1rem;
-  color: white;
+  color: var(--gold-dark);
 }
 
 .frame__home-text {
@@ -50,7 +42,7 @@
   font-weight: 600;
   letter-spacing: 2px;
   text-transform: uppercase;
-  color: white;
+  color: var(--gold-dark);
 }
 
 /* ═══ Flourish ═══ */
@@ -133,10 +125,10 @@
   position: relative;
   width: 100%;
   aspect-ratio: 4 / 3;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   overflow: hidden;
   border: 3px solid var(--gold);
-  box-shadow: 0 8px 40px rgba(45, 36, 32, 0.12), var(--shadow-glow);
+  box-shadow: var(--shadow-photo);
 }
 
 .frame__preview-img {
@@ -209,8 +201,8 @@
   align-items: center;
   gap: 8px;
   padding: var(--space-xs);
-  border-radius: var(--radius-sm);
-  border: 2px solid rgba(201, 169, 110, 0.15);
+  border-radius: var(--radius-md);
+  border: 2px solid rgba(212, 175, 106, 0.15);
   background: rgba(255, 253, 248, 0.85);
   cursor: pointer;
   transition: all var(--duration-normal) var(--ease-out);
@@ -222,13 +214,13 @@
 
 .frame__card--selected {
   border-color: var(--gold);
-  box-shadow: 0 0 0 3px rgba(201, 169, 110, 0.15), var(--shadow-sm);
+  box-shadow: 0 0 0 3px rgba(212, 175, 106, 0.15), var(--shadow-sm);
 }
 
 .frame__card-preview {
   width: 100%;
   aspect-ratio: 3 / 4;
-  border-radius: 6px;
+  border-radius: 8px;
   overflow: hidden;
   background: var(--champagne-light);
   display: flex;
@@ -306,25 +298,17 @@
   height: 60px;
   padding: 0 var(--space-lg);
   border-radius: var(--radius-full);
-  border: 1px solid #d4a75e;
+  border: 1px solid var(--gold);
   cursor: pointer;
-  background: linear-gradient(180deg, #dd9f93 0%, #c47b6f 100%);
-  box-shadow: 
-    0 10px 20px rgba(196, 123, 111, 0.3),
-    inset 0 0 0 1.5px rgba(255, 255, 255, 0.4),
-    inset 0 2px 8px rgba(255, 255, 255, 0.5),
-    inset 0 -4px 8px rgba(0, 0, 0, 0.15);
+  background: var(--gold-gradient);
+  box-shadow: var(--shadow-button);
   color: white;
   transition: all var(--duration-normal) var(--ease-out);
 }
 
 .frame__btn-print:active {
   transform: scale(0.97);
-  box-shadow: 
-    0 2px 8px rgba(196, 123, 111, 0.2),
-    inset 0 0 0 1.5px rgba(255, 255, 255, 0.2),
-    inset 0 4px 8px rgba(0, 0, 0, 0.15),
-    inset 0 -2px 4px rgba(255, 255, 255, 0.2);
+  box-shadow: var(--shadow-sm);
 }
 
 .frame__btn-print:disabled {

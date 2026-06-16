@@ -79,7 +79,7 @@
   line-height: 1.4;
   margin-bottom: 4px;
   padding: 20px;
-  text-shadow: 0 2px 12px rgba(201, 169, 110, 0.15);
+  text-shadow: 0 2px 12px rgba(212, 175, 106, 0.2);
 }
 
 .attract-label {
@@ -127,13 +127,9 @@
   border-radius: var(--radius-full);
   overflow: hidden;
 
-  background: linear-gradient(180deg, #dd9f93 0%, #c47b6f 100%);
-  border: 1px solid #d4a75e;
-  box-shadow: 
-    0 10px 20px rgba(196, 123, 111, 0.3),
-    inset 0 0 0 1.5px rgba(255, 255, 255, 0.4),
-    inset 0 2px 8px rgba(255, 255, 255, 0.5),
-    inset 0 -4px 8px rgba(0, 0, 0, 0.15);
+  background: var(--gold-gradient, linear-gradient(180deg, #E3C792 0%, #D4AF6A 100%));
+  border: 1px solid var(--gold);
+  box-shadow: var(--shadow-button);
 
   /* Breathing pulse animation */
   animation: cta-breathe 3s ease-in-out infinite;
@@ -173,8 +169,8 @@
 
 /* ═══ Animations ═══ */
 @keyframes cta-breathe {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.02); box-shadow: 0 12px 32px rgba(201, 169, 110, 0.35), inset 0 2px 4px rgba(255, 255, 255, 0.6), inset 0 -4px 8px rgba(0, 0, 0, 0.15); }
+  0%, 100% { transform: scale(1); box-shadow: var(--shadow-button); }
+  50% { transform: scale(1.02); box-shadow: 0 12px 36px rgba(212, 175, 106, 0.4); }
 }
 
 @keyframes shimmer-sweep {
@@ -193,10 +189,10 @@
   gap: 8px;
   padding: 8px 12px;
   border-radius: 30px;
-  background: rgba(253, 251, 247, 0.85);
-  border: 1.5px solid var(--gold-light);
+  background: rgba(249, 245, 239, 0.85);
+  border: 1px solid var(--gold);
   backdrop-filter: blur(8px);
-  box-shadow: 0 4px 12px rgba(45, 36, 32, 0.08);
+  box-shadow: var(--shadow-sm);
   cursor: pointer;
   z-index: 20;
   transition: all var(--duration-fast) ease;

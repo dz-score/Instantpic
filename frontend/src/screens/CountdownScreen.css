@@ -62,8 +62,7 @@
   align-items: center;
   justify-content: center;
   gap: var(--space-md);
-  background: rgba(42, 36, 32, 0.6);
-  backdrop-filter: blur(4px);
+  background: var(--bg-overlay);
   z-index: 10;
   animation: fade-in 0.3s ease;
 }
