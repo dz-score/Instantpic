@@ -33,8 +33,12 @@ class CameraService:
                     config = self.camera.get_config()
                     ok, capture_target = gp.gp_widget_get_child_by_name(config, 'capturetarget')
                     if ok >= gp.GP_OK:
-                        # 0 usually means RAM, 1 means SD card. Try RAM first.
-                        capture_target.set_value(0)
+                        # Find the internal RAM choice to avoid type errors
+                        choices = [capture_target.get_choice(i) for i in range(capture_target.count_choices())]
+                        for choice in choices:
+                            if 'RAM' in choice or 'Internal' in choice:
+                                capture_target.set_value(choice)
+                                break
                         self.camera.set_config(config)
                 except Exception as e:
                     log.warn("camera", "camera_config_warn", f"Could not set capture target: {e}")
@@ -106,10 +110,29 @@ class CameraService:
             with self.lock:
                 log.info("camera", "camera_capture_start", "Starting high-res capture")
                 
+                # 1. Disable viewfinder (Live View) so sensor is freed
+                try:
+                    config = self.camera.get_config()
+                    ok, viewfinder = gp.gp_widget_get_child_by_name(config, 'viewfinder')
+                    if ok >= gp.GP_OK:
+                        viewfinder.set_value(0)
+                        self.camera.set_config(config)
+                except Exception as e:
+                    log.warn("camera", "camera_viewfinder_warn", f"Could not disable viewfinder: {e}")
+
+                # 2. Flush pending camera events to clear the queue
+                try:
+                    while True:
+                        evt_type, evt_data = self.camera.wait_for_event(10)
+                        if evt_type == gp.GP_EVENT_TIMEOUT:
+                            break
+                except Exception:
+                    pass
+                
                 # Some cameras need a tiny delay between stopping preview and capturing
                 time.sleep(0.5)
                 
-                # Trigger capture
+                # 3. Trigger capture
                 file_path = self.camera.capture(gp.GP_CAPTURE_IMAGE)
                 
                 # Download file
