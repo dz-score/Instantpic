@@ -9,7 +9,7 @@
   font-weight: 600;
   letter-spacing: 0.3px;
   border: none;
-  border-radius: var(--radius-full);
+  border-radius: 999px;
   transition:
     transform var(--duration-fast) ease-out,
     box-shadow var(--duration-normal) var(--ease-out),
@@ -20,10 +20,12 @@
   cursor: pointer;
 }
 
-/* ── Primary: gold gradient fill ── */
+/* ── Primary: blush pink gradient fill ── */
 .btn--primary {
-  background: var(--gold-gradient);
-  color: var(--text-on-gold);
+  background: var(--blush-gradient);
+  color: #FFFFFF;
+  border: 1.5px solid var(--gold);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
   box-shadow: var(--shadow-button);
 }
 .btn--primary:active {
@@ -31,15 +33,16 @@
   box-shadow: var(--shadow-sm);
 }
 
-/* ── Ghost: transparent with subtle border ── */
+/* ── Ghost: ivory embossed card ── */
 .btn--ghost {
-  background: transparent;
-  color: var(--text-secondary);
-  border: 2px solid var(--surface-border);
+  background: var(--ivory-gradient);
+  color: var(--gold-dark);
+  border: none;
+  box-shadow: var(--shadow-secondary);
 }
 .btn--ghost:active {
   transform: scale(0.97);
-  background: var(--champagne-light);
+  box-shadow: var(--shadow-secondary-hover);
 }
 
 /* ── Size: default ── */

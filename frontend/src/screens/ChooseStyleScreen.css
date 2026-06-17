@@ -110,17 +110,15 @@
     box-shadow var(--duration-normal) var(--ease-out),
     border-color var(--duration-normal) var(--ease-out);
 
-  /* Cream/ivory background with gold border */
-  background: rgba(255, 253, 248, 0.88);
-  border: 2px solid rgba(201, 169, 110, 0.25);
-  box-shadow: var(--shadow-sm);
+  background: var(--ivory);
+  border: 1px solid var(--gold);
+  box-shadow: var(--shadow-floating-card);
   backdrop-filter: blur(8px);
 }
 
 .choose-card:active {
-  transform: scale(0.97);
-  border-color: var(--gold);
-  box-shadow: var(--shadow-button);
+  transform: translateY(2px);
+  box-shadow: var(--shadow-sm);
 }
 
 /* ── Icon badge (circle on top of card) ── */
@@ -189,23 +187,23 @@
   min-width: 260px;
   height: 60px;
   padding: 0 var(--space-lg);
-  border-radius: var(--radius-full);
-  border: 1px solid var(--gold);
+  border-radius: 999px;
+  border: none;
   cursor: pointer;
   transition: all var(--duration-normal) var(--ease-out);
 
-  background: var(--gold-gradient);
-  box-shadow: var(--shadow-button);
+  background: var(--ivory-gradient);
+  box-shadow: var(--shadow-secondary);
 }
 
 .choose-back:active {
   transform: scale(0.97);
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow-secondary-hover);
 }
 
 .choose-back__icon {
   font-size: 1.3rem;
-  color: white;
+  color: var(--gold-dark);
 }
 
 .choose-back__text {
@@ -214,5 +212,5 @@
   font-weight: 700;
   letter-spacing: 3px;
   text-transform: uppercase;
-  color: white;
+  color: var(--gold-dark);
 }

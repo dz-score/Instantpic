@@ -31,3 +31,17 @@
   align-items: center;
   justify-content: center;
 }
+
+/* ── Ambient Romantic Glow ── */
+.screen-glow {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(circle at center, rgba(255, 255, 255, 0.45) 0%, transparent 65%);
+  z-index: 0;
+  mix-blend-mode: screen;
+}
+
+.screen-shell > *:not(.screen-glow) {
+  z-index: 1;
+}

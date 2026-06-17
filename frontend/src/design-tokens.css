@@ -15,7 +15,11 @@
   /* ── Brand Palette ── */
   --champagne:          #F4EDE3;
   --champagne-light:    #FAF6F0;
+  --ivory:              #FDFBF7;
+  --ivory-gradient:     linear-gradient(135deg, #FEFCF9 0%, #F6EFE5 100%);
   --blush:              #F3D9D4;
+  --blush-primary:      #D68B81;
+  --blush-gradient:     linear-gradient(180deg, #ECA89F 0%, #D68B81 100%);
   --blush-muted:        #F9EAE8;
   --gold:               #D4AF6A;
   --gold-light:         #E3C792;
@@ -71,11 +75,14 @@
   --shadow-sm:          0 8px 30px rgba(0, 0, 0, 0.08);
   --shadow-md:          0 15px 50px rgba(0, 0, 0, 0.10);
   --shadow-lg:          0 20px 60px rgba(0, 0, 0, 0.12);
+  --shadow-floating-card: 0 15px 40px rgba(0, 0, 0, 0.06);
   --shadow-photo:       0 15px 50px rgba(0, 0, 0, 0.10),
                         0 4px 12px rgba(0, 0, 0, 0.05);
   --shadow-glow:        0 0 40px rgba(212, 175, 106, 0.15);
-  --shadow-button:      0 8px 30px rgba(212, 175, 106, 0.25);
-  --shadow-button-hover:0 15px 50px rgba(212, 175, 106, 0.30);
+  --shadow-button:      0 12px 30px rgba(214, 139, 129, 0.35), 0 4px 10px rgba(0, 0, 0, 0.08), inset 0 1.5px 0 rgba(255, 255, 255, 0.4), inset 0 -1px 0 rgba(0, 0, 0, 0.1);
+  --shadow-button-hover:0 15px 40px rgba(214, 139, 129, 0.45), 0 6px 15px rgba(0, 0, 0, 0.1), inset 0 1.5px 0 rgba(255, 255, 255, 0.5), inset 0 -1px 0 rgba(0, 0, 0, 0.1);
+  --shadow-secondary:   0 8px 25px rgba(0, 0, 0, 0.05), inset 1.5px 1.5px 2px rgba(255, 255, 255, 0.9), inset -1px -1px 2px rgba(0,0,0,0.02);
+  --shadow-secondary-hover: 0 4px 15px rgba(0, 0, 0, 0.03), inset 1.5px 1.5px 2px rgba(255, 255, 255, 0.9), inset -1px -1px 2px rgba(0,0,0,0.02);
 
   /* ── Transitions ── */
   --ease-out:           cubic-bezier(0.4, 0, 0.2, 1);

@@ -25,6 +25,7 @@ export default function ScreenShell({ children, className = '', center = true })
         className,
       ].filter(Boolean).join(' ')}
     >
+      <div className="screen-glow" aria-hidden="true" />
       {children}
     </div>
   );

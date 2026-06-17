@@ -27,7 +27,7 @@ export default function AttractScreen({ config, onStart, language, setLanguage }
   return (
     <ScreenShell className="attract-screen">
       {/* ── Language Toggle (Top Right) ── */}
-      <button className="attract-lang-toggle" onClick={toggleLanguage} aria-label="Toggle language">
+      <button className="attract-lang-toggle" onClick={(e) => { e.stopPropagation(); toggleLanguage(); }} aria-label="Toggle language">
         <span className={`lang-flag ${language === 'en' ? 'active' : ''}`}>
           <svg viewBox="0 0 60 30" width="24" height="16" style={{ borderRadius: '2px', display: 'block' }}>
             <clipPath id="uk-clip"><path d="M0,0 v30 h60 v-30 z"/></clipPath>
