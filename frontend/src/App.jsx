@@ -54,17 +54,16 @@ export default function App() {
     }
   }, []);
 
-  // ─── Init Camera ───
-  useEffect(() => {
-    camera.initCamera();
-    return () => camera.stopCamera();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // ─── Keep video src in sync ───
-  useEffect(() => {
-    camera.ensureVideoSrc();
-  }, [screen, camera]);
+  // ─── Camera Error Fallback ───
+  if (camera.cameraStatus.error) {
+    return (
+      <div style={{ padding: 40, color: 'white', background: '#222', height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+        <h1 style={{ color: '#ff6b6b' }}>Camera Disconnected</h1>
+        <p>{camera.cameraStatus.error}</p>
+        <p style={{ marginTop: 20 }}>Please check the USB connection to the Canon M50.</p>
+      </div>
+    );
+  }
 
   // ─── Inactivity Timeout ───
   const resetInactivityTimer = useCallback(() => {
@@ -264,7 +263,7 @@ export default function App() {
 
       {screen === SCREENS.COUNTDOWN && (
         <CountdownScreen
-          videoRef={camera.videoRef}
+          previewUrl={camera.previewUrl}
           layoutMode={layoutMode}
           captureFrame={camera.captureFrame}
           onComplete={handleCaptureComplete}

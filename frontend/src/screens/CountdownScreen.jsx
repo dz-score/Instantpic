@@ -15,7 +15,7 @@ const BETWEEN_SHOT_DELAY = 3000; // ms between collage shots
  * The <video> element is passed in from App so it stays mounted.
  */
 export default function CountdownScreen({
-  videoRef,
+  previewUrl,
   layoutMode,
   captureFrame,
   onComplete,
@@ -29,6 +29,7 @@ export default function CountdownScreen({
   const [shotIndex, setShotIndex] = useState(0);
   const [flashActive, setFlashActive] = useState(false);
   const [lastCapture, setLastCapture] = useState(null);
+  const [isCapturing, setIsCapturing] = useState(false);
   const pendingTimeouts = useRef([]);
   const imagesRef = useRef([]);
   const totalShots = layoutMode === 'collage' ? 3 : 1;
@@ -72,19 +73,24 @@ export default function CountdownScreen({
   }, [COUNTDOWN_FROM]);
 
   // Fire shutter: flash + sound + capture
-  const fireShutter = useCallback(() => {
+  const fireShutter = useCallback(async () => {
+    setIsCapturing(true);
     if (flashEnabled) {
       setFlashActive(true);
       safeTimeout(() => setFlashActive(false), 250);
     }
     playShutterSound();
 
-    const frame = captureFrame();
-    imagesRef.current = [...imagesRef.current, frame];
-    setLastCapture(frame);
+    const frame = await captureFrame();
+    setIsCapturing(false);
+    
+    if (frame) {
+      imagesRef.current = [...imagesRef.current, frame];
+      setLastCapture(`/photos/${frame}`); // frame is the filename
+    }
 
     return frame;
-  }, [captureFrame]);
+  }, [captureFrame, flashEnabled, safeTimeout]);
 
   // Orchestrate the full session
   useEffect(() => {
@@ -102,8 +108,8 @@ export default function CountdownScreen({
 
   const startRound = (idx) => {
     setShotIndex(idx);
-    runCountdown(() => {
-      fireShutter();
+    runCountdown(async () => {
+      await fireShutter();
       if (idx + 1 >= totalShots) {
         // All shots taken — small delay then send results
         safeTimeout(() => {
@@ -123,12 +129,11 @@ export default function CountdownScreen({
     <div className="countdown-screen">
       {/* Camera feed — full bleed */}
       <div className="countdown-viewport">
-        <video
-          ref={videoRef}
+        {/* We use a cache-busting query param so the browser doesn't cache the MJPEG stream */}
+        <img
+          src={`${previewUrl}?t=${Date.now()}`}
           className="countdown-video"
-          autoPlay
-          playsInline
-          muted
+          alt="Camera Live View"
         />
 
         {/* Warm overlay tint */}
@@ -140,7 +145,7 @@ export default function CountdownScreen({
         {/* Countdown video - always mounted for performance, toggled via opacity */}
         <div 
           className="countdown-center" 
-          style={{ opacity: phase === 'COUNTDOWN' ? 1 : 0, transition: 'opacity 0.2s' }}
+          style={{ opacity: (phase === 'COUNTDOWN' && !isCapturing) ? 1 : 0, transition: 'opacity 0.2s' }}
         >
           <video 
             ref={countdownVideoRef}
@@ -152,7 +157,7 @@ export default function CountdownScreen({
           />
         </div>
 
-        {phase === 'BETWEEN' && (
+        {phase === 'BETWEEN' && !isCapturing && (
           <div className="countdown-between">
             <div className="countdown-between__preview">
               {lastCapture && (
@@ -165,6 +170,12 @@ export default function CountdownScreen({
                 : t('countdown.moreToGo', language).replace('{n}', totalShots - (shotIndex + 1))
               }
             </p>
+          </div>
+        )}
+        
+        {isCapturing && (
+          <div className="countdown-between">
+            <p className="countdown-between__text">{t('framePicker.applying', language) || "Capturing..."}</p>
           </div>
         )}
 
