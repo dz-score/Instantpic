@@ -54,16 +54,7 @@ export default function App() {
     }
   }, []);
 
-  // ─── Camera Error Fallback ───
-  if (camera.cameraStatus.error) {
-    return (
-      <div style={{ padding: 40, color: 'white', background: '#222', height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-        <h1 style={{ color: '#ff6b6b' }}>Camera Disconnected</h1>
-        <p>{camera.cameraStatus.error}</p>
-        <p style={{ marginTop: 20 }}>Please check the USB connection to the Canon M50.</p>
-      </div>
-    );
-  }
+  // ─── Camera Error Fallback is handled in render ───
 
   // ─── Inactivity Timeout ───
   const resetInactivityTimer = useCallback(() => {
@@ -360,6 +351,26 @@ export default function App() {
           changePin={api.changePin}
           getRecentLogs={api.getRecentLogs}
         />
+      )}
+
+      {camera.cameraStatus.error && (
+        <div style={{
+          position: 'absolute',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          backgroundColor: 'rgba(200, 16, 46, 0.95)',
+          color: 'white',
+          textAlign: 'center',
+          padding: '12px 20px',
+          fontFamily: 'var(--font-body)',
+          fontWeight: 500,
+          zIndex: 9999,
+          boxShadow: '0 -4px 12px rgba(0,0,0,0.15)',
+          backdropFilter: 'blur(4px)'
+        }}>
+          ⚠️ Camera Disconnected: {camera.cameraStatus.error}. Please check the USB connection to the Canon M50.
+        </div>
       )}
     </div>
   );

@@ -92,21 +92,7 @@ export default function CountdownScreen({
     return frame;
   }, [captureFrame, flashEnabled, safeTimeout]);
 
-  // Orchestrate the full session
-  useEffect(() => {
-    imagesRef.current = [];
-    setShotIndex(0);
-    startRound(0);
-
-    return () => {
-      clearInterval(timerRef.current);
-      pendingTimeouts.current.forEach(clearTimeout);
-      pendingTimeouts.current = [];
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const startRound = (idx) => {
+  const startRound = useCallback((idx) => {
     setShotIndex(idx);
     runCountdown(async () => {
       await fireShutter();
@@ -123,7 +109,22 @@ export default function CountdownScreen({
         }, BETWEEN_SHOT_DELAY);
       }
     });
-  };
+  }, [runCountdown, fireShutter, totalShots, safeTimeout, onComplete]);
+
+  // Orchestrate the full session
+  useEffect(() => {
+    imagesRef.current = [];
+    setShotIndex(0);
+    startRound(0);
+
+    return () => {
+      clearInterval(timerRef.current);
+      pendingTimeouts.current.forEach(clearTimeout);
+      pendingTimeouts.current = [];
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
 
   return (
     <div className="countdown-screen">
