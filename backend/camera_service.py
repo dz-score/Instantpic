@@ -58,14 +58,14 @@ class CameraService:
         consecutive_errors = 0
 
         while True:
-            if not self.connected:
-                time.sleep(2)
-                self.init()
-                continue
-
             if self.is_capturing:
                 # Pause preview during capture
                 time.sleep(0.1)
+                continue
+
+            if not self.connected:
+                time.sleep(2)
+                self.init()
                 continue
 
             try:
@@ -134,6 +134,16 @@ class CameraService:
                 
                 # 3. Trigger capture
                 file_path = self.camera.capture(gp.GP_CAPTURE_IMAGE)
+                
+                # 4. Re-enable viewfinder
+                try:
+                    config = self.camera.get_config()
+                    ok, viewfinder = gp.gp_widget_get_child_by_name(config, 'viewfinder')
+                    if ok >= gp.GP_OK:
+                        viewfinder.set_value(1)
+                        self.camera.set_config(config)
+                except Exception as e:
+                    log.warn("camera", "camera_viewfinder_warn", f"Could not enable viewfinder: {e}")
                 
                 # Download file
                 log.info("camera", "camera_downloading", "Downloading image from camera")

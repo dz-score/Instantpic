@@ -131,11 +131,13 @@ export default function CountdownScreen({
       {/* Camera feed — full bleed */}
       <div className="countdown-viewport">
         {/* We use a cache-busting query param so the browser doesn't cache the MJPEG stream */}
-        <img
-          src={`${previewUrl}?t=${Date.now()}`}
-          className="countdown-video"
-          alt="Camera Live View"
-        />
+        {!isCapturing && (
+          <img
+            src={`${previewUrl}?t=${Date.now()}`}
+            className="countdown-video"
+            alt="Camera Live View"
+          />
+        )}
 
         {/* Warm overlay tint */}
         <div className="countdown-overlay" />
