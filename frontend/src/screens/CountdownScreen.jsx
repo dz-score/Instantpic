@@ -35,6 +35,9 @@ export default function CountdownScreen({
   const totalShots = layoutMode === 'collage' ? 3 : 1;
   const timerRef = useRef(null);
   const countdownVideoRef = useRef(null);
+  // Stable MJPEG src — set once on mount, never changes.
+  // This ensures exactly ONE backend preview connection for the entire session.
+  const previewSrc = useRef(`${previewUrl}?t=${Date.now()}`);
 
   const safeTimeout = useCallback((fn, ms) => {
     const id = setTimeout(fn, ms);
@@ -138,14 +141,14 @@ export default function CountdownScreen({
     <div className="countdown-screen">
       {/* Camera feed — full bleed */}
       <div className="countdown-viewport">
-        {/* We use a cache-busting query param so the browser doesn't cache the MJPEG stream */}
-        {!isCapturing && (
-          <img
-            src={`${previewUrl}?t=${Date.now()}`}
-            className="countdown-video"
-            alt="Camera Live View"
-          />
-        )}
+        {/* MJPEG stream — always mounted to keep a single backend connection.
+            Hidden via CSS during capture so the browser doesn't close/reopen the stream. */}
+        <img
+          src={previewSrc.current}
+          className="countdown-video"
+          alt="Camera Live View"
+          style={{ visibility: isCapturing ? 'hidden' : 'visible' }}
+        />
 
         {/* Warm overlay tint */}
         <div className="countdown-overlay" />

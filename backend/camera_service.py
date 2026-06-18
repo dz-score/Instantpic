@@ -14,8 +14,11 @@ class CameraService:
         # Event-based synchronization: set = preview may run, clear = preview must pause
         self._preview_allowed = threading.Event()
         self._preview_allowed.set()  # Start with preview allowed
-        # Flag to track that a capture is in progress (prevents re-init from preview loop)
         self._capture_in_progress = False
+        # Generation counter — only the latest generator does work, older ones exit
+        self._preview_generation = 0
+        # Cooldown to prevent rapid-fire re-init from preview loop
+        self._last_init_time = 0
 
     def init(self):
         with self.lock:
@@ -30,14 +33,11 @@ class CameraService:
                 self.camera = gp.Camera()
                 self.camera.init()
                 
-                # Try to set capturetarget to memory card (1) or internal RAM (0)
-                # For photo booth, RAM is usually preferred to save SD card wear,
-                # but some cameras require it to be set explicitly.
+                # Try to set capturetarget to internal RAM
                 try:
                     config = self.camera.get_config()
                     ok, capture_target = gp.gp_widget_get_child_by_name(config, 'capturetarget')
                     if ok >= gp.GP_OK:
-                        # Find the internal RAM choice to avoid type errors
                         choices = [capture_target.get_choice(i) for i in range(capture_target.count_choices())]
                         for choice in choices:
                             if 'RAM' in choice or 'Internal' in choice:
@@ -48,44 +48,61 @@ class CameraService:
                     log.warn("camera", "camera_config_warn", f"Could not set capture target: {e}")
                     
                 self.connected = True
+                self._last_init_time = time.monotonic()
                 log.info("camera", "camera_ready", "Camera initialized successfully")
             except gp.GPhoto2Error as e:
                 self.connected = False
+                self._last_init_time = time.monotonic()
                 log.error("camera", "camera_init_fail", f"Failed to initialize camera: {e}", data={"error": str(e)})
 
     def preview_generator(self):
-        """Generator yielding MJPEG frames for the live view."""
+        """Generator yielding MJPEG frames for the live view.
+        
+        Uses a generation counter so only the most recently created generator
+        does actual work. Older generators exit immediately, closing their
+        HTTP connections cleanly.
+        """
+        # Bump generation — this invalidates all older generators
+        self._preview_generation += 1
+        my_generation = self._preview_generation
+
         # Auto-init if not connected
-        if not self.connected:
+        if not self.connected and my_generation == self._preview_generation:
             self.init()
 
         consecutive_errors = 0
 
-        while True:
+        while my_generation == self._preview_generation:
             # Wait until preview is allowed (capture clears this event)
-            # Use a timeout so we can check periodically
             allowed = self._preview_allowed.wait(timeout=0.5)
             if not allowed:
-                # Preview is paused (capture in progress), just loop
                 continue
 
+            # Check if we've been superseded by a newer generator
+            if my_generation != self._preview_generation:
+                return
+
             if not self.connected:
-                # Don't re-init if a capture is in progress — the capture
-                # method will handle its own recovery
+                # Never re-init while a capture is in progress
                 if self._capture_in_progress:
                     time.sleep(0.5)
                     continue
-                time.sleep(2)
+                # Cooldown: only attempt re-init every 5 seconds
+                elapsed = time.monotonic() - self._last_init_time
+                if elapsed < 5.0:
+                    time.sleep(1)
+                    continue
                 self.init()
                 continue
 
             try:
-                # Attempt to get the lock with a short timeout so we don't block forever
                 if self.lock.acquire(timeout=0.5):
                     try:
-                        # Re-check inside the lock — capture may have started
+                        # Re-check conditions inside the lock
                         if not self._preview_allowed.is_set():
                             continue
+                        if my_generation != self._preview_generation:
+                            return
                             
                         camera_file = self.camera.capture_preview()
                         file_data = camera_file.get_data_and_size()
@@ -101,18 +118,19 @@ class CameraService:
             except Exception as e:
                 consecutive_errors += 1
                 if consecutive_errors > 5 and not self._capture_in_progress:
-                    log.error("camera", "camera_preview_fail", f"Preview stream failed, re-initializing: {e}")
+                    log.error("camera", "camera_preview_fail", f"Preview stream failed: {e}")
                     self.connected = False
                 time.sleep(0.5)
+        
+        # This generator has been superseded — exit cleanly
 
     def _do_capture(self):
-        """Internal capture method — performs the actual gphoto2 capture sequence.
+        """Internal capture — viewfinder off, flush events, capture, download, save.
         Must be called with self.lock already held.
-        Returns the filename on success, raises on failure.
         """
         log.info("camera", "camera_capture_start", "Starting high-res capture")
         
-        # 1. Disable viewfinder (Live View) so sensor is freed
+        # 1. Disable viewfinder (Live View) so sensor is freed for still capture
         try:
             config = self.camera.get_config()
             ok, viewfinder = gp.gp_widget_get_child_by_name(config, 'viewfinder')
@@ -122,7 +140,7 @@ class CameraService:
         except Exception as e:
             log.warn("camera", "camera_viewfinder_warn", f"Could not disable viewfinder: {e}")
 
-        # 2. Flush pending camera events to clear the queue
+        # 2. Flush pending camera events
         try:
             while True:
                 evt_type, evt_data = self.camera.wait_for_event(10)
@@ -131,29 +149,24 @@ class CameraService:
         except Exception:
             pass
         
-        # Some cameras need a tiny delay between stopping preview and capturing
-        time.sleep(0.5)
+        # 3. Wait for camera to fully exit Live View mode
+        #    Canon M50 needs ~1s to switch from LV to still capture
+        time.sleep(1.0)
         
-        # 3. Trigger capture
+        # 4. Trigger capture
         file_path = self.camera.capture(gp.GP_CAPTURE_IMAGE)
         
-        # 4. Re-enable viewfinder
-        try:
-            config = self.camera.get_config()
-            ok, viewfinder = gp.gp_widget_get_child_by_name(config, 'viewfinder')
-            if ok >= gp.GP_OK:
-                viewfinder.set_value(1)
-                self.camera.set_config(config)
-        except Exception as e:
-            log.warn("camera", "camera_viewfinder_warn", f"Could not enable viewfinder: {e}")
+        # 5. Do NOT re-enable viewfinder here.
+        #    Let capture_preview() in the preview loop re-enable it naturally
+        #    when it resumes. Re-enabling here causes a race condition.
         
-        # Download file
+        # 6. Download file
         log.info("camera", "camera_downloading", "Downloading image from camera")
         camera_file = self.camera.file_get(
             file_path.folder, file_path.name, gp.GP_FILE_TYPE_NORMAL
         )
         
-        # Save to disk
+        # 7. Save to disk
         filename = f"capture_{uuid.uuid4().hex[:8]}.jpg"
         save_path = os.path.join(PHOTOS_DIR, filename)
         camera_file.save(save_path)
@@ -162,23 +175,26 @@ class CameraService:
         return filename
 
     def capture(self):
-        """Captures a full-res image, saves it to disk, and returns the filename.
-        Includes retry logic: if the first attempt fails, re-inits the camera and tries once more.
+        """Captures a full-res image with retry logic.
+        
+        Flow:
+        1. Pause preview loop via Event
+        2. Acquire lock (wait up to 5s for preview loop to release)
+        3. Attempt capture
+        4. On failure: re-init camera and retry once
+        5. Release lock and resume preview
         """
         if not self.connected:
             self.init()
             if not self.connected:
                 raise Exception("Camera not connected")
 
-        # Signal preview loop to pause via Event
+        # Signal preview loop to pause
         self._capture_in_progress = True
         self._preview_allowed.clear()
         
-        # Wait for preview loop to actually release the lock.
-        # We try to acquire the lock with a generous timeout.
-        # The preview loop checks _preview_allowed every 0.5s at most,
-        # so 2 seconds should be more than enough.
-        acquired = self.lock.acquire(timeout=3)
+        # Wait for the lock — preview loop should release within 0.5s
+        acquired = self.lock.acquire(timeout=5)
         if not acquired:
             log.error("camera", "camera_lock_timeout", "Could not acquire camera lock for capture")
             self._capture_in_progress = False
@@ -192,17 +208,16 @@ class CameraService:
                 log.warn("camera", "camera_capture_retry", 
                          f"First capture attempt failed: {first_error}, re-initializing and retrying...")
                 
-                # Release lock for re-init (init() acquires its own lock)
+                # Release lock so init() can acquire it
                 self.lock.release()
                 
-                # Re-init camera
                 try:
                     self.init()
                 except Exception as init_err:
                     log.error("camera", "camera_reinit_fail", f"Re-init failed: {init_err}")
                     self._capture_in_progress = False
                     self._preview_allowed.set()
-                    raise Exception(f"Camera re-init failed after capture error: {init_err}")
+                    raise Exception(f"Camera re-init failed: {init_err}")
                 
                 if not self.connected:
                     self._capture_in_progress = False
@@ -210,11 +225,11 @@ class CameraService:
                     raise Exception("Camera not connected after re-init")
                 
                 # Re-acquire lock for retry
-                acquired = self.lock.acquire(timeout=3)
+                acquired = self.lock.acquire(timeout=5)
                 if not acquired:
                     self._capture_in_progress = False
                     self._preview_allowed.set()
-                    raise Exception("Camera busy after re-init — could not acquire lock")
+                    raise Exception("Camera busy after re-init")
                 
                 try:
                     return self._do_capture()
@@ -223,7 +238,6 @@ class CameraService:
                     self.connected = False
                     raise retry_error
         finally:
-            # Always release the lock if we still hold it
             try:
                 self.lock.release()
             except RuntimeError:
@@ -244,9 +258,7 @@ class CameraService:
                 for key in ['iso', 'aperture', 'shutterspeed', 'whitebalance']:
                     ok, widget = gp.gp_widget_get_child_by_name(config, key)
                     if ok >= gp.GP_OK:
-                        # Get current value
                         val = widget.get_value()
-                        # Get choices
                         choices = []
                         if widget.get_type() in (gp.GP_WIDGET_RADIO, gp.GP_WIDGET_MENU):
                             for i in range(widget.count_choices()):
