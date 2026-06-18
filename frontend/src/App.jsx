@@ -271,6 +271,7 @@ export default function App() {
           maxRetakes={api.config?.max_photos_per_session || 5}
           onRetake={handleRetake}
           onPrint={handlePrintFromReveal}
+          onCancel={resetSession}
           language={language}
         />
       )}

@@ -34,6 +34,7 @@ export const translations = {
       retakeInfo: '{count} of {max} retakes used',
       error: 'Something went wrong. Please try again.',
       retakeMain: 'Retake',
+      home: 'Back to Home',
     },
     pickFavorite: {
       kicker: 'Tough Choice!',
@@ -125,6 +126,7 @@ export const translations = {
       retakeInfo: '{count} sur {max} essais utilisés',
       error: 'Une erreur s\'est produite. Veuillez réessayer.',
       retakeMain: 'Reprendre',
+      home: 'Retour à l\'accueil',
     },
     pickFavorite: {
       kicker: 'Choix difficile !',
