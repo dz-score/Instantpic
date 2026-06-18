@@ -72,7 +72,7 @@ export default function CountdownScreen({
     }, 1000);
   }, [COUNTDOWN_FROM]);
 
-  // Fire shutter: flash + sound + capture
+  // Fire shutter: flash + sound + capture (with auto-retry)
   const fireShutter = useCallback(async () => {
     setIsCapturing(true);
     if (flashEnabled) {
@@ -81,7 +81,15 @@ export default function CountdownScreen({
     }
     playShutterSound();
 
-    const frame = await captureFrame();
+    let frame = await captureFrame();
+    
+    // Auto-retry once if capture failed (handles transient camera errors)
+    if (!frame) {
+      console.warn('[CountdownScreen] Capture failed, retrying in 1.5s...');
+      await new Promise(r => setTimeout(r, 1500));
+      frame = await captureFrame();
+    }
+    
     setIsCapturing(false);
     
     if (frame) {

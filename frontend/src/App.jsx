@@ -130,6 +130,15 @@ export default function App() {
     logger.info('camera', 'camera_capture', `Captured ${images.length} image(s)`);
     setCapturedImages(images);
     setScreen(SCREENS.REVEAL);
+    
+    // If no images were captured (all attempts failed), go straight to error state
+    if (!images || images.length === 0) {
+      logger.error('photo', 'photo_process_fail', 'No images captured — all capture attempts failed', { error: 'No images' });
+      setFinalPhoto(null);
+      setIsProcessing(false);
+      return;
+    }
+    
     setIsProcessing(true);
     try {
       const overlayId = api.config?.selected_overlay || 'none';
