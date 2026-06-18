@@ -154,16 +154,6 @@ export default function App() {
     setScreen(SCREENS.COUNTDOWN);
   }, []);
 
-  const handlePrintFromReveal = useCallback(() => {
-    // If user took multiple photos, let them pick their favorite
-    if (allSessionPhotos.length > 1) {
-      setScreen(SCREENS.PICK_FAVORITE);
-      return;
-    }
-    // Otherwise go straight to frame picker / printing
-    proceedToPrintFlow();
-  }, [allSessionPhotos, proceedToPrintFlow]);
-
   const proceedToPrintFlow = useCallback(() => {
     const overlays = api.config?.overlays || [];
     const hasFrameOptions = overlays.filter((o) => o.id !== 'none').length > 0;
@@ -173,6 +163,16 @@ export default function App() {
       setScreen(SCREENS.PRINTING);
     }
   }, [api.config]);
+
+  const handlePrintFromReveal = useCallback(() => {
+    // If user took multiple photos, let them pick their favorite
+    if (allSessionPhotos.length > 1) {
+      setScreen(SCREENS.PICK_FAVORITE);
+      return;
+    }
+    // Otherwise go straight to frame picker / printing
+    proceedToPrintFlow();
+  }, [allSessionPhotos, proceedToPrintFlow]);
 
   const handleFavoriteSelect = useCallback((selectedFilename) => {
     setFinalPhoto(selectedFilename);
