@@ -135,7 +135,7 @@ export default function App() {
       const overlayId = api.config?.selected_overlay || 'none';
       const result = await api.savePhoto(images, layoutMode, overlayId);
       setFinalPhoto(result.filename);
-      setAllSessionPhotos((prev) => [...prev, result.filename]);
+      setAllSessionPhotos((prev) => [...prev, { filename: result.filename, rawImages: images }]);
     } catch (err) {
       logger.error('photo', 'photo_process_fail', `Photo processing failed: ${err.message}`, { error: err.message });
       setFinalPhoto(null);
@@ -162,7 +162,7 @@ export default function App() {
     }
     // Otherwise go straight to frame picker / printing
     proceedToPrintFlow();
-  }, [allSessionPhotos]);
+  }, [allSessionPhotos, proceedToPrintFlow]);
 
   const proceedToPrintFlow = useCallback(() => {
     const overlays = api.config?.overlays || [];
@@ -176,8 +176,12 @@ export default function App() {
 
   const handleFavoriteSelect = useCallback((selectedFilename) => {
     setFinalPhoto(selectedFilename);
+    const sessionInfo = allSessionPhotos.find(p => p.filename === selectedFilename);
+    if (sessionInfo) {
+      setCapturedImages(sessionInfo.rawImages);
+    }
     proceedToPrintFlow();
-  }, [proceedToPrintFlow]);
+  }, [allSessionPhotos, proceedToPrintFlow]);
 
   const handleFrameSelect = useCallback(async (overlayId) => {
     setIsProcessing(true);
@@ -278,7 +282,7 @@ export default function App() {
 
       {screen === SCREENS.PICK_FAVORITE && (
         <PickFavoriteScreen
-          allPhotos={allSessionPhotos}
+          allPhotos={allSessionPhotos.map(p => p.filename)}
           onSelect={handleFavoriteSelect}
           onBack={handleFinish}
           isProcessing={isProcessing}
