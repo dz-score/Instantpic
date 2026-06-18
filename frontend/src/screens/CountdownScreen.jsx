@@ -68,7 +68,13 @@ export default function CountdownScreen({
       c -= 1;
       if (c > 0) {
         setCount(c);
+      } else if (c === 0) {
+        // Countdown finished (guest just saw "1").
+        // Hide the countdown overlay and give them ~1 second
+        // of pure live view to hold their pose before capture.
+        setPhase('POSING');
       } else {
+        // c < 0 — the pose gap is over, fire the shutter
         clearInterval(timerRef.current);
         onDone();
       }
