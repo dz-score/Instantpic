@@ -81,14 +81,9 @@ export default function CountdownScreen({
     }, 1000);
   }, [COUNTDOWN_FROM]);
 
-  // Fire shutter: flash + sound + capture (with auto-retry)
+  // Fire shutter: capture, then flash + sound on success (with auto-retry)
   const fireShutter = useCallback(async () => {
     setIsCapturing(true);
-    if (flashEnabled) {
-      setFlashActive(true);
-      safeTimeout(() => setFlashActive(false), 250);
-    }
-    playShutterSound();
 
     let frame = await captureFrame();
     
@@ -98,12 +93,21 @@ export default function CountdownScreen({
       await new Promise(r => setTimeout(r, 1500));
       frame = await captureFrame();
     }
+
+    // Flash + sound AFTER capture succeeds — synced with the actual photo
+    if (frame) {
+      if (flashEnabled) {
+        setFlashActive(true);
+        safeTimeout(() => setFlashActive(false), 250);
+      }
+      playShutterSound();
+    }
     
     setIsCapturing(false);
     
     if (frame) {
       imagesRef.current = [...imagesRef.current, frame];
-      setLastCapture(`/photos/${frame}`); // frame is the filename
+      setLastCapture(`/photos/${frame}`);
     }
 
     return frame;
@@ -153,7 +157,6 @@ export default function CountdownScreen({
           src={previewSrc.current}
           className="countdown-video"
           alt="Camera Live View"
-          style={{ visibility: isCapturing ? 'hidden' : 'visible' }}
         />
 
         {/* Warm overlay tint */}
@@ -193,11 +196,7 @@ export default function CountdownScreen({
           </div>
         )}
         
-        {isCapturing && (
-          <div className="countdown-between">
-            <p className="countdown-between__text">{t('framePicker.applying', language) || "Capturing..."}</p>
-          </div>
-        )}
+
 
         {/* Progress dots (collage only) */}
         {layoutMode === 'collage' && (

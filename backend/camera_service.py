@@ -149,9 +149,8 @@ class CameraService:
         except Exception:
             pass
         
-        # 3. Wait for camera to fully exit Live View mode
-        #    Canon M50 needs ~1s to switch from LV to still capture
-        time.sleep(1.0)
+        # 3. Wait briefly for camera to exit Live View mode
+        time.sleep(0.3)
         
         # 4. Trigger capture
         file_path = self.camera.capture(gp.GP_CAPTURE_IMAGE)
