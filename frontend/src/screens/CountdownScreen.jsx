@@ -118,10 +118,8 @@ export default function CountdownScreen({
     runCountdown(async () => {
       await fireShutter();
       if (idx + 1 >= totalShots) {
-        // All shots taken — small delay then send results
-        safeTimeout(() => {
-          onComplete(imagesRef.current);
-        }, 400);
+        // All shots taken — transition immediately (no preview resumption)
+        onComplete(imagesRef.current);
       } else {
         // Show between-shots interstitial
         setPhase('BETWEEN');
