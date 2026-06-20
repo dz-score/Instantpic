@@ -113,6 +113,8 @@ class CameraService:
                         
                     yield (b'--frame\r\n'
                            b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+                    # Cap at ~15fps to prevent backpressure freezes
+                    time.sleep(0.05)
                 else:
                     time.sleep(0.1)
             except Exception as e:
