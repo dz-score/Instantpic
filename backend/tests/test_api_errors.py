@@ -74,7 +74,11 @@ def test_exception_processing_crash(client, mock_base64_image, mocker):
 
 def test_exception_cups_crash(client, temp_workspace, mocker):
     """Test that a print subsystem failure is caught and returned as 500."""
-    mocker.patch("backend.main.print_photo", return_value=False)
+    from backend.print_service import PrintResult
+    mocker.patch(
+        "backend.main.print_svc.print",
+        return_value=PrintResult(success=False, error="Printing failed. Check CUPS setup.")
+    )
     
     # Create a dummy file so it passes the 404 check
     filepath = os.path.join(temp_workspace["photos_dir"], "valid_photo.jpg")
