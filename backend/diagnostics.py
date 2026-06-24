@@ -4,40 +4,21 @@ import shutil
 import subprocess
 import glob
 from backend.config import load_settings
+from backend.print_service import print_svc
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PHOTOS_DIR = os.path.join(BASE_DIR, "backend", "photos")
 
 def check_printer():
-    """Check if CUPS printer is connected/available."""
-    settings = load_settings()
-    printer_name = settings.printer_name
-    
-    if printer_name == "mock" or sys.platform == "win32":
-        return {
-            "connected": True,
-            "status": "Mock printer (development)",
-            "printer_name": printer_name
-        }
-    
-    try:
-        result = subprocess.run(
-            ["lpstat", "-p", printer_name],
-            capture_output=True, text=True, timeout=5
-        )
-        connected = result.returncode == 0
-        status_text = result.stdout.strip() if connected else "Not found"
-        return {
-            "connected": connected,
-            "status": status_text,
-            "printer_name": printer_name
-        }
-    except Exception as e:
-        return {
-            "connected": False,
-            "status": f"Check failed: {str(e)}",
-            "printer_name": printer_name
-        }
+    """Check if printer is connected/available via PrintService."""
+    status = print_svc.get_status()
+    return {
+        "connected": status.connected,
+        "status": status.status_text,
+        "printer_name": status.printer_name,
+        "ready": status.ready,
+        "error": status.error,
+    }
 
 def check_storage():
     """Check disk usage and photo count."""

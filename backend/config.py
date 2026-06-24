@@ -22,6 +22,7 @@ class AppSettings(BaseModel):
     session_timeout: int = 120
     show_names_on_photo: bool = True
     printer_name: str = "mock"
+    printer_options: str = "fit-to-page media=4x6"
     max_photos: int = 1000
     disk_min_free_gb: float = 2.0
     couple_names: str = "Sarah & Michael"

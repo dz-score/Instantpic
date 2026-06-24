@@ -19,7 +19,7 @@ from backend.storage import (
     BASE_DIR
 )
 from backend.photo_processor import process_photo_layout
-from backend.printer import print_photo
+from backend.print_service import print_svc
 from backend.logger import log
 
 # Optional import for camera service. 
@@ -147,14 +147,17 @@ async def trigger_print(filename: str):
         log.warn("printer", "printer_file_missing", f"Print requested for missing file: {filename}")
         raise HTTPException(status_code=404, detail="Photo not found")
 
-    log.info("printer", "printer_sent", f"Print job sent: {filename}", data={"filename": filename})
-    success = print_photo(filepath)
-    if success:
-        log.info("printer", "printer_done", f"Print completed: {filename}", data={"filename": filename})
-        return {"status": "success", "detail": f"Printed {filename}"}
+    result = print_svc.print(filepath)
+    if result.success:
+        return {"status": "success", "detail": f"Printed {filename}", **result.to_dict()}
     else:
-        log.error("printer", "printer_fail", f"Print failed: {filename}", data={"filename": filename})
-        raise HTTPException(status_code=500, detail="Printing failed. Check CUPS setup.")
+        raise HTTPException(status_code=500, detail=result.error or "Printing failed")
+
+@app.get("/api/printer/status")
+async def printer_status():
+    """Get current printer status (connected, ready, errors)."""
+    status = print_svc.get_status()
+    return status.to_dict()
 
 @app.get("/api/health")
 async def health_check():

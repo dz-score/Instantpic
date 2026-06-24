@@ -1,62 +1,127 @@
 import os
 import subprocess
 import pytest
-from backend.printer import print_photo
+from backend.print_service import PrintService, CupsPrinterDriver, MockPrinterDriver, PrintResult, PrinterStatus
 
-def test_print_photo_missing_file(temp_workspace):
-    """It should immediately return False if the file does not exist."""
-    missing_filepath = os.path.join(temp_workspace["photos_dir"], "missing.jpg")
-    
-    result = print_photo(missing_filepath)
-    assert result is False
 
-def test_print_photo_success(temp_workspace, mocker):
-    """It should correctly format and send the CUPS lp command, returning True on success."""
-    # Force Linux mode to trigger actual CUPS logic instead of the dev mock
-    mocker.patch("sys.platform", "linux")
-    
-    # Mock settings to use a specific printer
-    mocker.patch("backend.printer.load_settings", return_value=mocker.Mock(printer_name="Canon_Selphy"))
-    
-    # Mock subprocess.run to simulate a successful CUPS command
-    mock_run = mocker.patch("subprocess.run")
-    mock_run.return_value = subprocess.CompletedProcess(args=[], returncode=0, stdout="request id is Canon_Selphy-123")
-    
-    # Create a dummy file to print
-    filepath = os.path.join(temp_workspace["photos_dir"], "test_print.jpg")
-    with open(filepath, "w") as f:
-        f.write("dummy photo data")
-        
-    result = print_photo(filepath)
-    
-    assert result is True
-    # Verify the correct command was sent to the shell
-    mock_run.assert_called_once_with(
-        ["lp", "-d", "Canon_Selphy", filepath],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        check=True
+def test_mock_driver_success():
+    """MockPrinterDriver should always return success."""
+    driver = MockPrinterDriver("mock")
+    result = driver.print_file("/tmp/test.jpg", "fit-to-page")
+    assert result.success is True
+    assert result.job_id is not None
+    assert result.job_id.startswith("MOCK-")
+
+
+def test_mock_driver_status():
+    """MockPrinterDriver should always report connected and ready."""
+    driver = MockPrinterDriver("mock")
+    status = driver.get_status()
+    assert status.connected is True
+    assert status.ready is True
+
+
+def test_cups_driver_print_success(mocker):
+    """CupsPrinterDriver should parse job ID from lp output on success."""
+    mock_run = mocker.patch("backend.print_service.subprocess.run")
+    mock_run.return_value = subprocess.CompletedProcess(
+        args=[], returncode=0,
+        stdout="request id is EPSON_ET2850-42 (1 file(s))",
+        stderr="",
     )
 
-def test_print_photo_cups_failure(temp_workspace, mocker):
-    """It should catch CalledProcessError and return False if CUPS fails."""
-    # Force Linux mode
-    mocker.patch("sys.platform", "linux")
-    mocker.patch("backend.printer.load_settings", return_value=mocker.Mock(printer_name="Canon_Selphy"))
-    
-    # Mock subprocess.run to raise a CalledProcessError (e.g. printer offline)
-    mock_run = mocker.patch("subprocess.run")
-    mock_run.side_effect = subprocess.CalledProcessError(
-        returncode=1, 
-        cmd=["lp", "-d", "Canon_Selphy", "test_print.jpg"],
-        stderr="lp: Error - The printer or class does not exist."
+    driver = CupsPrinterDriver("EPSON_ET2850")
+    result = driver.print_file("/tmp/test.jpg", "fit-to-page media=4x6")
+
+    assert result.success is True
+    assert result.job_id == "EPSON_ET2850-42"
+    # Verify correct command shape
+    call_args = mock_run.call_args[0][0]
+    assert call_args[0] == "lp"
+    assert "-d" in call_args
+    assert "EPSON_ET2850" in call_args
+    assert "-o" in call_args
+    assert "fit-to-page" in call_args
+    assert "media=4x6" in call_args
+
+
+def test_cups_driver_print_failure(mocker):
+    """CupsPrinterDriver should return failure with error message on non-zero exit."""
+    mock_run = mocker.patch("backend.print_service.subprocess.run")
+    mock_run.return_value = subprocess.CompletedProcess(
+        args=[], returncode=1,
+        stdout="",
+        stderr="lp: Error - The printer or class does not exist.",
     )
-    
-    filepath = os.path.join(temp_workspace["photos_dir"], "test_print_fail.jpg")
-    with open(filepath, "w") as f:
-        f.write("dummy photo data")
-        
-    result = print_photo(filepath)
-    
-    assert result is False
+
+    driver = CupsPrinterDriver("BadPrinter")
+    result = driver.print_file("/tmp/test.jpg", "fit-to-page")
+
+    assert result.success is False
+    assert "does not exist" in result.error
+
+
+def test_cups_driver_print_timeout(mocker):
+    """CupsPrinterDriver should handle subprocess timeout gracefully."""
+    mock_run = mocker.patch("backend.print_service.subprocess.run")
+    mock_run.side_effect = subprocess.TimeoutExpired(cmd="lp", timeout=30)
+
+    driver = CupsPrinterDriver("EPSON_ET2850")
+    result = driver.print_file("/tmp/test.jpg", "fit-to-page")
+
+    assert result.success is False
+    assert "timed out" in result.error
+
+
+def test_cups_driver_status_idle(mocker):
+    """CupsPrinterDriver should parse idle status from lpstat."""
+    mock_run = mocker.patch("backend.print_service.subprocess.run")
+    mock_run.return_value = subprocess.CompletedProcess(
+        args=[], returncode=0,
+        stdout="printer EPSON_ET2850 is idle.",
+        stderr="",
+    )
+
+    driver = CupsPrinterDriver("EPSON_ET2850")
+    status = driver.get_status()
+
+    assert status.connected is True
+    assert status.ready is True
+    assert status.status_text == "Idle"
+
+
+def test_cups_driver_status_not_found(mocker):
+    """CupsPrinterDriver should report disconnected when queue is missing."""
+    mock_run = mocker.patch("backend.print_service.subprocess.run")
+    mock_run.return_value = subprocess.CompletedProcess(
+        args=[], returncode=1,
+        stdout="",
+        stderr="lpstat: Invalid destination name",
+    )
+
+    driver = CupsPrinterDriver("BadPrinter")
+    status = driver.get_status()
+
+    assert status.connected is False
+    assert status.ready is False
+
+
+def test_print_service_file_not_found(mocker):
+    """PrintService.print() should return failure if file doesn't exist."""
+    mocker.patch("backend.print_service.load_settings", return_value=mocker.Mock(
+        printer_name="mock", printer_options="fit-to-page"
+    ))
+    svc = PrintService()
+    result = svc.print("/nonexistent/file.jpg")
+    assert result.success is False
+    assert "not found" in result.error.lower()
+
+
+def test_print_result_to_dict():
+    """PrintResult.to_dict() should return a plain dictionary."""
+    r = PrintResult(success=True, job_id="TEST-1", duration_ms=500)
+    d = r.to_dict()
+    assert d["success"] is True
+    assert d["job_id"] == "TEST-1"
+    assert d["duration_ms"] == 500
+    assert d["error"] is None
