@@ -54,17 +54,7 @@ export default function App() {
     }
   }, []);
 
-  // ─── Init Camera ───
-  useEffect(() => {
-    camera.initCamera();
-    return () => camera.stopCamera();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // ─── Keep video src in sync ───
-  useEffect(() => {
-    camera.ensureVideoSrc();
-  }, [screen, camera]);
+  // ─── Camera Error Fallback is handled in render ───
 
   // ─── Inactivity Timeout ───
   const resetInactivityTimer = useCallback(() => {
@@ -140,12 +130,21 @@ export default function App() {
     logger.info('camera', 'camera_capture', `Captured ${images.length} image(s)`);
     setCapturedImages(images);
     setScreen(SCREENS.REVEAL);
+    
+    // If no images were captured (all attempts failed), go straight to error state
+    if (!images || images.length === 0) {
+      logger.error('photo', 'photo_process_fail', 'No images captured — all capture attempts failed', { error: 'No images' });
+      setFinalPhoto(null);
+      setIsProcessing(false);
+      return;
+    }
+    
     setIsProcessing(true);
     try {
       const overlayId = api.config?.selected_overlay || 'none';
       const result = await api.savePhoto(images, layoutMode, overlayId);
       setFinalPhoto(result.filename);
-      setAllSessionPhotos((prev) => [...prev, result.filename]);
+      setAllSessionPhotos((prev) => [...prev, { filename: result.filename, rawImages: images }]);
     } catch (err) {
       logger.error('photo', 'photo_process_fail', `Photo processing failed: ${err.message}`, { error: err.message });
       setFinalPhoto(null);
@@ -164,16 +163,6 @@ export default function App() {
     setScreen(SCREENS.COUNTDOWN);
   }, []);
 
-  const handlePrintFromReveal = useCallback(() => {
-    // If user took multiple photos, let them pick their favorite
-    if (allSessionPhotos.length > 1) {
-      setScreen(SCREENS.PICK_FAVORITE);
-      return;
-    }
-    // Otherwise go straight to frame picker / printing
-    proceedToPrintFlow();
-  }, [allSessionPhotos]);
-
   const proceedToPrintFlow = useCallback(() => {
     const overlays = api.config?.overlays || [];
     const hasFrameOptions = overlays.filter((o) => o.id !== 'none').length > 0;
@@ -184,10 +173,24 @@ export default function App() {
     }
   }, [api.config]);
 
+  const handlePrintFromReveal = useCallback(() => {
+    // If user took multiple photos, let them pick their favorite
+    if (allSessionPhotos.length > 1) {
+      setScreen(SCREENS.PICK_FAVORITE);
+      return;
+    }
+    // Otherwise go straight to frame picker / printing
+    proceedToPrintFlow();
+  }, [allSessionPhotos, proceedToPrintFlow]);
+
   const handleFavoriteSelect = useCallback((selectedFilename) => {
     setFinalPhoto(selectedFilename);
+    const sessionInfo = allSessionPhotos.find(p => p.filename === selectedFilename);
+    if (sessionInfo) {
+      setCapturedImages(sessionInfo.rawImages);
+    }
     proceedToPrintFlow();
-  }, [proceedToPrintFlow]);
+  }, [allSessionPhotos, proceedToPrintFlow]);
 
   const handleFrameSelect = useCallback(async (overlayId) => {
     setIsProcessing(true);
@@ -264,7 +267,7 @@ export default function App() {
 
       {screen === SCREENS.COUNTDOWN && (
         <CountdownScreen
-          videoRef={camera.videoRef}
+          previewUrl={camera.previewUrl}
           layoutMode={layoutMode}
           captureFrame={camera.captureFrame}
           onComplete={handleCaptureComplete}
@@ -281,13 +284,14 @@ export default function App() {
           maxRetakes={api.config?.max_photos_per_session || 5}
           onRetake={handleRetake}
           onPrint={handlePrintFromReveal}
+          onCancel={resetSession}
           language={language}
         />
       )}
 
       {screen === SCREENS.PICK_FAVORITE && (
         <PickFavoriteScreen
-          allPhotos={allSessionPhotos}
+          allPhotos={allSessionPhotos.map(p => p.filename)}
           onSelect={handleFavoriteSelect}
           onBack={handleFinish}
           isProcessing={isProcessing}
@@ -361,6 +365,26 @@ export default function App() {
           changePin={api.changePin}
           getRecentLogs={api.getRecentLogs}
         />
+      )}
+
+      {camera.cameraStatus.error && (
+        <div style={{
+          position: 'absolute',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          backgroundColor: 'rgba(200, 16, 46, 0.95)',
+          color: 'white',
+          textAlign: 'center',
+          padding: '12px 20px',
+          fontFamily: 'var(--font-body)',
+          fontWeight: 500,
+          zIndex: 9999,
+          boxShadow: '0 -4px 12px rgba(0,0,0,0.15)',
+          backdropFilter: 'blur(4px)'
+        }}>
+          ⚠️ Camera Disconnected: {camera.cameraStatus.error}. Please check the USB connection to the Canon M50.
+        </div>
       )}
     </div>
   );

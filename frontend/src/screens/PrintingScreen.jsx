@@ -46,12 +46,19 @@ export default function PrintingScreen({
   const downloadUrl = getDownloadUrl(finalPhoto);
   const qrSrc = getQrUrl(downloadUrl);
 
-  // Trigger print
+  // Trigger print (with 30s timeout to prevent hanging forever)
   useEffect(() => {
     let cancelled = false;
+    const PRINT_TIMEOUT_MS = 30000;
     (async () => {
       try {
-        await printPhotoRef.current(finalPhoto);
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Print timed out')), PRINT_TIMEOUT_MS)
+        );
+        await Promise.race([
+          printPhotoRef.current(finalPhoto),
+          timeoutPromise,
+        ]);
         if (!cancelled) setPhase('DONE');
       } catch {
         if (!cancelled) setPhase('ERROR');

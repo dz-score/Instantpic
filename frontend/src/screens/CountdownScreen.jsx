@@ -15,7 +15,7 @@ const BETWEEN_SHOT_DELAY = 3000; // ms between collage shots
  * The <video> element is passed in from App so it stays mounted.
  */
 export default function CountdownScreen({
-  videoRef,
+  previewUrl,
   layoutMode,
   captureFrame,
   onComplete,
@@ -29,11 +29,15 @@ export default function CountdownScreen({
   const [shotIndex, setShotIndex] = useState(0);
   const [flashActive, setFlashActive] = useState(false);
   const [lastCapture, setLastCapture] = useState(null);
+  const [isCapturing, setIsCapturing] = useState(false);
   const pendingTimeouts = useRef([]);
   const imagesRef = useRef([]);
   const totalShots = layoutMode === 'collage' ? 3 : 1;
   const timerRef = useRef(null);
   const countdownVideoRef = useRef(null);
+  // Stable MJPEG src — set once on mount, never changes.
+  // This ensures exactly ONE backend preview connection for the entire session.
+  const previewSrc = useRef(`${previewUrl}?t=${Date.now()}`);
 
   const safeTimeout = useCallback((fn, ms) => {
     const id = setTimeout(fn, ms);
@@ -64,27 +68,69 @@ export default function CountdownScreen({
       c -= 1;
       if (c > 0) {
         setCount(c);
+      } else if (c === 0) {
+        // Countdown finished (guest just saw "1").
+        // Hide the countdown overlay and give them ~1 second
+        // of pure live view to hold their pose before capture.
+        setPhase('POSING');
       } else {
+        // c < 0 — the pose gap is over, fire the shutter
         clearInterval(timerRef.current);
         onDone();
       }
     }, 1000);
   }, [COUNTDOWN_FROM]);
 
-  // Fire shutter: flash + sound + capture
-  const fireShutter = useCallback(() => {
-    if (flashEnabled) {
-      setFlashActive(true);
-      safeTimeout(() => setFlashActive(false), 250);
-    }
-    playShutterSound();
+  // Fire shutter: capture, then flash + sound on success (with auto-retry)
+  const fireShutter = useCallback(async () => {
+    setIsCapturing(true);
 
-    const frame = captureFrame();
-    imagesRef.current = [...imagesRef.current, frame];
-    setLastCapture(frame);
+    let frame = await captureFrame();
+    
+    // Auto-retry once if capture failed (handles transient camera errors)
+    if (!frame) {
+      console.warn('[CountdownScreen] Capture failed, retrying in 1.5s...');
+      await new Promise(r => setTimeout(r, 1500));
+      frame = await captureFrame();
+    }
+
+    // Flash + sound AFTER capture succeeds — synced with the actual photo
+    if (frame) {
+      if (flashEnabled) {
+        setFlashActive(true);
+        safeTimeout(() => setFlashActive(false), 250);
+      }
+      playShutterSound();
+    }
+    
+    setIsCapturing(false);
+    
+    if (frame) {
+      imagesRef.current = [...imagesRef.current, frame];
+      setLastCapture(`/photos/${frame}`);
+    }
 
     return frame;
-  }, [captureFrame]);
+  }, [captureFrame, flashEnabled, safeTimeout]);
+
+  const startRound = useCallback((idx) => {
+    setShotIndex(idx);
+    runCountdown(async () => {
+      await fireShutter();
+      if (idx + 1 >= totalShots) {
+        // All shots taken — small delay then send results
+        safeTimeout(() => {
+          onComplete(imagesRef.current);
+        }, 400);
+      } else {
+        // Show between-shots interstitial
+        setPhase('BETWEEN');
+        safeTimeout(() => {
+          startRound(idx + 1);
+        }, BETWEEN_SHOT_DELAY);
+      }
+    });
+  }, [runCountdown, fireShutter, totalShots, safeTimeout, onComplete]);
 
   // Orchestrate the full session
   useEffect(() => {
@@ -100,35 +146,17 @@ export default function CountdownScreen({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const startRound = (idx) => {
-    setShotIndex(idx);
-    runCountdown(() => {
-      fireShutter();
-      if (idx + 1 >= totalShots) {
-        // All shots taken — small delay then send results
-        safeTimeout(() => {
-          onComplete(imagesRef.current);
-        }, 400);
-      } else {
-        // Show between-shots interstitial
-        setPhase('BETWEEN');
-        safeTimeout(() => {
-          startRound(idx + 1);
-        }, BETWEEN_SHOT_DELAY);
-      }
-    });
-  };
 
   return (
     <div className="countdown-screen">
       {/* Camera feed — full bleed */}
       <div className="countdown-viewport">
-        <video
-          ref={videoRef}
+        {/* MJPEG stream — always mounted to keep a single backend connection.
+            Hidden via CSS during capture so the browser doesn't close/reopen the stream. */}
+        <img
+          src={previewSrc.current}
           className="countdown-video"
-          autoPlay
-          playsInline
-          muted
+          alt="Camera Live View"
         />
 
         {/* Warm overlay tint */}
@@ -140,7 +168,7 @@ export default function CountdownScreen({
         {/* Countdown video - always mounted for performance, toggled via opacity */}
         <div 
           className="countdown-center" 
-          style={{ opacity: phase === 'COUNTDOWN' ? 1 : 0, transition: 'opacity 0.2s' }}
+          style={{ opacity: (phase === 'COUNTDOWN' && !isCapturing) ? 1 : 0, transition: 'opacity 0.2s' }}
         >
           <video 
             ref={countdownVideoRef}
@@ -152,7 +180,7 @@ export default function CountdownScreen({
           />
         </div>
 
-        {phase === 'BETWEEN' && (
+        {phase === 'BETWEEN' && !isCapturing && (
           <div className="countdown-between">
             <div className="countdown-between__preview">
               {lastCapture && (
@@ -167,6 +195,8 @@ export default function CountdownScreen({
             </p>
           </div>
         )}
+        
+
 
         {/* Progress dots (collage only) */}
         {layoutMode === 'collage' && (

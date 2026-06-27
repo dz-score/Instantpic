@@ -4,7 +4,7 @@ import PhotoFrame from '../components/PhotoFrame';
 import ConfettiOverlay from '../components/ConfettiOverlay';
 import { getRandomCompliment } from '../utils/compliments';
 import { t } from '../utils/i18n';
-import { RotateCcw, Heart } from 'lucide-react';
+import { RotateCcw, Heart, Home } from 'lucide-react';
 import './RevealScreen.css';
 
 /**
@@ -29,6 +29,7 @@ export default function RevealScreen({
   maxRetakes = 3,
   onRetake,
   onPrint,
+  onCancel,
   language,
 }) {
   const compliment = useMemo(() => getRandomCompliment(language), [finalPhoto, language]);
@@ -115,10 +116,16 @@ export default function RevealScreen({
         /* ── Error State ── */
         <div className="reveal-error">
           <p className="reveal-error__text">{t('reveal.error', language)}</p>
-          <button className="reveal-btn-retake" onClick={onRetake}>
-            <span className="reveal-btn-retake__icon btn-icon"><RotateCcw strokeWidth={1.5} size={20} /></span>
-            <span className="reveal-btn-retake__main">{t('reveal.retakeMain', language)}</span>
-          </button>
+          <div className="reveal-actions" style={{ marginTop: '2rem' }}>
+            <button className="reveal-btn-retake" onClick={onRetake}>
+              <span className="reveal-btn-retake__icon btn-icon"><RotateCcw strokeWidth={1.5} size={20} /></span>
+              <span className="reveal-btn-retake__main">{t('reveal.retakeMain', language)}</span>
+            </button>
+            <button className="reveal-btn-retake" onClick={onCancel} style={{ background: 'var(--bg-card)' }}>
+              <span className="reveal-btn-retake__icon btn-icon"><Home strokeWidth={1.5} size={20} /></span>
+              <span className="reveal-btn-retake__main">{t('reveal.home', language)}</span>
+            </button>
+          </div>
         </div>
       )}
     </ScreenShell>

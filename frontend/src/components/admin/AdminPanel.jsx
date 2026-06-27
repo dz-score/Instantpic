@@ -3,11 +3,13 @@ import AdminPinGate from './AdminPinGate';
 import EventTab from './tabs/EventTab';
 import BoothTab from './tabs/BoothTab';
 import SystemTab from './tabs/SystemTab';
+import CameraTab from './tabs/CameraTab';
 import './AdminPanel.css';
 
 const TABS = [
   { id: 'event', icon: '♡', label: 'Event' },
   { id: 'booth', icon: '◎', label: 'Booth' },
+  { id: 'camera', icon: '📷', label: 'Camera' },
   { id: 'system', icon: '⚙', label: 'System' },
 ];
 
@@ -160,6 +162,9 @@ export default function AdminPanel({
           )}
           {activeTab === 'booth' && (
             <BoothTab form={form} onChange={handleFormChange} />
+          )}
+          {activeTab === 'camera' && (
+            <CameraTab />
           )}
           {activeTab === 'system' && (
             <SystemTab
