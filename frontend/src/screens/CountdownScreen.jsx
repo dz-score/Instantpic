@@ -31,6 +31,8 @@ export default function CountdownScreen({
   const [flashActive, setFlashActive] = useState(false);
   const [lastCapture, setLastCapture] = useState(null);
   const [isCapturing, setIsCapturing] = useState(false);
+  const [cameraReady, setCameraReady] = useState(false);
+  const [sessionStarted, setSessionStarted] = useState(false);
   const pendingTimeouts = useRef([]);
   const imagesRef = useRef([]);
   const totalShots = layoutMode === 'collage' ? 3 : 1;
@@ -137,11 +139,14 @@ export default function CountdownScreen({
     });
   }, [runCountdown, fireShutter, totalShots, safeTimeout, onComplete, resumePreview]);
 
-  // Orchestrate the full session
+  // 1. Mount: Wake up camera and subscribe to SSE
   useEffect(() => {
     imagesRef.current = [];
     setShotIndex(0);
-    startRound(0);
+
+    if (resumePreview) {
+      resumePreview();
+    }
 
     // Subscribe to SSE for diagnostic metrics
     const evtSource = new EventSource('/api/events');
@@ -166,6 +171,14 @@ export default function CountdownScreen({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // 2. Start session only when camera stream actually loads
+  useEffect(() => {
+    if (cameraReady && !sessionStarted) {
+      setSessionStarted(true);
+      startRound(0);
+    }
+  }, [cameraReady, sessionStarted, startRound]);
+
 
   return (
     <div className="countdown-screen">
@@ -177,7 +190,17 @@ export default function CountdownScreen({
           src={previewSrc.current}
           className="countdown-video"
           alt="Camera Live View"
+          onLoad={() => setCameraReady(true)}
+          style={{ opacity: cameraReady ? 1 : 0, transition: 'opacity 0.3s' }}
         />
+
+        {/* Loading Spinner for cold start */}
+        {!cameraReady && (
+          <div className="countdown-loading">
+            <div className="spinner"></div>
+            <p>{t('camera.wakingUp', language) || "Waking up camera..."}</p>
+          </div>
+        )}
 
         {/* Warm overlay tint */}
         <div className="countdown-overlay" />
