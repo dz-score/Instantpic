@@ -83,7 +83,11 @@ class CameraService:
 
                 # Pre-warm the viewfinder so the first preview frame is instant
                 try:
-                    self.camera.capture_preview()
+                    camera_file = self.camera.capture_preview()
+                    file_data = camera_file.get_data_and_size()
+                    with self._frame_condition:
+                        self._latest_frame = bytes(memoryview(file_data))
+                        self._frame_condition.notify_all()
                     log.debug("camera", "camera_warmup", "Viewfinder pre-warmed")
                 except Exception:
                     pass
@@ -159,26 +163,13 @@ class CameraService:
                     if not self._preview_allowed.is_set():
                         continue
 
-                    # Periodically flush the camera's internal event queue
-                    frame_count += 1
-                    flush_time = 0
-                    if frame_count % 10 == 0:
-                        flush_start = time.perf_counter()
-                        try:
-                            while True:
-                                evt_type, _evt_data = self.camera.wait_for_event(1)
-                                if evt_type == gp.GP_EVENT_TIMEOUT:
-                                    break
-                        except Exception as evt_err:
-                            log.debug("camera_timing", "worker_flush_err", f"Event flush error: {evt_err}")
-                        flush_time = time.perf_counter() - flush_start
-
                     cap_start = time.perf_counter()
                     camera_file = self.camera.capture_preview()
                     file_data = camera_file.get_data_and_size()
                     frame = bytes(memoryview(file_data))
                     cap_time = time.perf_counter() - cap_start
                     consecutive_errors = 0
+                    flush_time = 0
                 finally:
                     self.lock.release()
 
@@ -196,11 +187,16 @@ class CameraService:
 
             except Exception as e:
                 consecutive_errors += 1
+                log.debug("camera_timing", "worker_preview_err", f"Preview error #{consecutive_errors}: {e}")
+                
                 if consecutive_errors > 5 and not self._capture_in_progress:
                     log.error("camera", "camera_preview_fail", f"Preview worker failed: {e}")
                     self.connected = False
                     sse_svc.dispatch_event("camera_status", self.get_status())
-                time.sleep(0.5)
+                
+                # Sleep briefly on error. 0.1s is enough to let USB settle 
+                # without causing a massive freeze on the frontend.
+                time.sleep(0.1)
 
         self._worker_running = False
         log.info("camera", "worker_stopped", "Background camera worker thread stopped")
