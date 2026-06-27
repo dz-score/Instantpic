@@ -66,3 +66,39 @@ def client(temp_workspace, temp_config):
     from fastapi.testclient import TestClient
     from backend.main import app
     return TestClient(app)
+
+@pytest.fixture
+def mock_gphoto2(monkeypatch):
+    """
+    Mocks the gphoto2 library to allow testing CameraService without physical hardware.
+    Returns the mocked gphoto2 module.
+    """
+    from unittest.mock import MagicMock
+    import sys
+    
+    mock_gp = MagicMock()
+    
+    # Setup some basic expected gphoto2 constants and types
+    mock_gp.GP_CAPTURE_IMAGE = 0
+    mock_gp.GP_WIDGET_RADIO = 1
+    
+    class GPhoto2Error(Exception):
+        pass
+    mock_gp.GPhoto2Error = GPhoto2Error
+    
+    # Create mock Context and Camera
+    mock_context = MagicMock()
+    mock_camera = MagicMock()
+    
+    # Helper to simulate capturing a preview returning valid mock file
+    mock_preview_file = MagicMock()
+    mock_preview_file.get_data_and_size.return_value = (b'fake_jpeg_data', 14)
+    mock_camera.capture_preview.return_value = mock_preview_file
+    
+    mock_gp.Context = MagicMock(return_value=mock_context)
+    mock_gp.Camera = MagicMock(return_value=mock_camera)
+    
+    # Patch into sys.modules
+    monkeypatch.setitem(sys.modules, 'gphoto2', mock_gp)
+    
+    return mock_gp
