@@ -385,33 +385,19 @@ class CameraService:
                 return self._do_capture()
             except Exception as first_error:
                 log.warn("camera", "camera_capture_retry",
-                         f"First capture attempt failed: {first_error}, re-initializing and retrying...")
+                         f"First capture attempt failed: {first_error}, waiting 0.6s and retrying...")
 
-                # Release lock so init() can acquire it
-                self.lock.release()
-
+                # The camera's mirror might be dropping from live view.
+                # Just wait a moment and try again without dropping the USB connection.
+                time.sleep(0.6)
+                
+                # Flush pending events before retry to clear any transient errors
                 try:
-                    self.init()
-                except Exception as init_err:
-                    log.error("camera", "camera_reinit_fail", f"Re-init failed: {init_err}")
-                    self._capture_in_progress = False
-                    self._preview_allowed.set()
-                    sse_svc.dispatch_event("camera_status", self.get_status())
-                    raise Exception(f"Camera re-init failed: {init_err}")
-
-                if not self.connected:
-                    self._capture_in_progress = False
-                    self._preview_allowed.set()
-                    sse_svc.dispatch_event("camera_status", self.get_status())
-                    raise Exception("Camera not connected after re-init")
-
-                # Re-acquire lock for retry
-                acquired = self.lock.acquire(timeout=5)
-                if not acquired:
-                    self._capture_in_progress = False
-                    self._preview_allowed.set()
-                    sse_svc.dispatch_event("camera_status", self.get_status())
-                    raise Exception("Camera busy after re-init")
+                    evt_type, _ = self.camera.wait_for_event(10)
+                    while evt_type != gp.GP_EVENT_TIMEOUT:
+                        evt_type, _ = self.camera.wait_for_event(10)
+                except Exception:
+                    pass
 
                 try:
                     return self._do_capture()
