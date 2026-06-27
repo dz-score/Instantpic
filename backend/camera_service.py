@@ -156,7 +156,7 @@ class CameraService:
 
                     # Periodically flush the camera's internal event queue
                     frame_count += 1
-                    if frame_count % 50 == 0:
+                    if frame_count % 10 == 0:
                         try:
                             while True:
                                 evt_type, _evt_data = self.camera.wait_for_event(1)
@@ -278,6 +278,17 @@ class CameraService:
         filename = f"capture_{uuid.uuid4().hex[:8]}.jpg"
         save_path = os.path.join(PHOTOS_DIR, filename)
         camera_file.save(save_path)
+
+        # 8. Flush pending camera events AFTER capture.
+        # This clears GP_EVENT_FILE_ADDED and other capture-related events
+        # from the internal queue so they don't pile up and freeze the NEXT preview stream.
+        try:
+            while True:
+                evt_type, evt_data = self.camera.wait_for_event(50)
+                if evt_type == gp.GP_EVENT_TIMEOUT:
+                    break
+        except Exception:
+            pass
 
         log.info("camera", "camera_capture_done", f"Image saved: {filename}")
         return filename
