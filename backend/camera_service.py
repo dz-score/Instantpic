@@ -19,6 +19,11 @@ class CameraService:
         self._preview_generation = 0
         # Cooldown to prevent rapid-fire re-init from preview loop
         self._last_init_time = 0
+        # Error tracking for status reporting
+        self._last_error = None
+        # Exponential backoff for init retries (5s → 10s → 20s → 30s cap)
+        self._init_backoff = 5
+        self._init_fail_count = 0
 
     def init(self):
         with self.lock:
@@ -29,7 +34,12 @@ class CameraService:
                     except Exception:
                         pass
                 
-                log.info("camera", "camera_init", "Initializing gphoto2 camera...")
+                # First attempt logs at INFO, subsequent retries at DEBUG
+                if self._init_fail_count == 0:
+                    log.info("camera", "camera_init", "Initializing gphoto2 camera...")
+                else:
+                    log.debug("camera", "camera_init", f"Re-attempting camera init (attempt #{self._init_fail_count + 1}, backoff={self._init_backoff}s)")
+                
                 self.camera = gp.Camera()
                 self.camera.init()
                 
@@ -48,12 +58,23 @@ class CameraService:
                     log.warn("camera", "camera_config_warn", f"Could not set capture target: {e}")
                     
                 self.connected = True
+                self._last_error = None
+                self._init_backoff = 5  # Reset backoff on success
+                self._init_fail_count = 0
                 self._last_init_time = time.monotonic()
                 log.info("camera", "camera_ready", "Camera initialized successfully")
             except gp.GPhoto2Error as e:
                 self.connected = False
+                self._last_error = str(e)
+                self._init_fail_count += 1
                 self._last_init_time = time.monotonic()
-                log.error("camera", "camera_init_fail", f"Failed to initialize camera: {e}", data={"error": str(e)})
+                # First failure logs at ERROR, subsequent at DEBUG
+                if self._init_fail_count == 1:
+                    log.error("camera", "camera_init_fail", f"Failed to initialize camera: {e}", data={"error": str(e)})
+                else:
+                    log.debug("camera", "camera_init_fail", f"Camera init retry #{self._init_fail_count} failed: {e}")
+                # Exponential backoff: 5 → 10 → 20 → 30 (capped)
+                self._init_backoff = min(self._init_backoff * 2, 30)
 
     def preview_generator(self):
         """Generator yielding MJPEG frames for the live view.
@@ -87,9 +108,9 @@ class CameraService:
                 if self._capture_in_progress:
                     time.sleep(0.5)
                     continue
-                # Cooldown: only attempt re-init every 5 seconds
+                # Exponential backoff between re-init attempts
                 elapsed = time.monotonic() - self._last_init_time
-                if elapsed < 5.0:
+                if elapsed < self._init_backoff:
                     time.sleep(1)
                     continue
                 self.init()
@@ -113,6 +134,8 @@ class CameraService:
                         
                     yield (b'--frame\r\n'
                            b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+                    # Cap at ~15fps to prevent backpressure freezes
+                    time.sleep(0.05)
                 else:
                     time.sleep(0.1)
             except Exception as e:
@@ -293,7 +316,8 @@ class CameraService:
     def get_status(self):
         return {
             "connected": self.connected,
-            "is_capturing": self._capture_in_progress
+            "is_capturing": self._capture_in_progress,
+            "error": self._last_error
         }
 
 # Global singleton instance
