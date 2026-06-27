@@ -146,9 +146,14 @@ class CameraService:
                 continue
 
             try:
+                loop_start = time.perf_counter()
+                
+                acq_start = time.perf_counter()
                 acquired = self.lock.acquire(timeout=0.5)
                 if not acquired:
+                    log.debug("camera_timing", "worker_lock_timeout", "Worker failed to acquire lock within 0.5s")
                     continue
+                acq_time = time.perf_counter() - acq_start
 
                 try:
                     if not self._preview_allowed.is_set():
@@ -156,18 +161,23 @@ class CameraService:
 
                     # Periodically flush the camera's internal event queue
                     frame_count += 1
+                    flush_time = 0
                     if frame_count % 10 == 0:
+                        flush_start = time.perf_counter()
                         try:
                             while True:
                                 evt_type, _evt_data = self.camera.wait_for_event(1)
                                 if evt_type == gp.GP_EVENT_TIMEOUT:
                                     break
-                        except Exception:
-                            pass
+                        except Exception as evt_err:
+                            log.debug("camera_timing", "worker_flush_err", f"Event flush error: {evt_err}")
+                        flush_time = time.perf_counter() - flush_start
 
+                    cap_start = time.perf_counter()
                     camera_file = self.camera.capture_preview()
                     file_data = camera_file.get_data_and_size()
                     frame = bytes(memoryview(file_data))
+                    cap_time = time.perf_counter() - cap_start
                     consecutive_errors = 0
                 finally:
                     self.lock.release()
@@ -177,8 +187,11 @@ class CameraService:
                     self._latest_frame = frame
                     self._frame_condition.notify_all()
 
-                # Target ~15fps. capture_preview takes ~50-100ms,
-                # so this gives ~120-166ms per cycle = 6-8fps effective.
+                loop_time = time.perf_counter() - loop_start
+                log.debug("camera_timing", "worker_cycle", 
+                          f"Worker cycle: cap={cap_time*1000:.1f}ms, flush={flush_time*1000:.1f}ms, lock={acq_time*1000:.1f}ms, total={loop_time*1000:.1f}ms")
+
+                # Target ~15fps
                 time.sleep(0.066)
 
             except Exception as e:
@@ -213,11 +226,14 @@ class CameraService:
         self._start_worker()
 
         while my_generation == self._preview_generation and not self._shutdown_event.is_set():
+            wait_start = time.perf_counter()
             with self._frame_condition:
                 # Wait up to 2s for a new frame from the worker
                 got_frame = self._frame_condition.wait(timeout=2.0)
+                wait_time = time.perf_counter() - wait_start
+                
                 if not got_frame:
-                    # Timeout — no frame arrived (camera might be disconnected)
+                    log.debug("camera_timing", "http_generator_timeout", "HTTP generator timed out waiting for frame (2s)")
                     continue
                 frame = self._latest_frame
 
@@ -226,10 +242,13 @@ class CameraService:
 
             # Check if this generator has been superseded
             if my_generation != self._preview_generation:
+                log.debug("camera_timing", "http_generator_superseded", "HTTP generator superseded, exiting")
                 return
 
             yield (b'--frame\r\n'
                    b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+            
+            # log.debug("camera_timing", "http_generator_yield", f"Yielded frame (wait={wait_time*1000:.1f}ms)")
 
     # ─── High-res Capture ─────────────────────────────────────────
 
@@ -238,6 +257,7 @@ class CameraService:
         Must be called with self.lock already held.
         """
         log.info("camera", "camera_capture_start", "Starting high-res capture")
+        cap_start = time.perf_counter()
 
         # 1. Disable viewfinder (Live View) so sensor is freed for still capture
         try:
@@ -248,8 +268,12 @@ class CameraService:
                 self.camera.set_config(config)
         except Exception as e:
             log.warn("camera", "camera_viewfinder_warn", f"Could not disable viewfinder: {e}")
+            
+        vf_time = time.perf_counter() - cap_start
+        log.debug("camera_timing", "capture_vf_off", f"Viewfinder disabled in {vf_time*1000:.1f}ms")
 
         # 2. Flush pending camera events
+        flush_start = time.perf_counter()
         try:
             while True:
                 evt_type, evt_data = self.camera.wait_for_event(10)
@@ -257,22 +281,30 @@ class CameraService:
                     break
         except Exception:
             pass
+        flush1_time = time.perf_counter() - flush_start
+        log.debug("camera_timing", "capture_flush1", f"Pre-capture flush in {flush1_time*1000:.1f}ms")
 
         # 3. Wait briefly for camera to exit Live View mode
         time.sleep(0.3)
 
         # 4. Trigger capture
+        trig_start = time.perf_counter()
         file_path = self.camera.capture(gp.GP_CAPTURE_IMAGE)
+        trig_time = time.perf_counter() - trig_start
+        log.debug("camera_timing", "capture_trigger", f"Capture triggered in {trig_time*1000:.1f}ms")
 
         # 5. Do NOT re-enable viewfinder here.
         #    Let capture_preview() in the worker re-enable it naturally
         #    when it resumes.
 
         # 6. Download file
+        dl_start = time.perf_counter()
         log.info("camera", "camera_downloading", "Downloading image from camera")
         camera_file = self.camera.file_get(
             file_path.folder, file_path.name, gp.GP_FILE_TYPE_NORMAL
         )
+        dl_time = time.perf_counter() - dl_start
+        log.debug("camera_timing", "capture_download", f"Image downloaded in {dl_time*1000:.1f}ms")
 
         # 7. Save to disk
         filename = f"capture_{uuid.uuid4().hex[:8]}.jpg"
@@ -282,6 +314,7 @@ class CameraService:
         # 8. Flush pending camera events AFTER capture.
         # This clears GP_EVENT_FILE_ADDED and other capture-related events
         # from the internal queue so they don't pile up and freeze the NEXT preview stream.
+        flush2_start = time.perf_counter()
         try:
             while True:
                 evt_type, evt_data = self.camera.wait_for_event(50)
@@ -289,8 +322,11 @@ class CameraService:
                     break
         except Exception:
             pass
+        flush2_time = time.perf_counter() - flush2_start
+        log.debug("camera_timing", "capture_flush2", f"Post-capture flush in {flush2_time*1000:.1f}ms")
 
-        log.info("camera", "camera_capture_done", f"Image saved: {filename}")
+        total_time = time.perf_counter() - cap_start
+        log.info("camera", "camera_capture_done", f"Image saved: {filename} (Total: {total_time:.2f}s)")
         return filename
 
     def capture(self):
