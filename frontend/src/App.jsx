@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import useSse from './hooks/useSse';
 import useCamera from './hooks/useCamera';
 import useApi from './hooks/useApi';
 import { logger, startSession, endSession } from './utils/logger';
@@ -41,8 +42,9 @@ export default function App() {
   const [showAdmin, setShowAdmin] = useState(false);
   const [adminTapCount, setAdminTapCount] = useState(0);
 
-  const camera = useCamera();
-  const api = useApi();
+  const sse = useSse();
+  const camera = useCamera(sse.cameraStatus);
+  const api = useApi(sse.isOnline);
   const inactivityTimer = useRef(null);
   const adminTapTimer = useRef(null);
 

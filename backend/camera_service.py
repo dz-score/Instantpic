@@ -5,6 +5,7 @@ import uuid
 import gphoto2 as gp
 from backend.logger import log
 from backend.storage import PHOTOS_DIR
+from backend.sse_service import sse_svc
 
 class CameraService:
     def __init__(self):
@@ -24,6 +25,7 @@ class CameraService:
         # Exponential backoff for init retries (5s → 10s → 20s → 30s cap)
         self._init_backoff = 5
         self._init_fail_count = 0
+        self._shutdown_event = threading.Event()
 
     def init(self):
         with self.lock:
@@ -62,12 +64,14 @@ class CameraService:
                 self._init_backoff = 5  # Reset backoff on success
                 self._init_fail_count = 0
                 self._last_init_time = time.monotonic()
+                sse_svc.dispatch_event("camera_status", self.get_status())
                 log.info("camera", "camera_ready", "Camera initialized successfully")
             except gp.GPhoto2Error as e:
                 self.connected = False
                 self._last_error = str(e)
                 self._init_fail_count += 1
                 self._last_init_time = time.monotonic()
+                sse_svc.dispatch_event("camera_status", self.get_status())
                 # First failure logs at ERROR, subsequent at DEBUG
                 if self._init_fail_count == 1:
                     log.error("camera", "camera_init_fail", f"Failed to initialize camera: {e}", data={"error": str(e)})
@@ -93,7 +97,7 @@ class CameraService:
 
         consecutive_errors = 0
 
-        while my_generation == self._preview_generation:
+        while my_generation == self._preview_generation and not self._shutdown_event.is_set():
             # Wait until preview is allowed (capture clears this event)
             allowed = self._preview_allowed.wait(timeout=0.5)
             if not allowed:
@@ -143,6 +147,7 @@ class CameraService:
                 if consecutive_errors > 5 and not self._capture_in_progress:
                     log.error("camera", "camera_preview_fail", f"Preview stream failed: {e}")
                     self.connected = False
+                    sse_svc.dispatch_event("camera_status", self.get_status())
                 time.sleep(0.5)
         
         # This generator has been superseded — exit cleanly
@@ -214,6 +219,7 @@ class CameraService:
         # Signal preview loop to pause
         self._capture_in_progress = True
         self._preview_allowed.clear()
+        sse_svc.dispatch_event("camera_status", self.get_status())
         
         # Wait for the lock — preview loop should release within 0.5s
         acquired = self.lock.acquire(timeout=5)
@@ -221,6 +227,7 @@ class CameraService:
             log.error("camera", "camera_lock_timeout", "Could not acquire camera lock for capture")
             self._capture_in_progress = False
             self._preview_allowed.set()
+            sse_svc.dispatch_event("camera_status", self.get_status())
             raise Exception("Camera busy — could not acquire lock")
 
         try:
@@ -239,11 +246,13 @@ class CameraService:
                     log.error("camera", "camera_reinit_fail", f"Re-init failed: {init_err}")
                     self._capture_in_progress = False
                     self._preview_allowed.set()
+                    sse_svc.dispatch_event("camera_status", self.get_status())
                     raise Exception(f"Camera re-init failed: {init_err}")
                 
                 if not self.connected:
                     self._capture_in_progress = False
                     self._preview_allowed.set()
+                    sse_svc.dispatch_event("camera_status", self.get_status())
                     raise Exception("Camera not connected after re-init")
                 
                 # Re-acquire lock for retry
@@ -251,6 +260,7 @@ class CameraService:
                 if not acquired:
                     self._capture_in_progress = False
                     self._preview_allowed.set()
+                    sse_svc.dispatch_event("camera_status", self.get_status())
                     raise Exception("Camera busy after re-init")
                 
                 try:
@@ -258,6 +268,7 @@ class CameraService:
                 except Exception as retry_error:
                     log.error("camera", "camera_capture_error", f"Retry capture also failed: {retry_error}")
                     self.connected = False
+                    sse_svc.dispatch_event("camera_status", self.get_status())
                     raise retry_error
         finally:
             try:
@@ -267,6 +278,7 @@ class CameraService:
             
             self._capture_in_progress = False
             self._preview_allowed.set()
+            sse_svc.dispatch_event("camera_status", self.get_status())
 
     def get_settings(self):
         if not self.connected:
@@ -319,6 +331,21 @@ class CameraService:
             "is_capturing": self._capture_in_progress,
             "error": self._last_error
         }
+
+    def shutdown(self):
+        log.info("camera", "camera_shutdown", "Shutting down camera service...")
+        self._shutdown_event.set()
+        with self.lock:
+            if self.camera:
+                try:
+                    self.camera.exit()
+                    log.info("camera", "camera_exit", "Camera connection closed cleanly")
+                except Exception as e:
+                    log.warn("camera", "camera_exit_error", f"Error closing camera: {e}")
+                finally:
+                    self.camera = None
+            self.connected = False
+            sse_svc.dispatch_event("camera_status", self.get_status())
 
 # Global singleton instance
 camera_svc = CameraService()

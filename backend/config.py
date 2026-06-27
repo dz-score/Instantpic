@@ -1,7 +1,7 @@
 import os
 import json
 from pydantic import BaseModel
-from typing import List, Dict
+from typing import List, Dict, Literal
 
 # Paths
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -13,6 +13,7 @@ class OverlayConfig(BaseModel):
     filename: str
 
 class AppSettings(BaseModel):
+    camera_backend: Literal["gphoto2", "mock"] = "gphoto2"
     admin_pin: str = "123456"
     welcome_message: str = "Create a Beautiful Memory"
     thank_you_message: str = "Thank you for celebrating with us!"

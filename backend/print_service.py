@@ -379,6 +379,11 @@ class PrintService:
         self._status_cache_time = 0
         return success
 
+    def shutdown(self):
+        """Clean shutdown of the print service."""
+        log.info("printer", "printer_shutdown", "Shutting down print service...")
+        # (Could cancel pending jobs here if we were tracking them, but we just let cups handle it)
+
 
 # ── Global singleton ──────────────────────────────────────────────────────────
 

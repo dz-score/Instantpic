@@ -1,35 +1,9 @@
 import { useState, useCallback, useEffect } from 'react';
 import { logger } from '../utils/logger';
 
-export default function useCamera() {
+export default function useCamera(cameraStatus) {
   const [mode, setMode] = useState('gphoto2'); // Always use gphoto2
-  const [cameraStatus, setCameraStatus] = useState({ connected: false, error: null });
 
-  // Poll camera status from backend
-  useEffect(() => {
-    let active = true;
-    const checkStatus = async () => {
-      try {
-        const res = await fetch('/api/camera/status');
-        if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-        const data = await res.json();
-        if (active) {
-          setCameraStatus({ connected: data.connected, error: data.error || null });
-        }
-      } catch (err) {
-        if (active) {
-          setCameraStatus({ connected: false, error: 'Cannot reach backend camera service' });
-        }
-      }
-    };
-
-    checkStatus();
-    const interval = setInterval(checkStatus, 3000);
-    return () => {
-      active = false;
-      clearInterval(interval);
-    };
-  }, []);
 
   const previewUrl = '/api/camera/preview';
 
