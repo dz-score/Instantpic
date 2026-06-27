@@ -6,7 +6,14 @@ from backend.logger import log
 from backend.storage import PHOTOS_DIR
 from backend.sse_service import sse_svc
 
+
 class MockCameraService:
+    """Mock camera service with the same decoupled architecture as CameraService.
+
+    A background worker writes frames into a shared buffer.
+    The MJPEG generator reads from the buffer via Condition.wait().
+    """
+
     def __init__(self):
         self.connected = False
         self._capture_in_progress = False
@@ -17,6 +24,25 @@ class MockCameraService:
         self._preview_generation = 0
         self.lock = threading.Lock()
 
+        # Decoupled frame buffer
+        self._latest_frame = None
+        self._frame_condition = threading.Condition()
+        self._worker_thread = None
+        self._worker_running = False
+
+        # 1x1 black JPEG used for both preview and capture
+        self._black_jpeg = bytes.fromhex(
+            "ffd8ffe000104a46494600010101006000600000ffdb0043000806060706050807"
+            "07070909080a0c140d0c0b0b0c1912130f141d1a1f1e1d1a1c1c20242e272022"
+            "2c231c1c2837292c30313434341f27393d38323c2e333432ffdb004301090909"
+            "0c0b0c180d0d1832211c213232323232323232323232323232323232323232323"
+            "2323232323232323232323232323232323232323232323232ffc0001108000100"
+            "0103011100021101031101ffc40015000101000000000000000000000000000000"
+            "09ffc40014100100000000000000000000000000000000ffc400150101010000000"
+            "00000000000000000000000009ffc40014110100000000000000000000000000000"
+            "000ffda000c03010002110311003f00a0000ffd9"
+        )
+
     def init(self):
         with self.lock:
             log.info("camera", "camera_init", "Initializing MOCK camera...")
@@ -24,56 +50,73 @@ class MockCameraService:
             self._last_error = None
             sse_svc.dispatch_event("camera_status", self.get_status())
             log.info("camera", "camera_ready", "MOCK camera ready")
+            self._start_worker()
+
+    def _start_worker(self):
+        if self._worker_thread and self._worker_thread.is_alive():
+            return
+        self._worker_running = True
+        self._worker_thread = threading.Thread(target=self._camera_worker, daemon=True, name="mock-camera-worker")
+        self._worker_thread.start()
+
+    def _camera_worker(self):
+        """Background thread: produces mock frames into the shared buffer."""
+        while not self._shutdown_event.is_set():
+            if not self._preview_allowed.wait(timeout=0.5):
+                continue
+            if self._shutdown_event.is_set():
+                break
+
+            with self._frame_condition:
+                self._latest_frame = self._black_jpeg
+                self._frame_condition.notify_all()
+
+            time.sleep(0.1)  # ~10fps
+
+        self._worker_running = False
 
     def preview_generator(self):
         self._preview_generation += 1
         my_gen = self._preview_generation
 
-        if not self.connected and my_gen == self._preview_generation:
+        if not self.connected:
             self.init()
-
-        # We'll just yield a very simple empty frame or we could skip it.
-        # To emulate a real stream, we generate a small 1x1 black JPEG frame.
-        black_jpeg = bytes.fromhex("ffd8ffe000104a46494600010101006000600000ffdb004300080606070605080707070909080a0c140d0c0b0b0c1912130f141d1a1f1e1d1a1c1c20242e2720222c231c1c2837292c30313434341f27393d38323c2e333432ffdb0043010909090c0b0c180d0d1832211c213232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232ffc00011080001000103011100021101031101ffc4001500010100000000000000000000000000000009ffc40014100100000000000000000000000000000000ffc4001501010100000000000000000000000000000009ffc40014110100000000000000000000000000000000ffda000c03010002110311003f00a0000ffd9")
+        self._start_worker()
 
         while my_gen == self._preview_generation and not self._shutdown_event.is_set():
-            allowed = self._preview_allowed.wait(timeout=0.5)
-            if not allowed:
+            with self._frame_condition:
+                got_frame = self._frame_condition.wait(timeout=2.0)
+                if not got_frame:
+                    continue
+                frame = self._latest_frame
+
+            if frame is None:
                 continue
-                
             if my_gen != self._preview_generation:
                 return
-                
-            try:
-                yield (b'--frame\r\n'
-                       b'Content-Type: image/jpeg\r\n\r\n' + black_jpeg + b'\r\n')
-                time.sleep(0.1) # 10fps
-            except Exception:
-                time.sleep(0.5)
+
+            yield (b'--frame\r\n'
+                   b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
 
     def capture(self):
         log.info("camera", "camera_capture_start", "MOCK capture started")
-        
+
         self._capture_in_progress = True
         self._preview_allowed.clear()
         sse_svc.dispatch_event("camera_status", self.get_status())
-        
-        time.sleep(1) # Simulate shutter lag and download time
-        
-        # Create a mock image (just write the black jpeg for simplicity)
+
+        time.sleep(1)  # Simulate shutter lag
+
         filename = f"capture_{uuid.uuid4().hex[:8]}_mock.jpg"
         save_path = os.path.join(PHOTOS_DIR, filename)
-        
-        # We'll use a black jpeg for testing
-        black_jpeg = bytes.fromhex("ffd8ffe000104a46494600010101006000600000ffdb004300080606070605080707070909080a0c140d0c0b0b0c1912130f141d1a1f1e1d1a1c1c20242e2720222c231c1c2837292c30313434341f27393d38323c2e333432ffdb0043010909090c0b0c180d0d1832211c2132323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232ffc00011080001000103011100021101031101ffc400150001010000000000000000000000000000000009ffc40014100100000000000000000000000000000000ffc400150101010000000000000000000000000000000009ffc40014110100000000000000000000000000000000ffda000c03010002110311003f00a0000ffd9")
-        
+
         with open(save_path, "wb") as f:
-            f.write(black_jpeg)
-            
+            f.write(self._black_jpeg)
+
         self._capture_in_progress = False
         self._preview_allowed.set()
         sse_svc.dispatch_event("camera_status", self.get_status())
-        
+
         log.info("camera", "camera_capture_done", f"MOCK capture saved: {filename}")
         return filename
 
@@ -93,5 +136,7 @@ class MockCameraService:
     def shutdown(self):
         log.info("camera", "camera_shutdown", "Shutting down MOCK camera service...")
         self._shutdown_event.set()
+        if self._worker_thread and self._worker_thread.is_alive():
+            self._worker_thread.join(timeout=3)
         self.connected = False
         sse_svc.dispatch_event("camera_status", self.get_status())

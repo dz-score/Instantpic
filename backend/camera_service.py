@@ -7,25 +7,39 @@ from backend.logger import log
 from backend.storage import PHOTOS_DIR
 from backend.sse_service import sse_svc
 
+
 class CameraService:
+    """Camera service with decoupled capture architecture.
+
+    A dedicated background worker thread continuously calls capture_preview()
+    and stores the latest frame in a shared buffer. HTTP consumers read from
+    the buffer via a Condition variable, so they always get the freshest frame.
+    If an HTTP consumer is slow, old frames are silently overwritten — no
+    backpressure can ever reach the camera.
+    """
+
     def __init__(self):
         self.camera = None
         self.lock = threading.Lock()
         self.connected = False
-        # Event-based synchronization: set = preview may run, clear = preview must pause
-        self._preview_allowed = threading.Event()
-        self._preview_allowed.set()  # Start with preview allowed
         self._capture_in_progress = False
-        # Generation counter — only the latest generator does work, older ones exit
         self._preview_generation = 0
-        # Cooldown to prevent rapid-fire re-init from preview loop
         self._last_init_time = 0
-        # Error tracking for status reporting
         self._last_error = None
-        # Exponential backoff for init retries (5s → 10s → 20s → 30s cap)
         self._init_backoff = 5
         self._init_fail_count = 0
         self._shutdown_event = threading.Event()
+
+        # --- Decoupled frame buffer ---
+        # The worker thread writes the latest frame here.
+        # HTTP consumers wait on _frame_condition for new frames.
+        self._latest_frame = None
+        self._frame_condition = threading.Condition()
+        self._worker_thread = None
+        self._worker_running = False
+        # Event to pause/resume the worker (cleared during capture)
+        self._preview_allowed = threading.Event()
+        self._preview_allowed.set()
 
     def init(self):
         with self.lock:
@@ -35,16 +49,16 @@ class CameraService:
                         self.camera.exit()
                     except Exception:
                         pass
-                
-                # First attempt logs at INFO, subsequent retries at DEBUG
+
                 if self._init_fail_count == 0:
                     log.info("camera", "camera_init", "Initializing gphoto2 camera...")
                 else:
-                    log.debug("camera", "camera_init", f"Re-attempting camera init (attempt #{self._init_fail_count + 1}, backoff={self._init_backoff}s)")
-                
+                    log.debug("camera", "camera_init",
+                              f"Re-attempting camera init (attempt #{self._init_fail_count + 1}, backoff={self._init_backoff}s)")
+
                 self.camera = gp.Camera()
                 self.camera.init()
-                
+
                 # Try to set capturetarget to internal RAM
                 try:
                     config = self.camera.get_config()
@@ -58,71 +72,72 @@ class CameraService:
                         self.camera.set_config(config)
                 except Exception as e:
                     log.warn("camera", "camera_config_warn", f"Could not set capture target: {e}")
-                    
+
                 self.connected = True
                 self._last_error = None
-                self._init_backoff = 5  # Reset backoff on success
+                self._init_backoff = 5
                 self._init_fail_count = 0
                 self._last_init_time = time.monotonic()
                 sse_svc.dispatch_event("camera_status", self.get_status())
                 log.info("camera", "camera_ready", "Camera initialized successfully")
-                
-                # Pre-warm the viewfinder so the first preview frame is instant.
-                # Without this, the sensor takes ~500ms to switch to video mode
-                # on the first capture_preview() call after init.
+
+                # Pre-warm the viewfinder so the first preview frame is instant
                 try:
                     self.camera.capture_preview()
                     log.debug("camera", "camera_warmup", "Viewfinder pre-warmed")
                 except Exception:
-                    pass  # Non-critical, just a warmup
+                    pass
+
+                # Start the background worker if not already running
+                self._start_worker()
+
             except gp.GPhoto2Error as e:
                 self.connected = False
                 self._last_error = str(e)
                 self._init_fail_count += 1
                 self._last_init_time = time.monotonic()
                 sse_svc.dispatch_event("camera_status", self.get_status())
-                # First failure logs at ERROR, subsequent at DEBUG
                 if self._init_fail_count == 1:
-                    log.error("camera", "camera_init_fail", f"Failed to initialize camera: {e}", data={"error": str(e)})
+                    log.error("camera", "camera_init_fail",
+                              f"Failed to initialize camera: {e}", data={"error": str(e)})
                 else:
-                    log.debug("camera", "camera_init_fail", f"Camera init retry #{self._init_fail_count} failed: {e}")
-                # Exponential backoff: 5 → 10 → 20 → 30 (capped)
+                    log.debug("camera", "camera_init_fail",
+                              f"Camera init retry #{self._init_fail_count} failed: {e}")
                 self._init_backoff = min(self._init_backoff * 2, 30)
 
-    def preview_generator(self):
-        """Generator yielding MJPEG frames for the live view.
-        
-        Uses a generation counter so only the most recently created generator
-        does actual work. Older generators exit immediately, closing their
-        HTTP connections cleanly.
+    # ─── Background Worker ────────────────────────────────────────
+
+    def _start_worker(self):
+        """Start the background camera worker thread if not already running."""
+        if self._worker_thread and self._worker_thread.is_alive():
+            return
+        self._worker_running = True
+        self._worker_thread = threading.Thread(target=self._camera_worker, daemon=True, name="camera-worker")
+        self._worker_thread.start()
+        log.info("camera", "worker_started", "Background camera worker thread started")
+
+    def _camera_worker(self):
+        """Dedicated thread: continuously captures preview frames into the shared buffer.
+
+        This thread owns all camera USB I/O for preview. It runs independently
+        of HTTP consumers. If no consumer is reading, frames are silently
+        overwritten. The camera never stalls due to HTTP backpressure.
         """
-        # Bump generation — this invalidates all older generators
-        self._preview_generation += 1
-        my_generation = self._preview_generation
-
-        # Auto-init if not connected
-        if not self.connected and my_generation == self._preview_generation:
-            self.init()
-
         consecutive_errors = 0
         frame_count = 0
 
-        while my_generation == self._preview_generation and not self._shutdown_event.is_set():
-            # Wait until preview is allowed (capture clears this event)
-            allowed = self._preview_allowed.wait(timeout=0.5)
-            if not allowed:
+        while not self._shutdown_event.is_set():
+            # Pause during capture — wait up to 0.5s, then re-check
+            if not self._preview_allowed.wait(timeout=0.5):
                 continue
 
-            # Check if we've been superseded by a newer generator
-            if my_generation != self._preview_generation:
-                return
+            if self._shutdown_event.is_set():
+                break
 
             if not self.connected:
-                # Never re-init while a capture is in progress
                 if self._capture_in_progress:
                     time.sleep(0.5)
                     continue
-                # Exponential backoff between re-init attempts
                 elapsed = time.monotonic() - self._last_init_time
                 if elapsed < self._init_backoff:
                     time.sleep(1)
@@ -131,55 +146,99 @@ class CameraService:
                 continue
 
             try:
-                if self.lock.acquire(timeout=0.5):
-                    try:
-                        # Re-check conditions inside the lock
-                        if not self._preview_allowed.is_set():
-                            continue
-                        if my_generation != self._preview_generation:
-                            return
+                acquired = self.lock.acquire(timeout=0.5)
+                if not acquired:
+                    continue
 
-                        # Periodically flush the camera's internal event queue
-                        # to prevent USB buffer buildup that causes freezes
-                        frame_count += 1
-                        if frame_count % 30 == 0:
-                            try:
-                                while True:
-                                    evt_type, _evt_data = self.camera.wait_for_event(1)
-                                    if evt_type == gp.GP_EVENT_TIMEOUT:
-                                        break
-                            except Exception:
-                                pass
+                try:
+                    if not self._preview_allowed.is_set():
+                        continue
 
-                        camera_file = self.camera.capture_preview()
-                        file_data = camera_file.get_data_and_size()
-                        frame = bytes(memoryview(file_data))
-                        consecutive_errors = 0
-                    finally:
-                        self.lock.release()
-                        
-                    yield (b'--frame\r\n'
-                           b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
-                    # Cap at ~15fps to prevent backpressure freezes
-                    time.sleep(0.066)
-                else:
-                    time.sleep(0.1)
+                    # Periodically flush the camera's internal event queue
+                    frame_count += 1
+                    if frame_count % 50 == 0:
+                        try:
+                            while True:
+                                evt_type, _evt_data = self.camera.wait_for_event(1)
+                                if evt_type == gp.GP_EVENT_TIMEOUT:
+                                    break
+                        except Exception:
+                            pass
+
+                    camera_file = self.camera.capture_preview()
+                    file_data = camera_file.get_data_and_size()
+                    frame = bytes(memoryview(file_data))
+                    consecutive_errors = 0
+                finally:
+                    self.lock.release()
+
+                # Publish to the shared buffer — overwrites any unread frame
+                with self._frame_condition:
+                    self._latest_frame = frame
+                    self._frame_condition.notify_all()
+
+                # Target ~15fps. capture_preview takes ~50-100ms,
+                # so this gives ~120-166ms per cycle = 6-8fps effective.
+                time.sleep(0.066)
+
             except Exception as e:
                 consecutive_errors += 1
                 if consecutive_errors > 5 and not self._capture_in_progress:
-                    log.error("camera", "camera_preview_fail", f"Preview stream failed: {e}")
+                    log.error("camera", "camera_preview_fail", f"Preview worker failed: {e}")
                     self.connected = False
                     sse_svc.dispatch_event("camera_status", self.get_status())
                 time.sleep(0.5)
-        
-        # This generator has been superseded — exit cleanly
+
+        self._worker_running = False
+        log.info("camera", "worker_stopped", "Background camera worker thread stopped")
+
+    # ─── MJPEG Stream (HTTP consumer) ─────────────────────────────
+
+    def preview_generator(self):
+        """Generator yielding MJPEG frames for the live view.
+
+        Reads from the shared frame buffer. The camera worker thread produces
+        frames independently — this generator just waits for the latest one
+        and yields it. If the HTTP connection is slow, frames are skipped,
+        not queued. No backpressure reaches the camera.
+        """
+        self._preview_generation += 1
+        my_generation = self._preview_generation
+
+        # Auto-init if not connected (also starts the worker)
+        if not self.connected:
+            self.init()
+
+        # If the worker isn't running, start it
+        self._start_worker()
+
+        while my_generation == self._preview_generation and not self._shutdown_event.is_set():
+            with self._frame_condition:
+                # Wait up to 2s for a new frame from the worker
+                got_frame = self._frame_condition.wait(timeout=2.0)
+                if not got_frame:
+                    # Timeout — no frame arrived (camera might be disconnected)
+                    continue
+                frame = self._latest_frame
+
+            if frame is None:
+                continue
+
+            # Check if this generator has been superseded
+            if my_generation != self._preview_generation:
+                return
+
+            yield (b'--frame\r\n'
+                   b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+
+    # ─── High-res Capture ─────────────────────────────────────────
 
     def _do_capture(self):
         """Internal capture — viewfinder off, flush events, capture, download, save.
         Must be called with self.lock already held.
         """
         log.info("camera", "camera_capture_start", "Starting high-res capture")
-        
+
         # 1. Disable viewfinder (Live View) so sensor is freed for still capture
         try:
             config = self.camera.get_config()
@@ -198,52 +257,52 @@ class CameraService:
                     break
         except Exception:
             pass
-        
+
         # 3. Wait briefly for camera to exit Live View mode
         time.sleep(0.3)
-        
+
         # 4. Trigger capture
         file_path = self.camera.capture(gp.GP_CAPTURE_IMAGE)
-        
+
         # 5. Do NOT re-enable viewfinder here.
-        #    Let capture_preview() in the preview loop re-enable it naturally
-        #    when it resumes. Re-enabling here causes a race condition.
-        
+        #    Let capture_preview() in the worker re-enable it naturally
+        #    when it resumes.
+
         # 6. Download file
         log.info("camera", "camera_downloading", "Downloading image from camera")
         camera_file = self.camera.file_get(
             file_path.folder, file_path.name, gp.GP_FILE_TYPE_NORMAL
         )
-        
+
         # 7. Save to disk
         filename = f"capture_{uuid.uuid4().hex[:8]}.jpg"
         save_path = os.path.join(PHOTOS_DIR, filename)
         camera_file.save(save_path)
-        
+
         log.info("camera", "camera_capture_done", f"Image saved: {filename}")
         return filename
 
     def capture(self):
         """Captures a full-res image with retry logic.
-        
+
         Flow:
-        1. Pause preview loop via Event
-        2. Acquire lock (wait up to 5s for preview loop to release)
+        1. Pause worker thread via Event
+        2. Acquire lock (wait up to 5s for worker to release)
         3. Attempt capture
         4. On failure: re-init camera and retry once
-        5. Release lock and resume preview
+        5. Release lock and resume worker
         """
         if not self.connected:
             self.init()
             if not self.connected:
                 raise Exception("Camera not connected")
 
-        # Signal preview loop to pause
+        # Signal worker thread to pause
         self._capture_in_progress = True
         self._preview_allowed.clear()
         sse_svc.dispatch_event("camera_status", self.get_status())
-        
-        # Wait for the lock — preview loop should release within 0.5s
+
+        # Wait for the lock — worker should release within 0.5s
         acquired = self.lock.acquire(timeout=5)
         if not acquired:
             log.error("camera", "camera_lock_timeout", "Could not acquire camera lock for capture")
@@ -256,12 +315,12 @@ class CameraService:
             try:
                 return self._do_capture()
             except Exception as first_error:
-                log.warn("camera", "camera_capture_retry", 
+                log.warn("camera", "camera_capture_retry",
                          f"First capture attempt failed: {first_error}, re-initializing and retrying...")
-                
+
                 # Release lock so init() can acquire it
                 self.lock.release()
-                
+
                 try:
                     self.init()
                 except Exception as init_err:
@@ -270,13 +329,13 @@ class CameraService:
                     self._preview_allowed.set()
                     sse_svc.dispatch_event("camera_status", self.get_status())
                     raise Exception(f"Camera re-init failed: {init_err}")
-                
+
                 if not self.connected:
                     self._capture_in_progress = False
                     self._preview_allowed.set()
                     sse_svc.dispatch_event("camera_status", self.get_status())
                     raise Exception("Camera not connected after re-init")
-                
+
                 # Re-acquire lock for retry
                 acquired = self.lock.acquire(timeout=5)
                 if not acquired:
@@ -284,11 +343,12 @@ class CameraService:
                     self._preview_allowed.set()
                     sse_svc.dispatch_event("camera_status", self.get_status())
                     raise Exception("Camera busy after re-init")
-                
+
                 try:
                     return self._do_capture()
                 except Exception as retry_error:
-                    log.error("camera", "camera_capture_error", f"Retry capture also failed: {retry_error}")
+                    log.error("camera", "camera_capture_error",
+                              f"Retry capture also failed: {retry_error}")
                     self.connected = False
                     sse_svc.dispatch_event("camera_status", self.get_status())
                     raise retry_error
@@ -297,20 +357,22 @@ class CameraService:
                 self.lock.release()
             except RuntimeError:
                 pass  # Lock was already released during retry path
-            
+
             self._capture_in_progress = False
             self._preview_allowed.set()
             sse_svc.dispatch_event("camera_status", self.get_status())
 
+    # ─── Settings & Status ────────────────────────────────────────
+
     def get_settings(self):
         if not self.connected:
             return {"status": "disconnected"}
-            
+
         settings = {"status": "connected"}
         try:
             with self.lock:
                 config = self.camera.get_config()
-                
+
                 for key in ['iso', 'aperture', 'shutterspeed', 'whitebalance']:
                     ok, widget = gp.gp_widget_get_child_by_name(config, key)
                     if ok >= gp.GP_OK:
@@ -322,24 +384,24 @@ class CameraService:
                         settings[key] = {"value": val, "choices": choices}
         except Exception as e:
             log.warn("camera", "camera_settings_error", f"Failed to get settings: {e}")
-            
+
         return settings
 
     def set_settings(self, new_settings):
         if not self.connected:
             raise Exception("Camera not connected")
-            
+
         try:
             with self.lock:
                 config = self.camera.get_config()
                 changed = False
-                
+
                 for key, value in new_settings.items():
                     ok, widget = gp.gp_widget_get_child_by_name(config, key)
                     if ok >= gp.GP_OK:
                         widget.set_value(str(value))
                         changed = True
-                        
+
                 if changed:
                     self.camera.set_config(config)
                     log.info("camera", "camera_settings_updated", f"Camera settings updated: {new_settings}")
@@ -357,6 +419,9 @@ class CameraService:
     def shutdown(self):
         log.info("camera", "camera_shutdown", "Shutting down camera service...")
         self._shutdown_event.set()
+        # Wait for worker to finish
+        if self._worker_thread and self._worker_thread.is_alive():
+            self._worker_thread.join(timeout=3)
         with self.lock:
             if self.camera:
                 try:
@@ -368,6 +433,7 @@ class CameraService:
                     self.camera = None
             self.connected = False
             sse_svc.dispatch_event("camera_status", self.get_status())
+
 
 # Global singleton instance
 camera_svc = CameraService()

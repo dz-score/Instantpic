@@ -195,7 +195,13 @@ async def camera_preview():
         raise HTTPException(status_code=501, detail="gphoto2 not installed")
     return StreamingResponse(
         camera_svc.preview_generator(),
-        media_type="multipart/x-mixed-replace; boundary=frame"
+        media_type="multipart/x-mixed-replace; boundary=frame",
+        headers={
+            "Age": "0",
+            "Cache-Control": "no-cache, no-store, must-revalidate, private",
+            "Pragma": "no-cache",
+            "X-Accel-Buffering": "no",  # Disable nginx proxy buffering
+        }
     )
 
 @app.post("/api/camera/capture")
