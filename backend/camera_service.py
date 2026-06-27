@@ -105,6 +105,7 @@ class CameraService:
             self.init()
 
         consecutive_errors = 0
+        frame_count = 0
 
         while my_generation == self._preview_generation and not self._shutdown_event.is_set():
             # Wait until preview is allowed (capture clears this event)
@@ -137,7 +138,19 @@ class CameraService:
                             continue
                         if my_generation != self._preview_generation:
                             return
-                            
+
+                        # Periodically flush the camera's internal event queue
+                        # to prevent USB buffer buildup that causes freezes
+                        frame_count += 1
+                        if frame_count % 30 == 0:
+                            try:
+                                while True:
+                                    evt_type, _evt_data = self.camera.wait_for_event(1)
+                                    if evt_type == gp.GP_EVENT_TIMEOUT:
+                                        break
+                            except Exception:
+                                pass
+
                         camera_file = self.camera.capture_preview()
                         file_data = camera_file.get_data_and_size()
                         frame = bytes(memoryview(file_data))
@@ -148,7 +161,7 @@ class CameraService:
                     yield (b'--frame\r\n'
                            b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
                     # Cap at ~15fps to prevent backpressure freezes
-                    time.sleep(0.05)
+                    time.sleep(0.066)
                 else:
                     time.sleep(0.1)
             except Exception as e:
