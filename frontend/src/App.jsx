@@ -272,6 +272,7 @@ export default function App() {
           previewUrl={camera.previewUrl}
           layoutMode={layoutMode}
           captureFrame={camera.captureFrame}
+          resumePreview={camera.resumePreview}
           onComplete={handleCaptureComplete}
           config={api.config}
           language={language}

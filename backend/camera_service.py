@@ -308,66 +308,21 @@ class CameraService:
     # ─── High-res Capture ─────────────────────────────────────────
 
     def _do_capture(self):
-        """Internal capture — viewfinder off, flush events, capture, download, save.
+        """Internal capture — trigger, flush events, download, save.
         Must be called with self.lock already held.
         """
         log.info("camera", "camera_capture_start", "Starting high-res capture")
         cap_start = time.perf_counter()
 
-        # 1. Disable viewfinder (Live View) so sensor is freed for still capture
-        try:
-            config = self.camera.get_config()
-            ok, viewfinder = gp.gp_widget_get_child_by_name(config, 'viewfinder')
-            if ok >= gp.GP_OK:
-                viewfinder.set_value(0)
-                self.camera.set_config(config)
-        except Exception as e:
-            log.warn("camera", "camera_viewfinder_warn", f"Could not disable viewfinder: {e}")
-            
-        vf_time = time.perf_counter() - cap_start
-        log.debug("camera_timing", "capture_vf_off", f"Viewfinder disabled in {vf_time*1000:.1f}ms")
-
-        # 8. Flush any remaining events
-        flush_start = time.perf_counter()
-        try:
-            evt_type, _evt_data = self.camera.wait_for_event(200)
-            while evt_type != gp.GP_EVENT_TIMEOUT:
-                evt_type, _evt_data = self.camera.wait_for_event(10)
-        except Exception:
-            pass
-        flush1_time = time.perf_counter() - flush_start
-        log.debug("camera_timing", "capture_flush1", f"Pre-capture flush in {flush1_time*1000:.1f}ms")
-
-        # 3. Wait briefly for camera to exit Live View mode
-        time.sleep(0.3)
-
-        # 4. Trigger capture
+        # 1. Trigger capture (libgphoto2 handles viewfinder internally on modern cameras)
         trig_start = time.perf_counter()
         file_path = self.camera.capture(gp.GP_CAPTURE_IMAGE)
         trig_time = time.perf_counter() - trig_start
         log.debug("camera_timing", "capture_trigger", f"Capture triggered in {trig_time*1000:.1f}ms")
 
-        # 5. Do NOT re-enable viewfinder here.
-        #    Let capture_preview() in the worker re-enable it naturally
-        #    when it resumes.
-
-        # 6. Download file
-        dl_start = time.perf_counter()
-        log.info("camera", "camera_downloading", "Downloading image from camera")
-        camera_file = self.camera.file_get(
-            file_path.folder, file_path.name, gp.GP_FILE_TYPE_NORMAL
-        )
-        dl_time = time.perf_counter() - dl_start
-        log.debug("camera_timing", "capture_download", f"Image downloaded in {dl_time*1000:.1f}ms")
-
-        # 7. Save to disk
-        filename = f"capture_{uuid.uuid4().hex[:8]}.jpg"
-        save_path = os.path.join(PHOTOS_DIR, filename)
-        camera_file.save(save_path)
-
-        # 8. Flush pending camera events AFTER capture.
+        # 2. Flush pending camera events IMMEDIATELY after capture (before download).
         # This clears GP_EVENT_FILE_ADDED and other capture-related events
-        # from the internal queue so they don't pile up and freeze the NEXT preview stream.
+        # from the internal queue so they don't pile up.
         flush2_start = time.perf_counter()
         try:
             evt_type, evt_data = self.camera.wait_for_event(200)
@@ -377,6 +332,20 @@ class CameraService:
             pass
         flush2_time = time.perf_counter() - flush2_start
         log.debug("camera_timing", "capture_flush2", f"Post-capture flush in {flush2_time*1000:.1f}ms")
+
+        # 3. Download file
+        dl_start = time.perf_counter()
+        log.info("camera", "camera_downloading", "Downloading image from camera")
+        camera_file = self.camera.file_get(
+            file_path.folder, file_path.name, gp.GP_FILE_TYPE_NORMAL
+        )
+        dl_time = time.perf_counter() - dl_start
+        log.debug("camera_timing", "capture_download", f"Image downloaded in {dl_time*1000:.1f}ms")
+
+        # 4. Save to disk
+        filename = f"capture_{uuid.uuid4().hex[:8]}.jpg"
+        save_path = os.path.join(PHOTOS_DIR, filename)
+        camera_file.save(save_path)
 
         total_time = time.perf_counter() - cap_start
         log.info("camera", "camera_capture_done", f"Image saved: {filename} (Total: {total_time:.2f}s)")
@@ -459,6 +428,13 @@ class CameraService:
                 pass  # Lock was already released during retry path
 
             self._capture_in_progress = False
+            # self._preview_allowed.set() # Do NOT set here. Remain in standby.
+            sse_svc.dispatch_event("camera_status", self.get_status())
+
+    def resume_preview(self):
+        """Wakes up the background worker to resume the preview stream."""
+        if not self._preview_allowed.is_set():
+            log.info("camera", "camera_resume", "Resuming live view (waking worker)")
             self._preview_allowed.set()
             sse_svc.dispatch_event("camera_status", self.get_status())
 

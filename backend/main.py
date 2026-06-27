@@ -214,6 +214,16 @@ async def camera_capture():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/api/camera/resume")
+async def camera_resume():
+    if not GPHOTO2_AVAILABLE:
+        raise HTTPException(status_code=501, detail="gphoto2 not installed")
+    try:
+        camera_svc.resume_preview()
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/api/camera/config")
 async def camera_config_get():
     if not GPHOTO2_AVAILABLE:

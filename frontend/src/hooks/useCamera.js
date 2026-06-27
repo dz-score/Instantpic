@@ -25,5 +25,14 @@ export default function useCamera(cameraStatus) {
     }
   }, []);
 
-  return { previewUrl, captureFrame, mode, cameraStatus };
+  const resumePreview = useCallback(async () => {
+    try {
+      logger.info('camera', 'resume_start', 'Waking up backend camera worker');
+      await fetch('/api/camera/resume', { method: 'POST' });
+    } catch (err) {
+      logger.error('camera', 'resume_fail', `Failed to resume camera: ${err.message}`);
+    }
+  }, []);
+
+  return { previewUrl, captureFrame, resumePreview, mode, cameraStatus };
 }

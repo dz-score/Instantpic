@@ -18,6 +18,7 @@ export default function CountdownScreen({
   previewUrl,
   layoutMode,
   captureFrame,
+  resumePreview,
   onComplete,
   config,
   language,
@@ -113,8 +114,14 @@ export default function CountdownScreen({
     return frame;
   }, [captureFrame, flashEnabled, safeTimeout]);
 
-  const startRound = useCallback((idx) => {
+  const startRound = useCallback(async (idx) => {
     setShotIndex(idx);
+    
+    // Wake up the camera worker from standby
+    if (resumePreview) {
+      await resumePreview();
+    }
+    
     runCountdown(async () => {
       await fireShutter();
       if (idx + 1 >= totalShots) {
@@ -128,7 +135,7 @@ export default function CountdownScreen({
         }, BETWEEN_SHOT_DELAY);
       }
     });
-  }, [runCountdown, fireShutter, totalShots, safeTimeout, onComplete]);
+  }, [runCountdown, fireShutter, totalShots, safeTimeout, onComplete, resumePreview]);
 
   // Orchestrate the full session
   useEffect(() => {
