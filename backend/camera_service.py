@@ -122,6 +122,20 @@ class CameraService:
                 sse_svc.dispatch_event("camera_status", self.get_status())
                 log.info("camera", "camera_ready", "Camera initialized successfully")
 
+                # Configure basic settings for stability
+                try:
+                    config = self.camera.get_config()
+                    
+                    # Prevent camera from hunting for focus during Live View
+                    ok, af_widget = gp.gp_widget_get_child_by_name(config, 'autofocusdrive')
+                    if ok >= gp.GP_OK:
+                        af_widget.set_value(0)
+                        
+                    # Set capture target to SD card (or RAM) if needed, but for now just apply config
+                    self.camera.set_config(config)
+                except Exception as cfg_err:
+                    log.debug("camera", "camera_config_warn", f"Could not set initial config: {cfg_err}")
+
                 # Pre-warm the viewfinder so the first preview frame is instant
                 try:
                     camera_file = self.camera.capture_preview()
@@ -313,13 +327,12 @@ class CameraService:
         vf_time = time.perf_counter() - cap_start
         log.debug("camera_timing", "capture_vf_off", f"Viewfinder disabled in {vf_time*1000:.1f}ms")
 
-        # 2. Flush pending camera events
+        # 8. Flush any remaining events
         flush_start = time.perf_counter()
         try:
-            while True:
-                evt_type, evt_data = self.camera.wait_for_event(10)
-                if evt_type == gp.GP_EVENT_TIMEOUT:
-                    break
+            evt_type, _evt_data = self.camera.wait_for_event(200)
+            while evt_type != gp.GP_EVENT_TIMEOUT:
+                evt_type, _evt_data = self.camera.wait_for_event(10)
         except Exception:
             pass
         flush1_time = time.perf_counter() - flush_start
@@ -357,10 +370,9 @@ class CameraService:
         # from the internal queue so they don't pile up and freeze the NEXT preview stream.
         flush2_start = time.perf_counter()
         try:
-            while True:
-                evt_type, evt_data = self.camera.wait_for_event(50)
-                if evt_type == gp.GP_EVENT_TIMEOUT:
-                    break
+            evt_type, evt_data = self.camera.wait_for_event(200)
+            while evt_type != gp.GP_EVENT_TIMEOUT:
+                evt_type, evt_data = self.camera.wait_for_event(10)
         except Exception:
             pass
         flush2_time = time.perf_counter() - flush2_start
