@@ -41,6 +41,47 @@ class CameraService:
         self._preview_allowed = threading.Event()
         self._preview_allowed.set()
 
+        # --- Diagnostics ---
+        self._frames_produced = 0
+        self._last_frame_time = time.perf_counter()
+        self._last_cap_time = 0
+        self._monitor_thread = None
+        
+        # Route libgphoto2 logs to Python's logging
+        import logging
+        gp_logger = logging.getLogger("gphoto2")
+        gp_logger.setLevel(logging.DEBUG)
+        
+        # Start diagnostic monitor
+        self._start_monitor()
+
+    def _start_monitor(self):
+        if self._monitor_thread and self._monitor_thread.is_alive():
+            return
+        self._monitor_thread = threading.Thread(target=self._diagnostic_monitor, daemon=True, name="camera-monitor")
+        self._monitor_thread.start()
+
+    def _diagnostic_monitor(self):
+        last_count = self._frames_produced
+        while not self._shutdown_event.is_set():
+            time.sleep(1.0)
+            current_count = self._frames_produced
+            fps = current_count - last_count
+            last_count = current_count
+            
+            time_since_last = time.perf_counter() - self._last_frame_time
+            
+            # Broadcast metrics
+            sse_svc.dispatch_event("camera_metrics", {
+                "fps": fps,
+                "latency_ms": round(self._last_cap_time * 1000, 1),
+                "time_since_last_frame_ms": round(time_since_last * 1000, 1),
+                "connected": self.connected,
+                "is_capturing": self._capture_in_progress,
+                "worker_running": self._worker_running,
+                "allowed": self._preview_allowed.is_set()
+            })
+
     def init(self):
         with self.lock:
             try:
@@ -177,6 +218,10 @@ class CameraService:
                 with self._frame_condition:
                     self._latest_frame = frame
                     self._frame_condition.notify_all()
+                    
+                self._frames_produced += 1
+                self._last_frame_time = time.perf_counter()
+                self._last_cap_time = cap_time
 
                 loop_time = time.perf_counter() - loop_start
                 log.debug("camera_timing", "worker_cycle", 

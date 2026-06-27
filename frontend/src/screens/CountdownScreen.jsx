@@ -136,10 +136,25 @@ export default function CountdownScreen({
     setShotIndex(0);
     startRound(0);
 
+    // Subscribe to SSE for diagnostic metrics
+    const evtSource = new EventSource('/api/events');
+    evtSource.addEventListener('camera_metrics', (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        const el = document.getElementById('diag-metrics');
+        if (el) {
+          el.innerHTML = `FPS: ${data.fps} | Latency: ${data.latency_ms}ms<br/>` +
+                         `Worker: ${data.worker_running ? 'ON' : 'OFF'} | Allowed: ${data.allowed ? 'YES' : 'NO'}<br/>` +
+                         `Time since last: ${data.time_since_last_frame_ms}ms`;
+        }
+      } catch (err) {}
+    });
+
     return () => {
       clearInterval(timerRef.current);
       pendingTimeouts.current.forEach(clearTimeout);
       pendingTimeouts.current = [];
+      evtSource.close();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -202,6 +217,26 @@ export default function CountdownScreen({
             <ProgressDots current={shotIndex} total={totalShots} />
           </div>
         )}
+
+        {/* --- Diagnostic Overlay --- */}
+        <div style={{
+          position: 'absolute',
+          top: '10px',
+          left: '10px',
+          background: 'rgba(0,0,0,0.7)',
+          color: '#0f0',
+          padding: '10px',
+          fontFamily: 'monospace',
+          fontSize: '12px',
+          zIndex: 9999,
+          pointerEvents: 'none',
+          borderRadius: '4px'
+        }}>
+          <b>Diagnostics</b><br/>
+          Phase: {phase}<br/>
+          Capturing: {isCapturing ? 'Yes' : 'No'}<br/>
+          Metrics: <span id="diag-metrics">Waiting...</span>
+        </div>
       </div>
     </div>
   );
