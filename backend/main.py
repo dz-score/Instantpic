@@ -41,6 +41,10 @@ else:
         GPHOTO2_AVAILABLE = False
         log.warn("system", "camera_import_failed", "python-gphoto2 not installed. Camera functions will return errors.")
 
+import signal
+import threading
+from types import FrameType
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Ensure folders exist
@@ -49,17 +53,36 @@ async def lifespan(app: FastAPI):
     # Log startup
     log.info("system", "system_boot", f"Backend started", data={"version": "1.0.0"})
 
-    # Eagerly init camera so it's warm by the time the first guest taps Start.
-    # This eliminates the ~3s black screen on the first preview request.
+    # Eagerly init camera
     if GPHOTO2_AVAILABLE:
         camera_svc.init()
 
+    # Workaround for Uvicorn hanging on shutdown due to active streaming responses
+    # https://github.com/encode/uvicorn/issues/1579
+    default_sigint_handler = signal.getsignal(signal.SIGINT)
+    default_sigterm_handler = signal.getsignal(signal.SIGTERM)
+
+    def terminate_now(signum: int, frame: FrameType | None = None):
+        log.info("system", "signal_shutdown", "Shutting down active streams via signal handler")
+        from backend.sse_service import sse_svc
+        sse_svc.request_shutdown()
+        if GPHOTO2_AVAILABLE:
+            camera_svc.shutdown()
+        print_svc.shutdown()
+
+        if signum == signal.SIGINT and callable(default_sigint_handler):
+            default_sigint_handler(signum, frame)
+        elif signum == signal.SIGTERM and callable(default_sigterm_handler):
+            default_sigterm_handler(signum, frame)
+
+    if threading.current_thread() is threading.main_thread():
+        signal.signal(signal.SIGINT, terminate_now)
+        signal.signal(signal.SIGTERM, terminate_now)
+
     yield
 
-    # Clean shutdown
+    # Clean shutdown (fallback for tests where signals aren't used)
     log.info("system", "system_shutdown", "Backend shutting down...")
-    
-    # Close all SSE connections so uvicorn can exit cleanly
     from backend.sse_service import sse_svc
     sse_svc.request_shutdown()
     

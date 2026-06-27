@@ -314,7 +314,19 @@ class CameraService:
         log.info("camera", "camera_capture_start", "Starting high-res capture")
         cap_start = time.perf_counter()
 
-        # 1. Trigger capture (libgphoto2 handles viewfinder internally on modern cameras)
+        # 1. Exit Live View Mode (drop the mirror)
+        # This prevents the `[-1] Unspecified error` caused by trying to capture
+        # a high-res image while the camera is still mechanically locked in live view.
+        try:
+            config = self.camera.get_config()
+            ok, vf_widget = gp.gp_widget_get_child_by_name(config, 'viewfinder')
+            if ok >= gp.GP_OK:
+                vf_widget.set_value(0)
+                self.camera.set_config(config)
+        except Exception as e:
+            log.debug("camera", "camera_config_warn", f"Could not disable viewfinder: {e}")
+
+        # 2. Trigger capture
         trig_start = time.perf_counter()
         file_path = self.camera.capture(gp.GP_CAPTURE_IMAGE)
         trig_time = time.perf_counter() - trig_start
