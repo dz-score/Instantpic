@@ -14,5 +14,6 @@ chromium-browser \
   --autoplay-policy=no-user-gesture-required \
   --disable-pinch \
    --noerrdialogs \
+   --disable-background-networking \
     http://localhost:8000 &
 
