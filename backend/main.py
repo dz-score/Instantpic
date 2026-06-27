@@ -58,6 +58,11 @@ async def lifespan(app: FastAPI):
 
     # Clean shutdown
     log.info("system", "system_shutdown", "Backend shutting down...")
+    
+    # Close all SSE connections so uvicorn can exit cleanly
+    from backend.sse_service import sse_svc
+    sse_svc.request_shutdown()
+    
     if GPHOTO2_AVAILABLE:
         camera_svc.shutdown()
     print_svc.shutdown()
