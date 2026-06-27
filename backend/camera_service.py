@@ -66,6 +66,15 @@ class CameraService:
                 self._last_init_time = time.monotonic()
                 sse_svc.dispatch_event("camera_status", self.get_status())
                 log.info("camera", "camera_ready", "Camera initialized successfully")
+                
+                # Pre-warm the viewfinder so the first preview frame is instant.
+                # Without this, the sensor takes ~500ms to switch to video mode
+                # on the first capture_preview() call after init.
+                try:
+                    self.camera.capture_preview()
+                    log.debug("camera", "camera_warmup", "Viewfinder pre-warmed")
+                except Exception:
+                    pass  # Non-critical, just a warmup
             except gp.GPhoto2Error as e:
                 self.connected = False
                 self._last_error = str(e)

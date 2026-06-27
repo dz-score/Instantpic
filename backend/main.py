@@ -49,6 +49,11 @@ async def lifespan(app: FastAPI):
     # Log startup
     log.info("system", "system_boot", f"Backend started", data={"version": "1.0.0"})
 
+    # Eagerly init camera so it's warm by the time the first guest taps Start.
+    # This eliminates the ~3s black screen on the first preview request.
+    if GPHOTO2_AVAILABLE:
+        camera_svc.init()
+
     yield
 
     # Clean shutdown
