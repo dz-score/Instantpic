@@ -13,6 +13,9 @@ export const translations = {
       collageTitle: 'Collage Strip',
       collageDesc: 'Three fun sequential shots',
     },
+    camera: {
+      loading: 'Camera is loading',
+    },
     countdown: {
       getReady: 'Get Ready!',
       smile: 'Smile!',
@@ -104,6 +107,9 @@ export const translations = {
       singleDesc: 'Une seule photo parfaite',
       collageTitle: 'Bandelette',
       collageDesc: 'Trois photos séquentielles',
+    },
+    camera: {
+      loading: 'Chargement de l\'appareil...',
     },
     countdown: {
       getReady: 'Préparez-vous !',

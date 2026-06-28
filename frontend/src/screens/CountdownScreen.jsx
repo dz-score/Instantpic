@@ -240,8 +240,12 @@ export default function CountdownScreen({
         {/* Loading Spinner for cold start */}
         {!cameraReady && (
           <div className="countdown-loading">
-            <div className="spinner"></div>
-            <p>{t('camera.wakingUp', language) || "Waking up camera..."}</p>
+            <div className="countdown-loading-glow" aria-hidden="true" />
+            <div className="countdown-loading-content">
+              <div className="countdown-spinner"></div>
+              <p className="countdown-loading__kicker">{t('camera.loading', language) || "Camera is loading"}</p>
+              <p className="countdown-loading__sub">{t('reveal.justAMoment', language)}</p>
+            </div>
           </div>
         )}
 
