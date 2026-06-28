@@ -243,13 +243,23 @@ class CameraService:
                     if not self._preview_allowed.is_set():
                         continue
 
+                    # Flush events to prevent camera buffer overflow during continuous preview
+                    # Without this, the Canon M50 freezes for ~3 seconds and throws [-1] Unspecified error
+                    flush_start = time.perf_counter()
+                    try:
+                        evt_type, evt_data = self.camera.wait_for_event(1)
+                        while evt_type != gp.GP_EVENT_TIMEOUT:
+                            evt_type, evt_data = self.camera.wait_for_event(1)
+                    except Exception:
+                        pass
+                    flush_time = time.perf_counter() - flush_start
+
                     cap_start = time.perf_counter()
                     camera_file = self.camera.capture_preview()
                     file_data = camera_file.get_data_and_size()
                     frame = bytes(memoryview(file_data))
                     cap_time = time.perf_counter() - cap_start
                     consecutive_errors = 0
-                    flush_time = 0
                 finally:
                     self.lock.release()
 
