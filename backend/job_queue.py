@@ -9,6 +9,7 @@ class JobQueue:
         self._queue = None
         self._worker_task = None
         self._shutdown = False
+        self._background_tasks = set()
 
     def _get_queue(self):
         if self._queue is None:
@@ -47,7 +48,9 @@ class JobQueue:
                         )
                         
                         # Cleanup storage in background
-                        asyncio.create_task(self._run_cleanup())
+                        task = asyncio.create_task(self._run_cleanup())
+                        self._background_tasks.add(task)
+                        task.add_done_callback(self._background_tasks.discard)
                         
                         # Update state machine
                         if job_type == "PROCESS_PHOTO":
@@ -68,6 +71,7 @@ class JobQueue:
                 break
             except Exception as e:
                 log.error("job_queue", "worker_error", f"Job Queue worker encountered an error: {e}")
+                await asyncio.sleep(1)
                 
         log.info("job_queue", "worker_stop", "Job Queue worker stopped")
 
@@ -77,6 +81,7 @@ class JobQueue:
 
     def start(self):
         self._shutdown = False
+        self._queue = asyncio.Queue()
         self._worker_task = asyncio.create_task(self._worker())
 
     async def stop(self):
@@ -87,6 +92,9 @@ class JobQueue:
                 await self._worker_task
             except asyncio.CancelledError:
                 pass
+                
+        if self._background_tasks:
+            await asyncio.gather(*self._background_tasks, return_exceptions=True)
 
 # Global Singleton
 job_queue = JobQueue()
