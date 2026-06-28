@@ -20,6 +20,7 @@ backend/PlayfairDisplay-Regular.ttf
 
 # Session log files
 logs/*
+scratch/*
 
 # Local IDE Configurations
 .vscode/
@@ -30,3 +31,4 @@ logs/*
 *.sln
 *.swp
 .venv/
+.agents/
