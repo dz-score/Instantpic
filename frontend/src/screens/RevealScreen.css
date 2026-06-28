@@ -17,9 +17,9 @@
 }
 
 .reveal-spinner {
-  width: 80px;
-  height: 80px;
-  border: 6px solid var(--champagne);
+  width: 120px;
+  height: 120px;
+  border: 8px solid var(--champagne);
   border-top-color: var(--gold);
   border-radius: 50%;
   animation: spin 0.9s linear infinite;
@@ -35,11 +35,11 @@
 }
 
 .reveal-loading__sub {
-  font-family: var(--font-body);
-  font-size: var(--text-h3);
-  letter-spacing: 4px;
-  text-transform: uppercase;
-  color: var(--text-secondary);
+  font-family: var(--font-display);
+  font-size: var(--text-h1);
+  font-weight: 400;
+  font-style: italic;
+  color: var(--gold);
 }
 
 /* ═══ Flourish ═══ */
