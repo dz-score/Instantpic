@@ -22,6 +22,7 @@ export default function CountdownScreen({
   resumePreview,
   standbyPreview,
   onComplete,
+  onCancel,
   config,
   language,
 }) {
