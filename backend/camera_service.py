@@ -2,10 +2,19 @@ import threading
 import time
 import os
 import uuid
+import queue
 import gphoto2 as gp
+from pydantic import BaseModel
+from typing import Optional
 from backend.logger import log
 from backend.storage import PHOTOS_DIR
 from backend.sse_service import sse_svc
+
+class CaptureJobState(BaseModel):
+    job_id: str
+    status: str  # 'pending', 'started', 'fired', 'downloading', 'completed', 'failed'
+    filename: Optional[str] = None
+    error: Optional[str] = None
 
 
 class CameraService:
@@ -40,6 +49,9 @@ class CameraService:
         # Event to pause/resume the worker (cleared during capture)
         self._preview_allowed = threading.Event()
         self._preview_allowed.set()
+
+        # Command queue for the worker thread
+        self._cmd_queue = queue.Queue()
 
         # --- Diagnostics ---
         self._frames_produced = 0
@@ -84,6 +96,10 @@ class CameraService:
 
     def init(self):
         with self.lock:
+            # Prevent double-initialization race conditions
+            if self.connected:
+                return
+
             try:
                 if self.camera:
                     try:
@@ -186,8 +202,17 @@ class CameraService:
         frame_count = 0
 
         while not self._shutdown_event.is_set():
-            # Pause during capture — wait up to 0.5s, then re-check
-            if not self._preview_allowed.wait(timeout=0.5):
+            # 1. Process command queue
+            try:
+                cmd = self._cmd_queue.get_nowait()
+                if cmd.get("type") == "CAPTURE":
+                    self._execute_capture_job(cmd["job_id"])
+                    continue
+            except queue.Empty:
+                pass
+
+            # 2. Pause during capture/standby — wait up to 0.1s to re-check queue
+            if not self._preview_allowed.wait(timeout=0.1):
                 continue
 
             if self._shutdown_event.is_set():
@@ -218,13 +243,23 @@ class CameraService:
                     if not self._preview_allowed.is_set():
                         continue
 
+                    # Flush events to prevent camera buffer overflow during continuous preview
+                    # Without this, the Canon M50 freezes for ~3 seconds and throws [-1] Unspecified error
+                    flush_start = time.perf_counter()
+                    try:
+                        evt_type, evt_data = self.camera.wait_for_event(10)
+                        while evt_type != gp.GP_EVENT_TIMEOUT:
+                            evt_type, evt_data = self.camera.wait_for_event(5)
+                    except Exception:
+                        pass
+                    flush_time = time.perf_counter() - flush_start
+
                     cap_start = time.perf_counter()
                     camera_file = self.camera.capture_preview()
                     file_data = camera_file.get_data_and_size()
                     frame = bytes(memoryview(file_data))
                     cap_time = time.perf_counter() - cap_start
                     consecutive_errors = 0
-                    flush_time = 0
                 finally:
                     self.lock.release()
 
@@ -307,17 +342,48 @@ class CameraService:
 
     # ─── High-res Capture ─────────────────────────────────────────
 
-    def _do_capture(self):
-        """Internal capture — trigger, flush events, download, save.
-        Must be called with self.lock already held.
+    def enqueue_capture(self) -> str:
+        """Enqueues a high-res capture job and returns its ID immediately."""
+        job_id = uuid.uuid4().hex[:8]
+        self._cmd_queue.put({"type": "CAPTURE", "job_id": job_id})
+        
+        # We manually put the camera into standby so live view stops and 
+        # the USB bus begins to drain even before the worker thread starts the capture
+        self.standby()
+        
+        # Emit initial pending state
+        self._emit_job_state(job_id, "pending")
+        return job_id
+
+    def _emit_job_state(self, job_id: str, status: str, filename: str = None, error: str = None):
+        state = CaptureJobState(job_id=job_id, status=status, filename=filename, error=error)
+        sse_svc.dispatch_event("camera_job", state.model_dump())
+        log.info("camera", f"capture_{status}", f"Capture job {job_id} is {status}", data=state.model_dump())
+
+    def _execute_capture_job(self, job_id: str):
+        """Internal capture execution on the worker thread.
+        Handles trigger, flush, download, save, and emits granular SSE events.
         """
-        log.info("camera", "camera_capture_start", "Starting high-res capture")
+        self._capture_in_progress = True
+        self._emit_job_state(job_id, "started")
+        
+        if not self.connected:
+            self.init()
+            if not self.connected:
+                self._emit_job_state(job_id, "failed", error="Camera not connected")
+                self._capture_in_progress = False
+                return
+
         cap_start = time.perf_counter()
 
-        # 1. Flush pending camera events BEFORE capture.
-        # This clears any leftover live-view events that might cause the camera
-        # to throw `[-1] Unspecified error` when we transition to high-res capture.
+        # Since we are on the worker thread, we don't need self.lock for USB operations
+        # EXCEPT for get_config/set_config/capture which we still wrap just in case 
+        # API endpoints call settings concurrently.
+
+
+        # 1. Drain pending camera events BEFORE capture.
         flush1_start = time.perf_counter()
+        
         try:
             evt_type, evt_data = self.camera.wait_for_event(10)
             while evt_type != gp.GP_EVENT_TIMEOUT:
@@ -327,32 +393,25 @@ class CameraService:
         flush1_time = time.perf_counter() - flush1_start
         log.debug("camera_timing", "capture_flush1", f"Pre-capture flush in {flush1_time*1000:.1f}ms")
 
-        # 2. Exit Live View and Movie Mode (drop the mirror)
-        # We explicitly set BOTH to 0 to prevent the camera from locking up or expecting
-        # a manual shutter button press, which eliminates the [-1] error delay.
-        # We also sleep for 0.2s before doing this to allow any leftover USB I/O to finish,
-        # otherwise the camera will reject the config change with `[-110] I/O in progress`.
-        time.sleep(0.2)
-        
-        for attempt in range(2):
-            try:
-                config = self.camera.get_config()
-                dirty = False
-                for param in ['viewfinder', 'eosmoviemode']:
-                    ok, widget = gp.gp_widget_get_child_by_name(config, param)
-                    if ok >= gp.GP_OK:
-                        widget.set_value(0)
-                        dirty = True
-                if dirty:
-                    self.camera.set_config(config)
-                break  # Success, exit the retry loop
-            except Exception as e:
-                log.debug("camera", "camera_config_warn", f"Could not disable Live View modes (attempt {attempt+1}): {e}")
-                time.sleep(0.2)
+
 
         # 3. Trigger capture
         trig_start = time.perf_counter()
-        file_path = self.camera.capture(gp.GP_CAPTURE_IMAGE)
+        
+        # Fire the physical shutter - tell the UI immediately
+        self._emit_job_state(job_id, "fired")
+        
+        try:
+            with self.lock:
+                file_path = self.camera.capture(gp.GP_CAPTURE_IMAGE)
+        except Exception as e:
+            # Capture failed
+            log.error("camera", "camera_capture_fail", f"Capture failed: {e}")
+            self.connected = False
+            self._emit_job_state(job_id, "failed", error=str(e))
+            self._capture_in_progress = False
+            return
+            
         trig_time = time.perf_counter() - trig_start
         log.debug("camera_timing", "capture_trigger", f"Capture triggered in {trig_time*1000:.1f}ms")
 
@@ -370,88 +429,34 @@ class CameraService:
         log.debug("camera_timing", "capture_flush2", f"Post-capture flush in {flush2_time*1000:.1f}ms")
 
         # 3. Download file
+        self._emit_job_state(job_id, "downloading")
         dl_start = time.perf_counter()
         log.info("camera", "camera_downloading", "Downloading image from camera")
-        camera_file = self.camera.file_get(
-            file_path.folder, file_path.name, gp.GP_FILE_TYPE_NORMAL
-        )
+        
+        try:
+            with self.lock:
+                camera_file = self.camera.file_get(
+                    file_path.folder, file_path.name, gp.GP_FILE_TYPE_NORMAL
+                )
+        except Exception as e:
+            log.error("camera", "camera_download_fail", f"Download failed: {e}")
+            self._emit_job_state(job_id, "failed", error=f"Download failed: {str(e)}")
+            self._capture_in_progress = False
+            return
+            
         dl_time = time.perf_counter() - dl_start
         log.debug("camera_timing", "capture_download", f"Image downloaded in {dl_time*1000:.1f}ms")
 
         # 4. Save to disk
-        filename = f"capture_{uuid.uuid4().hex[:8]}.jpg"
+        filename = f"capture_{job_id}.jpg"
         save_path = os.path.join(PHOTOS_DIR, filename)
         camera_file.save(save_path)
 
         total_time = time.perf_counter() - cap_start
         log.info("camera", "camera_capture_done", f"Image saved: {filename} (Total: {total_time:.2f}s)")
-        return filename
-
-    def capture(self):
-        """Captures a full-res image with retry logic.
-
-        Flow:
-        1. Pause worker thread via Event
-        2. Acquire lock (wait up to 5s for worker to release)
-        3. Attempt capture
-        4. On failure: re-init camera and retry once
-        5. Release lock and resume worker
-        """
-        if not self.connected:
-            self.init()
-            if not self.connected:
-                raise Exception("Camera not connected")
-
-        # Signal worker thread to pause
-        self._capture_in_progress = True
-        self._preview_allowed.clear()
-        sse_svc.dispatch_event("camera_status", self.get_status())
-
-        # Wait for the lock — worker should release within 0.5s
-        acquired = self.lock.acquire(timeout=5)
-        if not acquired:
-            log.error("camera", "camera_lock_timeout", "Could not acquire camera lock for capture")
-            self._capture_in_progress = False
-            self._preview_allowed.set()
-            sse_svc.dispatch_event("camera_status", self.get_status())
-            raise Exception("Camera busy — could not acquire lock")
-
-        try:
-            try:
-                return self._do_capture()
-            except Exception as first_error:
-                log.warn("camera", "camera_capture_retry",
-                         f"First capture attempt failed: {first_error}, waiting 0.6s and retrying...")
-
-                # The camera's mirror might be dropping from live view.
-                # Just wait a moment and try again without dropping the USB connection.
-                time.sleep(0.6)
-                
-                # Flush pending events before retry to clear any transient errors
-                try:
-                    evt_type, _ = self.camera.wait_for_event(10)
-                    while evt_type != gp.GP_EVENT_TIMEOUT:
-                        evt_type, _ = self.camera.wait_for_event(10)
-                except Exception:
-                    pass
-
-                try:
-                    return self._do_capture()
-                except Exception as retry_error:
-                    log.error("camera", "camera_capture_error",
-                              f"Retry capture also failed: {retry_error}")
-                    self.connected = False
-                    sse_svc.dispatch_event("camera_status", self.get_status())
-                    raise retry_error
-        finally:
-            try:
-                self.lock.release()
-            except RuntimeError:
-                pass  # Lock was already released during retry path
-
-            self._capture_in_progress = False
-            # self._preview_allowed.set() # Do NOT set here. Remain in standby.
-            sse_svc.dispatch_event("camera_status", self.get_status())
+        
+        self._capture_in_progress = False
+        self._emit_job_state(job_id, "completed", filename=filename)
 
     def standby(self):
         """Gently pauses the live view worker without acquiring locks or forcing errors.

@@ -39,6 +39,7 @@ export default function CountdownScreen({
   const totalShots = layoutMode === 'collage' ? 3 : 1;
   const timerRef = useRef(null);
   const countdownVideoRef = useRef(null);
+  const captureResolvers = useRef({});
   // Stable MJPEG src — set once on mount, never changes.
   // This ensures exactly ONE backend preview connection for the entire session.
   const previewSrc = useRef(`${previewUrl}?t=${Date.now()}`);
@@ -69,17 +70,15 @@ export default function CountdownScreen({
     }
 
     timerRef.current = setInterval(() => {
-      c -= 1;
+      c -= 0.25;
       if (c > 0) {
-        setCount(c);
+        if (c % 1 === 0) setCount(c);
       } else if (c === 0) {
-        // Countdown finished (guest just saw "1").
-        // Hide the countdown overlay and give them ~1 second
-        // of pure live view to hold their pose before capture.
+        // At 0, we show "Pose!" and let the user hold their pose.
         setPhase('POSING');
-        // PRE-CAPTURE STANDBY: Stop the live view polling now so the camera's
-        // USB bus has a full 1000ms to naturally drain and go idle.
-        // This prevents [-1] crashes and [-110] config rejections during the actual capture.
+        // We stop the live view polling now so the camera's USB bus has a brief moment
+        // to settle before the heavy high-res capture command.
+        // With active event flushing in place, a short 250ms gap is sufficient.
         if (standbyPreview) {
           standbyPreview();
         }
@@ -88,40 +87,53 @@ export default function CountdownScreen({
         clearInterval(timerRef.current);
         onDone();
       }
-    }, 1000);
+    }, 250);
   }, [COUNTDOWN_FROM, standbyPreview]);
 
-  // Fire shutter: capture, then flash + sound on success (with auto-retry)
-  const fireShutter = useCallback(async () => {
+  const triggerCapture = useCallback(async (attempt = 1) => {
     setIsCapturing(true);
-
-    let frame = await captureFrame();
+    const jobId = await captureFrame();
     
-    // Auto-retry once if capture failed (handles transient camera errors)
-    if (!frame) {
-      console.warn('[CountdownScreen] Capture failed, retrying in 1.5s...');
-      await new Promise(r => setTimeout(r, 1500));
-      frame = await captureFrame();
+    if (!jobId) {
+      setIsCapturing(false);
+      return null;
     }
 
-    // Flash + sound AFTER capture succeeds — synced with the actual photo
-    if (frame) {
-      if (flashEnabled) {
-        setFlashActive(true);
-        safeTimeout(() => setFlashActive(false), 250);
-      }
-      playShutterSound();
-    }
-    
-    setIsCapturing(false);
-    
-    if (frame) {
-      imagesRef.current = [...imagesRef.current, frame];
-      setLastCapture(`/photos/${frame}`);
-    }
-
-    return frame;
+    return new Promise((resolve) => {
+      captureResolvers.current[jobId] = {
+        onFired: () => {
+          // Flash + sound EXACTLY when the backend confirms the shutter opened!
+          if (flashEnabled) {
+            setFlashActive(true);
+            safeTimeout(() => setFlashActive(false), 250);
+          }
+          playShutterSound();
+        },
+        onCompleted: (filename) => {
+          setIsCapturing(false);
+          imagesRef.current = [...imagesRef.current, filename];
+          setLastCapture(`/photos/${filename}`);
+          resolve(filename);
+        },
+        onFailed: async (error) => {
+          console.warn(`[CountdownScreen] Capture failed (attempt ${attempt}):`, error);
+          if (attempt === 1) {
+            await new Promise(r => setTimeout(r, 1500));
+            const result = await triggerCapture(2);
+            resolve(result);
+          } else {
+            setIsCapturing(false);
+            resolve(null);
+          }
+        }
+      };
+    });
   }, [captureFrame, flashEnabled, safeTimeout]);
+
+  // Fire shutter orchestrator
+  const fireShutter = useCallback(async () => {
+    return await triggerCapture(1);
+  }, [triggerCapture]);
 
   const startRound = useCallback(async (idx) => {
     setShotIndex(idx);
@@ -155,8 +167,9 @@ export default function CountdownScreen({
       resumePreview();
     }
 
-    // Subscribe to SSE for diagnostic metrics
-    const evtSource = new EventSource('/api/events');
+    // Subscribe to SSE for diagnostic metrics and job updates
+    const evtSource = new EventSource('/api/sse');
+    
     evtSource.addEventListener('camera_metrics', (e) => {
       try {
         const data = JSON.parse(e.data);
@@ -167,6 +180,29 @@ export default function CountdownScreen({
                          `Time since last: ${data.time_since_last_frame_ms}ms`;
         }
       } catch (err) {}
+    });
+
+    evtSource.addEventListener('camera_job', (e) => {
+      try {
+        const job = JSON.parse(e.data);
+        const resolvers = captureResolvers.current[job.job_id];
+        
+        if (resolvers) {
+          if (job.status === 'fired' && resolvers.onFired) {
+            resolvers.onFired();
+            // Prevent duplicate fires if SSE delivers twice
+            resolvers.onFired = null; 
+          } else if (job.status === 'completed' && resolvers.onCompleted) {
+            resolvers.onCompleted(job.filename);
+            delete captureResolvers.current[job.job_id];
+          } else if (job.status === 'failed' && resolvers.onFailed) {
+            resolvers.onFailed(job.error);
+            delete captureResolvers.current[job.job_id];
+          }
+        }
+      } catch (err) {
+        console.error("Error parsing camera_job event", err);
+      }
     });
 
     return () => {

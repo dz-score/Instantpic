@@ -7,18 +7,18 @@ export default function useCamera(cameraStatus) {
 
   const previewUrl = '/api/camera/preview';
 
-  /** Grab a single high-quality frame from the camera */
+  /** Request a high-quality frame from the camera */
   const captureFrame = useCallback(async () => {
     try {
-      logger.info('camera', 'capture_start', 'Triggering backend capture');
+      logger.info('camera', 'capture_enqueue', 'Triggering backend capture job');
       const res = await fetch('/api/camera/capture', { method: 'POST' });
       if (!res.ok) {
         throw new Error(`Capture failed with status: ${res.status}`);
       }
       const data = await res.json();
-      logger.info('camera', 'capture_ok', 'Backend capture successful', { filename: data.filename });
-      // Return the filename instead of a base64 string
-      return data.filename;
+      logger.info('camera', 'capture_enqueued', 'Backend capture job enqueued', { job_id: data.job_id });
+      // Return the job_id to listen for via SSE
+      return data.job_id;
     } catch (err) {
       logger.error('camera', 'capture_fail', `Backend capture failed: ${err.message}`);
       return null;

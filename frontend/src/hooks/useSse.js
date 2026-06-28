@@ -14,6 +14,7 @@ export default function useSse() {
     failed_jobs: 0,
     is_online: false,
   });
+  const [backendState, setBackendState] = useState(null);
   const [isOnline, setIsOnline] = useState(false);
   const eventSourceRef = useRef(null);
 
@@ -49,6 +50,15 @@ export default function useSse() {
         }
       });
 
+      eventSource.addEventListener('state_update', (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          setBackendState(data);
+        } catch (err) {
+          console.error('Failed to parse state_update SSE:', err);
+        }
+      });
+
       eventSource.onerror = (e) => {
         console.error('SSE connection error, attempting to reconnect...', e);
         setIsOnline(false);
@@ -67,5 +77,5 @@ export default function useSse() {
     };
   }, []);
 
-  return { cameraStatus, printerStatus, isOnline };
+  return { cameraStatus, printerStatus, isOnline, backendState };
 }

@@ -64,63 +64,32 @@ def test_standby_mode_and_resume(mock_gphoto2):
         camera.shutdown()
 
 
-def test_capture_leaves_in_standby(mock_gphoto2):
+def test_enqueue_capture(mock_gphoto2):
     with patch('backend.camera_service.gp', mock_gphoto2):
-        
         from backend.camera_service import CameraService
-        
-        mock_camera = mock_gphoto2.Camera.return_value
-        
-        # Simulate successful init
-        mock_camera.init.return_value = 0
-        
-        # Mock file capture
-        mock_camera_file = MagicMock()
-        mock_camera_file.get_data_and_size.return_value = (b'fake_high_res_data', 18)
-        
-        mock_camera.file_get.return_value = mock_camera_file
-        
         camera = CameraService()
         
-        # Mock _do_capture to avoid complex file/event logic for this structural test
-        # We want to test the `capture()` wrapper logic
-        with patch.object(camera, '_do_capture', return_value="fake_photo.jpg"):
-            # Set to running state
-            camera._preview_allowed.set()
-            
-            # Perform capture
-            filename = camera.capture()
-            
-            assert filename == "fake_photo.jpg"
-            # Crucial Standby Mode Check: After capture, worker should be paused!
-            assert camera._preview_allowed.is_set() is False
-        
+        # Test that enqueueing returns a job_id and puts it in the queue
+        with patch.object(camera, 'standby') as mock_standby:
+            with patch.object(camera, '_emit_job_state') as mock_emit:
+                job_id = camera.enqueue_capture()
+                
+                assert job_id is not None
+                assert len(job_id) == 8
+                
+                # Should have been placed in the queue
+                assert not camera._cmd_queue.empty()
+                cmd = camera._cmd_queue.get()
+                assert cmd["type"] == "CAPTURE"
+                assert cmd["job_id"] == job_id
+                
+                # Should have called standby and emitted pending
+                mock_standby.assert_called_once()
+                mock_emit.assert_called_once_with(job_id, "pending")
+
         camera.shutdown()
 
-
-def test_worker_loop_increments_consecutive_errors(mock_gphoto2):
-    with patch('backend.camera_service.gp', mock_gphoto2):
-        
-        from backend.camera_service import CameraService
-        
-        mock_camera = mock_gphoto2.Camera.return_value
-        mock_camera.init.return_value = 0
-        
-        # Simulate capture_preview failing consistently
-        mock_camera.capture_preview.side_effect = mock_gphoto2.GPhoto2Error("[-1] Unspecified error")
-        
-        camera = CameraService()
-        camera.init()
-        
-        # Worker is running in background because init() succeeded.
-        # It loops every ~0.1s on error, so after 0.7s it will hit > 5 errors
-        time.sleep(0.7)
-        
-        # When consecutive errors > 5, it should set connected = False
-        camera.shutdown()
-
-
-def test_do_capture_success_and_settings(mock_gphoto2):
+def test_execute_capture_job_success(mock_gphoto2):
     with patch('backend.camera_service.gp', mock_gphoto2):
         from backend.camera_service import CameraService
         
@@ -138,15 +107,22 @@ def test_do_capture_success_and_settings(mock_gphoto2):
         camera = CameraService()
         camera.init()
         
-        # Test getting settings
-        settings = camera.get_settings()
-        assert settings["status"] == "connected"
+        job_id = "test_job"
         
-        # Test full capture
-        mock_uuid = MagicMock()
-        mock_uuid.hex = "12345678"
-        with patch('backend.camera_service.uuid.uuid4', return_value=mock_uuid):
-            filename = camera._do_capture()
-            assert filename == "capture_12345678.jpg"
+        # Spy on event emitting
+        with patch.object(camera, '_emit_job_state') as mock_emit:
+            camera._execute_capture_job(job_id)
             
+            # Verify the sequence of SSE events emitted
+            assert mock_emit.call_count == 4
+            mock_emit.assert_any_call(job_id, "started")
+            mock_emit.assert_any_call(job_id, "fired")
+            mock_emit.assert_any_call(job_id, "downloading")
+            
+            # The final completed event should have the filename
+            final_call = mock_emit.call_args_list[-1]
+            assert final_call[0][0] == job_id
+            assert final_call[0][1] == "completed"
+            assert final_call[1]["filename"] == f"capture_{job_id}.jpg"
+
         camera.shutdown()

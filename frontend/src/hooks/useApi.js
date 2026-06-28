@@ -57,6 +57,33 @@ export default function useApi(isOnline) {
 
   // Gallery fetched on-demand after print, not on mount
 
+  /* ── Initial State ── */
+  const fetchState = useCallback(async () => {
+    try {
+      const r = await fetch(`${API}/api/state`);
+      return await r.json();
+    } catch (e) {
+      logger.error('api', 'api_error', `Failed to load state: ${e.message}`);
+      return null;
+    }
+  }, []);
+
+  /* ── Events ── */
+  const sendEvent = useCallback(async (type, payload = {}) => {
+    try {
+      const r = await fetch(`${API}/api/events`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type, payload }),
+      });
+      if (!r.ok) throw new Error('Event submission failed');
+      return await r.json();
+    } catch (e) {
+      logger.error('api', 'api_event_error', `Failed to send event ${type}: ${e.message}`, { type, error: e.message });
+      throw e;
+    }
+  }, []);
+
   /* ── Save photo (process on backend) ── */
   const savePhoto = useCallback(async (images, layout, overlayId) => {
     const cfg = configRef.current || {};
@@ -178,5 +205,7 @@ export default function useApi(isOnline) {
     emergencyAction,
     changePin,
     getRecentLogs,
+    fetchState,
+    sendEvent,
   };
 }

@@ -18,29 +18,11 @@ import DownloadScreen from './screens/DownloadScreen';
 // Admin
 import AdminPanel from './components/admin/AdminPanel';
 
-// ─── State Machine ──────────────────────────────────────────────
-const SCREENS = {
-  ATTRACT: 'ATTRACT',
-  CHOOSE_STYLE: 'CHOOSE_STYLE',
-  COUNTDOWN: 'COUNTDOWN',
-  REVEAL: 'REVEAL',
-  PICK_FAVORITE: 'PICK_FAVORITE',
-  FRAME_PICKER: 'FRAME_PICKER',
-  PRINTING: 'PRINTING',
-  DOWNLOAD: 'DOWNLOAD',
-};
-
 export default function App() {
   const [language, setLanguage] = useState('en');
-  const [screen, setScreen] = useState(SCREENS.ATTRACT);
-  const [layoutMode, setLayoutMode] = useState('single');
-  const [capturedImages, setCapturedImages] = useState([]);
-  const [finalPhoto, setFinalPhoto] = useState(null);
-  const [retakeCount, setRetakeCount] = useState(0);
-  const [allSessionPhotos, setAllSessionPhotos] = useState([]); // tracks ALL processed filenames in this session
-  const [isProcessing, setIsProcessing] = useState(false);
   const [showAdmin, setShowAdmin] = useState(false);
   const [adminTapCount, setAdminTapCount] = useState(0);
+  const [appState, setAppState] = useState(null);
 
   const sse = useSse();
   const camera = useCamera(sse.cameraStatus);
@@ -48,15 +30,26 @@ export default function App() {
   const inactivityTimer = useRef(null);
   const adminTapTimer = useRef(null);
 
-  // ─── URL Routing (mobile download) ───
+  // Sync state from SSE or Initial Fetch
   useEffect(() => {
-    const path = window.location.pathname;
-    if (path.startsWith('/download/')) {
-      setScreen(SCREENS.DOWNLOAD);
+    if (sse.backendState) {
+      setAppState(sse.backendState);
     }
-  }, []);
+  }, [sse.backendState]);
 
-  // ─── Camera Error Fallback is handled in render ───
+  useEffect(() => {
+    api.fetchState().then(state => {
+      if (state) setAppState(prev => prev || state);
+    });
+  }, [api]);
+
+  // ─── URL Routing (mobile download) ───
+  // We still handle /download/ locally since it's just a static page
+  const downloadFilename = window.location.pathname.startsWith('/download/')
+    ? window.location.pathname.replace('/download/', '')
+    : null;
+
+  const currentScreen = downloadFilename ? 'DOWNLOAD' : (appState?.screen || 'LOADING');
 
   // ─── Inactivity Timeout ───
   const resetInactivityTimer = useCallback(() => {
@@ -64,24 +57,20 @@ export default function App() {
 
     const timeoutSec = api.config?.session_timeout || 120;
     inactivityTimer.current = setTimeout(() => {
-      setScreen((currentScreen) => {
-        if (
-          currentScreen !== SCREENS.ATTRACT &&
-          currentScreen !== SCREENS.DOWNLOAD &&
-          !showAdmin
-        ) {
-          logger.info('session', 'session_timeout', 'Inactivity timeout — resetting to attract');
-          endSession('timeout');
-          resetSession();
-          return SCREENS.ATTRACT;
-        }
-        return currentScreen;
-      });
+      if (
+        currentScreen !== 'ATTRACT' &&
+        currentScreen !== 'DOWNLOAD' &&
+        currentScreen !== 'LOADING' &&
+        !showAdmin
+      ) {
+        logger.info('session', 'session_timeout', 'Inactivity timeout — backend will reset');
+        api.sendEvent('TIMEOUT');
+      }
     }, timeoutSec * 1000);
-  }, [api.config, showAdmin]);
+  }, [api, showAdmin, currentScreen]);
 
   useEffect(() => {
-    if (screen === SCREENS.ATTRACT || screen === SCREENS.DOWNLOAD) {
+    if (currentScreen === 'ATTRACT' || currentScreen === 'DOWNLOAD' || currentScreen === 'LOADING') {
       if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
       return;
     }
@@ -93,7 +82,7 @@ export default function App() {
       window.removeEventListener('pointerdown', handleTouch);
       if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
     };
-  }, [screen, resetInactivityTimer]);
+  }, [currentScreen, resetInactivityTimer]);
 
   // ─── Hidden Admin: 5 rapid taps ───
   const handleBrandingTap = useCallback(() => {
@@ -110,147 +99,97 @@ export default function App() {
     });
   }, []);
 
-  // ─── Flow Handlers ───
-
+  // ─── Flow Handlers (Backend Driven) ───
   const handleStart = useCallback(() => {
     startSession();
     logger.info('ui', 'ui_tap_start', 'Guest tapped start');
-    setScreen(SCREENS.CHOOSE_STYLE);
-  }, []);
+    api.sendEvent('START_SESSION');
+  }, [api]);
 
   const handleSelectLayout = useCallback((mode) => {
     logger.info('ui', 'ui_select_layout', `Selected ${mode} layout`, { layout: mode });
-    setLayoutMode(mode);
-    setCapturedImages([]);
-    setRetakeCount(0);
-    setFinalPhoto(null);
-    setAllSessionPhotos([]);
-    setScreen(SCREENS.COUNTDOWN);
-  }, []);
+    api.sendEvent('SELECT_LAYOUT', { mode });
+  }, [api]);
 
-  const handleCaptureComplete = useCallback(async (images) => {
+  const handleCaptureComplete = useCallback((images) => {
     logger.info('camera', 'camera_capture', `Captured ${images.length} image(s)`);
-    setCapturedImages(images);
-    setScreen(SCREENS.REVEAL);
-    
-    // If no images were captured (all attempts failed), go straight to error state
     if (!images || images.length === 0) {
-      logger.error('photo', 'photo_process_fail', 'No images captured — all capture attempts failed', { error: 'No images' });
-      setFinalPhoto(null);
-      setIsProcessing(false);
+      logger.error('photo', 'photo_process_fail', 'No images captured — all capture attempts failed');
       return;
     }
     
-    setIsProcessing(true);
-    try {
-      const overlayId = api.config?.selected_overlay || 'none';
-      const result = await api.savePhoto(images, layoutMode, overlayId);
-      setFinalPhoto(result.filename);
-      setAllSessionPhotos((prev) => [...prev, { filename: result.filename, rawImages: images }]);
-    } catch (err) {
-      logger.error('photo', 'photo_process_fail', `Photo processing failed: ${err.message}`, { error: err.message });
-      setFinalPhoto(null);
-    } finally {
-      setIsProcessing(false);
-    }
-  }, [api, layoutMode]);
+    const cfg = api.config || {};
+    const showNames = cfg.show_names_on_photo !== false;
+    const text = showNames
+      ? ([cfg.couple_names, cfg.event_date].filter(Boolean).join(' · ') || cfg.default_text || '')
+      : '';
+      
+    api.sendEvent('CAPTURE_DONE', {
+      images,
+      text,
+      overlay_id: cfg.selected_overlay || 'none'
+    });
+  }, [api]);
 
   const handleRetake = useCallback(() => {
-    setRetakeCount((c) => {
-      logger.info('ui', 'ui_retake', `Retake #${c + 1}`);
-      return c + 1;
-    });
-    setCapturedImages([]);
-    setFinalPhoto(null);
-    setScreen(SCREENS.COUNTDOWN);
-  }, []);
-
-  const proceedToPrintFlow = useCallback(() => {
-    const overlays = api.config?.overlays || [];
-    const hasFrameOptions = overlays.filter((o) => o.id !== 'none').length > 0;
-    if (hasFrameOptions && overlays.length > 1) {
-      setScreen(SCREENS.FRAME_PICKER);
-    } else {
-      setScreen(SCREENS.PRINTING);
-    }
-  }, [api.config]);
+    logger.info('ui', 'ui_retake', 'Retake requested');
+    api.sendEvent('RETAKE');
+  }, [api]);
 
   const handlePrintFromReveal = useCallback(() => {
-    // If user took multiple photos, let them pick their favorite
-    if (allSessionPhotos.length > 1) {
-      setScreen(SCREENS.PICK_FAVORITE);
-      return;
-    }
-    // Otherwise go straight to frame picker / printing
-    proceedToPrintFlow();
-  }, [allSessionPhotos, proceedToPrintFlow]);
+    api.sendEvent('PRINT_FROM_REVEAL', { overlays: api.config?.overlays || [] });
+  }, [api]);
 
   const handleFavoriteSelect = useCallback((selectedFilename) => {
-    setFinalPhoto(selectedFilename);
-    const sessionInfo = allSessionPhotos.find(p => p.filename === selectedFilename);
-    if (sessionInfo) {
-      setCapturedImages(sessionInfo.rawImages);
-    }
-    proceedToPrintFlow();
-  }, [allSessionPhotos, proceedToPrintFlow]);
+    api.sendEvent('FAVORITE_SELECT', { 
+      filename: selectedFilename, 
+      overlays: api.config?.overlays || [] 
+    });
+  }, [api]);
 
-  const handleFrameSelect = useCallback(async (overlayId) => {
-    setIsProcessing(true);
-    try {
-      const result = await api.savePhoto(capturedImages, layoutMode, overlayId);
-      setFinalPhoto(result.filename);
-      setScreen(SCREENS.PRINTING);
-    } catch (err) {
-      logger.error('photo', 'frame_apply_fail', `Frame apply failed: ${err.message}`, { error: err.message });
-    } finally {
-      setIsProcessing(false);
-    }
-  }, [api, capturedImages, layoutMode]);
+  const handleFrameSelect = useCallback((overlayId) => {
+    const cfg = api.config || {};
+    const showNames = cfg.show_names_on_photo !== false;
+    const text = showNames
+      ? ([cfg.couple_names, cfg.event_date].filter(Boolean).join(' · ') || cfg.default_text || '')
+      : '';
+    api.sendEvent('FRAME_SELECT', { overlay_id: overlayId, text });
+  }, [api]);
 
   const handleFrameSkip = useCallback(() => {
-    setScreen(SCREENS.PRINTING);
-  }, []);
+    api.sendEvent('FRAME_SKIP');
+  }, [api]);
 
   const handleFinish = useCallback(() => {
     logger.info('session', 'session_end', 'Session finished normally');
     endSession('completed');
-    resetSession();
-  }, []);
+    api.sendEvent('FINISH');
+  }, [api]);
 
   const handleAnother = useCallback(() => {
     logger.info('session', 'session_end', 'Guest chose to take another photo');
     endSession('another');
-    resetSession();
     startSession();
-    setScreen(SCREENS.CHOOSE_STYLE);
-  }, []);
-
-  const resetSession = () => {
-    setScreen(SCREENS.ATTRACT);
-    setFinalPhoto(null);
-    setCapturedImages([]);
-    setRetakeCount(0);
-    setAllSessionPhotos([]);
-    setIsProcessing(false);
-    setLayoutMode('single');
-  };
+    api.sendEvent('ANOTHER');
+  }, [api]);
 
   const handleAdminSave = useCallback(async (updates) => {
     await api.saveConfig(updates);
   }, [api]);
-
-  // ─── Mobile download route ───
-  const downloadFilename = window.location.pathname.startsWith('/download/')
-    ? window.location.pathname.replace('/download/', '')
-    : null;
 
   // ─── Render ───
   return (
     <div className="app-root" style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden' }}>
 
       {/* ─── Screen Router ─── */}
+      
+      {currentScreen === 'LOADING' && (
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', color: '#fff' }}>
+          <h2>Connecting...</h2>
+        </div>
+      )}
 
-      {screen === SCREENS.ATTRACT && (
+      {currentScreen === 'ATTRACT' && (
         <AttractScreen 
           config={api.config} 
           onStart={handleStart} 
@@ -259,18 +198,18 @@ export default function App() {
         />
       )}
 
-      {screen === SCREENS.CHOOSE_STYLE && (
+      {currentScreen === 'CHOOSE_STYLE' && (
         <ChooseStyleScreen 
           onSelect={handleSelectLayout} 
-          onBack={() => setScreen(SCREENS.ATTRACT)}
+          onBack={() => api.sendEvent('FINISH')}
           language={language}
         />
       )}
 
-      {screen === SCREENS.COUNTDOWN && (
+      {currentScreen === 'COUNTDOWN' && (
         <CountdownScreen
           previewUrl={camera.previewUrl}
-          layoutMode={layoutMode}
+          layoutMode={appState?.layoutMode || 'single'}
           captureFrame={camera.captureFrame}
           resumePreview={camera.resumePreview}
           standbyPreview={camera.standbyPreview}
@@ -280,45 +219,45 @@ export default function App() {
         />
       )}
 
-      {screen === SCREENS.REVEAL && (
+      {currentScreen === 'REVEAL' && (
         <RevealScreen
-          finalPhoto={finalPhoto}
-          isProcessing={isProcessing}
-          retakeCount={retakeCount}
+          finalPhoto={appState?.finalPhoto}
+          isProcessing={appState?.isProcessing || false}
+          retakeCount={appState?.retakeCount || 0}
           maxRetakes={api.config?.max_photos_per_session || 5}
           onRetake={handleRetake}
           onPrint={handlePrintFromReveal}
-          onCancel={resetSession}
+          onCancel={() => api.sendEvent('FINISH')}
           language={language}
         />
       )}
 
-      {screen === SCREENS.PICK_FAVORITE && (
+      {currentScreen === 'PICK_FAVORITE' && (
         <PickFavoriteScreen
-          allPhotos={allSessionPhotos.map(p => p.filename)}
+          allPhotos={(appState?.allSessionPhotos || []).map(p => p.filename)}
           onSelect={handleFavoriteSelect}
           onBack={handleFinish}
-          isProcessing={isProcessing}
+          isProcessing={appState?.isProcessing || false}
           language={language}
         />
       )}
 
-      {screen === SCREENS.FRAME_PICKER && (
+      {currentScreen === 'FRAME_PICKER' && (
         <FramePickerScreen
-          finalPhoto={finalPhoto}
+          finalPhoto={appState?.finalPhoto}
           overlays={api.config?.overlays || []}
           currentOverlay={api.config?.selected_overlay || 'none'}
           onSelect={handleFrameSelect}
           onSkip={handleFrameSkip}
           onBack={handleFinish}
-          isProcessing={isProcessing}
+          isProcessing={appState?.isProcessing || false}
           language={language}
         />
       )}
 
-      {screen === SCREENS.PRINTING && (
+      {currentScreen === 'PRINTING' && (
         <PrintingScreen
-          finalPhoto={finalPhoto}
+          finalPhoto={appState?.finalPhoto}
           printPhoto={api.printPhoto}
           getQrUrl={api.getQrUrl}
           getDownloadUrl={api.getDownloadUrl}
@@ -329,12 +268,12 @@ export default function App() {
         />
       )}
 
-      {screen === SCREENS.DOWNLOAD && (
+      {currentScreen === 'DOWNLOAD' && (
         <DownloadScreen filename={downloadFilename} language={language} />
       )}
 
       {/* ─── Offline Overlay ─── */}
-      {!api.isOnline && screen !== SCREENS.DOWNLOAD && (
+      {!api.isOnline && currentScreen !== 'DOWNLOAD' && (
         <div className="offline-overlay">
           <div className="offline-icon">
             <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -348,7 +287,7 @@ export default function App() {
       )}
 
       {/* ─── Admin Trigger (branding tap) ─── */}
-      {screen !== SCREENS.DOWNLOAD && screen !== SCREENS.COUNTDOWN && !showAdmin && (
+      {currentScreen !== 'DOWNLOAD' && currentScreen !== 'COUNTDOWN' && !showAdmin && (
         <button
           className="admin-trigger"
           onClick={handleBrandingTap}
