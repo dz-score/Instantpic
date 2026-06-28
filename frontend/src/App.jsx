@@ -273,6 +273,7 @@ export default function App() {
           layoutMode={layoutMode}
           captureFrame={camera.captureFrame}
           resumePreview={camera.resumePreview}
+          standbyPreview={camera.standbyPreview}
           onComplete={handleCaptureComplete}
           config={api.config}
           language={language}

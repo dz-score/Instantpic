@@ -19,13 +19,14 @@ export default function CountdownScreen({
   layoutMode,
   captureFrame,
   resumePreview,
+  standbyPreview,
   onComplete,
   config,
   language,
 }) {
   const COUNTDOWN_FROM = config?.countdown_duration || 3;
   const flashEnabled = config?.flash_enabled !== false;
-  const [phase, setPhase] = useState('COUNTDOWN'); // COUNTDOWN | BETWEEN
+  const [phase, setPhase] = useState('COUNTDOWN'); // COUNTDOWN | POSING | BETWEEN
   const [count, setCount] = useState(COUNTDOWN_FROM);
   const [shotIndex, setShotIndex] = useState(0);
   const [flashActive, setFlashActive] = useState(false);
@@ -76,13 +77,19 @@ export default function CountdownScreen({
         // Hide the countdown overlay and give them ~1 second
         // of pure live view to hold their pose before capture.
         setPhase('POSING');
+        // PRE-CAPTURE STANDBY: Stop the live view polling now so the camera's
+        // USB bus has a full 1000ms to naturally drain and go idle.
+        // This prevents [-1] crashes and [-110] config rejections during the actual capture.
+        if (standbyPreview) {
+          standbyPreview();
+        }
       } else {
         // c < 0 — the pose gap is over, fire the shutter
         clearInterval(timerRef.current);
         onDone();
       }
     }, 1000);
-  }, [COUNTDOWN_FROM]);
+  }, [COUNTDOWN_FROM, standbyPreview]);
 
   // Fire shutter: capture, then flash + sound on success (with auto-retry)
   const fireShutter = useCallback(async () => {

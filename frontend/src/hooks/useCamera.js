@@ -34,5 +34,14 @@ export default function useCamera(cameraStatus) {
     }
   }, []);
 
-  return { previewUrl, captureFrame, resumePreview, mode, cameraStatus };
+  const standbyPreview = useCallback(async () => {
+    try {
+      logger.info('camera', 'standby_start', 'Pausing backend camera worker (pre-capture)');
+      await fetch('/api/camera/standby', { method: 'POST' });
+    } catch (err) {
+      logger.error('camera', 'standby_fail', `Failed to standby camera: ${err.message}`);
+    }
+  }, []);
+
+  return { previewUrl, captureFrame, resumePreview, standbyPreview, mode, cameraStatus };
 }

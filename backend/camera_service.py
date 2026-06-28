@@ -453,6 +453,14 @@ class CameraService:
             # self._preview_allowed.set() # Do NOT set here. Remain in standby.
             sse_svc.dispatch_event("camera_status", self.get_status())
 
+    def standby(self):
+        """Gently pauses the live view worker without acquiring locks or forcing errors.
+        Used right before capture to let the camera's USB bus naturally drain."""
+        if self._preview_allowed.is_set():
+            log.info("camera", "camera_standby", "Entering standby mode (pausing live view)")
+            self._preview_allowed.clear()
+            sse_svc.dispatch_event("camera_status", self.get_status())
+
     def resume_preview(self):
         """Wakes up the background worker to resume the preview stream."""
         if not self._preview_allowed.is_set():
