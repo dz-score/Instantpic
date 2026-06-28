@@ -25,6 +25,9 @@ from backend.sse_service import sse_svc, SseClient
 from backend.logger import log
 from sse_starlette.sse import EventSourceResponse
 
+from backend.state_machine import state_machine
+from backend.job_queue import job_queue
+
 # Load settings to know which camera backend to use
 settings = load_settings()
 
@@ -52,6 +55,10 @@ async def lifespan(app: FastAPI):
 
     # Log startup
     log.info("system", "system_boot", f"Backend started", data={"version": "1.0.0"})
+
+    # Initialize State Machine and Job Queue
+    state_machine.set_job_queue(job_queue)
+    job_queue.start()
 
     # Eagerly init camera
     if GPHOTO2_AVAILABLE:
@@ -86,6 +93,8 @@ async def lifespan(app: FastAPI):
     from backend.sse_service import sse_svc
     sse_svc.request_shutdown()
     
+    await job_queue.stop()
+
     if GPHOTO2_AVAILABLE:
         camera_svc.shutdown()
     print_svc.shutdown()
@@ -129,6 +138,10 @@ class SavePhotoRequest(BaseModel):
 class CameraSettingsRequest(BaseModel):
     settings: dict
 
+class EventRequest(BaseModel):
+    type: str
+    payload: dict = Field(default_factory=dict)
+
 # Endpoints
 @app.get("/api/config", response_model=AppSettings)
 async def get_config():
@@ -156,40 +169,16 @@ async def list_photos():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/api/save-photo")
-async def save_photo(req: SavePhotoRequest, background_tasks: BackgroundTasks):
-    """
-    Stitches base64 images into a collage or formats a single photo,
-    adds overlay/text, saves to disk, and runs circular space enforcement.
-    """
-    if not req.images:
-        raise HTTPException(status_code=400, detail="No images provided")
+@app.get("/api/state")
+async def get_state():
+    """Get current booth state."""
+    return await state_machine.get_state()
 
-    import time as _time
-    t0 = _time.monotonic()
-    log.info("photo", "photo_process_start", f"Processing {req.layout} photo", data={"layout": req.layout, "overlay": req.overlay_id, "image_count": len(req.images)})
-
-    try:
-        filename = process_photo_layout(
-            images_base64=req.images,
-            layout_type=req.layout,
-            text=req.text,
-            overlay_id=req.overlay_id
-        )
-        dur = int((_time.monotonic() - t0) * 1000)
-        log.info("photo", "photo_process_done", f"Photo processed: {filename}", dur=dur, data={"filename": filename, "layout": req.layout, "overlay": req.overlay_id})
-
-        background_tasks.add_task(enforce_circular_storage)
-
-        return {
-            "status": "success",
-            "filename": filename,
-            "url": f"/photos/{filename}"
-        }
-    except Exception as e:
-        dur = int((_time.monotonic() - t0) * 1000)
-        log.error("photo", "photo_process_fail", f"Photo processing failed: {e}", dur=dur, data={"error": str(e)})
-        raise HTTPException(status_code=500, detail=f"Image processing failed: {str(e)}")
+@app.post("/api/events")
+async def handle_event(req: EventRequest):
+    """Handle frontend events."""
+    await state_machine.handle_event(req.type, req.payload)
+    return {"status": "ok"}
 
 @app.post("/api/print/{filename}")
 async def trigger_print(filename: str):
@@ -237,8 +226,8 @@ async def camera_capture():
     if not GPHOTO2_AVAILABLE:
         raise HTTPException(status_code=501, detail="gphoto2 not installed")
     try:
-        filename = camera_svc.capture()
-        return {"filename": filename, "url": f"/photos/{filename}"}
+        job_id = camera_svc.enqueue_capture()
+        return {"status": "enqueued", "job_id": job_id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

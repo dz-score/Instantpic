@@ -13,36 +13,23 @@ def test_post_config(client):
     data = response.json()
     assert data["countdown_duration"] == 5
 
-def test_save_photo_success(client, mock_base64_image):
-    """Test sending a valid photo payload."""
+def test_event_capture_done(client, mock_base64_image):
+    """Test sending a valid capture done event."""
     payload = {
-        "images": [mock_base64_image],
-        "layout": "single",
-        "text": "API Integration Test",
-        "overlay_id": "none"
+        "type": "CAPTURE_DONE",
+        "payload": {
+            "images": [mock_base64_image],
+            "text": "API Integration Test",
+            "overlay_id": "none"
+        }
     }
-    response = client.post("/api/save-photo", json=payload)
+    response = client.post("/api/events", json=payload)
     assert response.status_code == 200
-    data = response.json()
-    assert data["status"] == "success"
-    assert "filename" in data
     
-    # Verify the photo appears in the photo list endpoint
-    photos_response = client.get("/api/photos")
-    assert photos_response.status_code == 200
-    assert data["filename"] in photos_response.json()
-
-def test_save_photo_invalid_layout(client, mock_base64_image):
-    """Test that invalid layouts are rejected with a 400 Bad Request."""
-    payload = {
-        "images": [mock_base64_image],
-        "layout": "super_weird_layout",
-        "text": "",
-        "overlay_id": "none"
-    }
-    response = client.post("/api/save-photo", json=payload)
-    assert response.status_code == 422
-    assert "layout" in response.json()["detail"][0]["loc"]
+    # State should now be processing/reveal
+    state_resp = client.get("/api/state")
+    assert state_resp.status_code == 200
+    assert state_resp.json()["screen"] == "REVEAL"
 
 def test_print_photo_missing(client):
     """Test that requesting to print a missing file returns 404."""
