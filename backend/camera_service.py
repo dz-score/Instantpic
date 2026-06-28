@@ -392,34 +392,7 @@ class CameraService:
         flush1_time = time.perf_counter() - flush1_start
         log.debug("camera_timing", "capture_flush1", f"Pre-capture flush in {flush1_time*1000:.1f}ms")
 
-        # 2. Exit Live View and Movie Mode (drop the mirror)
-        # We explicitly set BOTH to 0 to prevent the camera from locking up or expecting
-        # a manual shutter button press, which eliminates the [-1] error delay.
-        # We also sleep for 0.2s before doing this to allow any leftover USB I/O to finish.
-        time.sleep(0.2)
-        
-        for attempt in range(4):
-            try:
-                with self.lock:
-                    config = self.camera.get_config()
-                    dirty = False
-                    for param in ['viewfinder', 'eosmoviemode']:
-                        ok, widget = gp.gp_widget_get_child_by_name(config, param)
-                        if ok >= gp.GP_OK:
-                            widget.set_value(0)
-                            dirty = True
-                    if dirty:
-                        self.camera.set_config(config)
-                break  # Success, exit the retry loop
-            except Exception as e:
-                log.debug("camera", "camera_config_warn", f"Could not disable Live View modes (attempt {attempt+1}): {e}")
-                # Try another dummy read to drain any remaining stuck data
-                try:
-                    with self.lock:
-                        self.camera.capture_preview()
-                except Exception:
-                    pass
-                time.sleep(0.2)
+
 
         # 3. Trigger capture
         trig_start = time.perf_counter()
