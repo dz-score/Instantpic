@@ -65,3 +65,14 @@ def test_diagnostics(client):
     data = response.json()
     assert "printer" in data
     assert "storage" in data
+
+def test_camera_capture(client, mocker):
+    """Test enqueuing a camera capture."""
+    mocker.patch("backend.main.GPHOTO2_AVAILABLE", True)
+    mock_svc = mocker.patch("backend.main.camera_svc", create=True)
+    mock_svc.enqueue_capture.return_value = "1234abcd"
+    
+    response = client.post("/api/camera/capture")
+    assert response.status_code == 200
+    assert response.json()["status"] == "enqueued"
+    assert response.json()["job_id"] == "1234abcd"
