@@ -247,9 +247,9 @@ class CameraService:
                     # Without this, the Canon M50 freezes for ~3 seconds and throws [-1] Unspecified error
                     flush_start = time.perf_counter()
                     try:
-                        evt_type, evt_data = self.camera.wait_for_event(1)
+                        evt_type, evt_data = self.camera.wait_for_event(10)
                         while evt_type != gp.GP_EVENT_TIMEOUT:
-                            evt_type, evt_data = self.camera.wait_for_event(1)
+                            evt_type, evt_data = self.camera.wait_for_event(5)
                     except Exception:
                         pass
                     flush_time = time.perf_counter() - flush_start
@@ -381,18 +381,9 @@ class CameraService:
         # API endpoints call settings concurrently.
 
 
-        # 1. Drain pending preview frame and flush camera events BEFORE capture.
+        # 1. Drain pending camera events BEFORE capture.
         flush1_start = time.perf_counter()
         
-        # DRAIN THE PREVIEW BUFFER: 
-        # Since the worker thread was paused 1s ago, the camera might have 
-        # a pending preview frame stuck in its USB endpoint. If we don't read it,
-        # setting viewfinder=0 will fail with '[-110] I/O in progress'
-        try:
-            self.camera.capture_preview()
-        except Exception:
-            pass
-
         try:
             evt_type, evt_data = self.camera.wait_for_event(10)
             while evt_type != gp.GP_EVENT_TIMEOUT:
