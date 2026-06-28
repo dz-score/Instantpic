@@ -15,6 +15,8 @@ export const translations = {
     },
     camera: {
       loading: 'Camera is loading',
+      error: 'Camera Connection Failed',
+      errorSub: 'Please check the camera connection',
     },
     countdown: {
       getReady: 'Get Ready!',
@@ -110,6 +112,8 @@ export const translations = {
     },
     camera: {
       loading: 'Chargement de l\'appareil...',
+      error: 'Échec de la connexion à l\'appareil',
+      errorSub: 'Veuillez vérifier la connexion de l\'appareil photo',
     },
     countdown: {
       getReady: 'Préparez-vous !',

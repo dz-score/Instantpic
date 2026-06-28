@@ -178,3 +178,33 @@
     transform: rotate(360deg);
   }
 }
+
+.countdown-btn-home {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  min-width: 260px;
+  height: 60px;
+  padding: 0 var(--space-md);
+  border-radius: var(--radius-full);
+  border: 1px solid var(--gold);
+  cursor: pointer;
+  background: var(--champagne-light);
+  box-shadow: var(--shadow-button);
+  color: var(--gold-dark);
+  transition: all var(--duration-normal) var(--ease-out);
+}
+
+.countdown-btn-home:active {
+  transform: scale(0.97);
+  box-shadow: var(--shadow-sm);
+}
+
+.countdown-btn-home span {
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}

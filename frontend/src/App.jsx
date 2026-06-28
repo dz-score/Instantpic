@@ -214,6 +214,7 @@ export default function App() {
           resumePreview={camera.resumePreview}
           standbyPreview={camera.standbyPreview}
           onComplete={handleCaptureComplete}
+          onCancel={() => api.sendEvent('FINISH')}
           config={api.config}
           language={language}
         />
