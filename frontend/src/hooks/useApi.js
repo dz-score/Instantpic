@@ -6,27 +6,11 @@ const API = '';
 /**
  * Centralises all API interactions + health-check polling.
  */
-export default function useApi() {
+export default function useApi(isOnline) {
   const [config, setConfig] = useState(null);
-  const [isOnline, setIsOnline] = useState(true);
   const [gallery, setGallery] = useState([]);
   const [boothBaseUrl, setBoothBaseUrl] = useState('');
   const configRef = useRef(null);
-
-  /* ── Health check ── */
-  useEffect(() => {
-    const check = async () => {
-      try {
-        const r = await fetch(`${API}/api/health`);
-        setIsOnline(r.ok);
-      } catch {
-        setIsOnline(false);
-      }
-    };
-    check();
-    const id = setInterval(check, 15000);
-    return () => clearInterval(id);
-  }, []);
 
   /* ── Load config on mount ── */
   const fetchConfig = useCallback(async () => {

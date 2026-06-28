@@ -8,3 +8,4 @@ pytest
 pytest-mock
 httpx
 gphoto2>=2.5.0
+sse-starlette

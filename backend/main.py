@@ -2,12 +2,13 @@ import os
 import shutil
 from io import BytesIO
 import qrcode
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from typing import List, Optional, Literal
+from contextlib import asynccontextmanager
 
 from backend.config import load_settings, update_settings, AppSettings
 from backend.storage import (
@@ -20,18 +21,77 @@ from backend.storage import (
 )
 from backend.photo_processor import process_photo_layout
 from backend.print_service import print_svc
+from backend.sse_service import sse_svc, SseClient
 from backend.logger import log
+from sse_starlette.sse import EventSourceResponse
 
-# Optional import for camera service. 
-# We do it gracefully in case python-gphoto2 is missing in dev environment.
-try:
-    from backend.camera_service import camera_svc
-    GPHOTO2_AVAILABLE = True
-except ImportError:
-    GPHOTO2_AVAILABLE = False
-    log.warn("system", "camera_import_failed", "python-gphoto2 not installed. Camera functions will return errors.")
+# Load settings to know which camera backend to use
+settings = load_settings()
 
-app = FastAPI(title="Embedded Photo Booth API", version="1.0.0")
+if settings.camera_backend == "mock":
+    from backend.mock_camera import MockCameraService
+    camera_svc = MockCameraService()
+    GPHOTO2_AVAILABLE = True # Pretend it's available for mock
+else:
+    try:
+        from backend.camera_service import camera_svc
+        import gphoto2 as gp
+        GPHOTO2_AVAILABLE = True
+    except ImportError:
+        GPHOTO2_AVAILABLE = False
+        log.warn("system", "camera_import_failed", "python-gphoto2 not installed. Camera functions will return errors.")
+
+import signal
+import threading
+from types import FrameType
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Ensure folders exist
+    ensure_directories()
+
+    # Log startup
+    log.info("system", "system_boot", f"Backend started", data={"version": "1.0.0"})
+
+    # Eagerly init camera
+    if GPHOTO2_AVAILABLE:
+        camera_svc.init()
+
+    # Workaround for Uvicorn hanging on shutdown due to active streaming responses
+    # https://github.com/encode/uvicorn/issues/1579
+    default_sigint_handler = signal.getsignal(signal.SIGINT)
+    default_sigterm_handler = signal.getsignal(signal.SIGTERM)
+
+    def terminate_now(signum: int, frame: FrameType | None = None):
+        log.info("system", "signal_shutdown", "Shutting down active streams via signal handler")
+        from backend.sse_service import sse_svc
+        sse_svc.request_shutdown()
+        if GPHOTO2_AVAILABLE:
+            camera_svc.shutdown()
+        print_svc.shutdown()
+
+        if signum == signal.SIGINT and callable(default_sigint_handler):
+            default_sigint_handler(signum, frame)
+        elif signum == signal.SIGTERM and callable(default_sigterm_handler):
+            default_sigterm_handler(signum, frame)
+
+    if threading.current_thread() is threading.main_thread():
+        signal.signal(signal.SIGINT, terminate_now)
+        signal.signal(signal.SIGTERM, terminate_now)
+
+    yield
+
+    # Clean shutdown (fallback for tests where signals aren't used)
+    log.info("system", "system_shutdown", "Backend shutting down...")
+    from backend.sse_service import sse_svc
+    sse_svc.request_shutdown()
+    
+    if GPHOTO2_AVAILABLE:
+        camera_svc.shutdown()
+    print_svc.shutdown()
+
+
+app = FastAPI(title="Embedded Photo Booth API", version="1.0.0", lifespan=lifespan)
 
 # CORS middleware for development
 app.add_middleware(
@@ -41,12 +101,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Ensure folders exist
-ensure_directories()
-
-# Log startup
-log.info("system", "system_boot", f"Backend started", data={"version": "1.0.0"})
 
 # Request schemas
 class ConfigUpdateRequest(BaseModel):
@@ -169,7 +223,13 @@ async def camera_preview():
         raise HTTPException(status_code=501, detail="gphoto2 not installed")
     return StreamingResponse(
         camera_svc.preview_generator(),
-        media_type="multipart/x-mixed-replace; boundary=frame"
+        media_type="multipart/x-mixed-replace; boundary=frame",
+        headers={
+            "Age": "0",
+            "Cache-Control": "no-cache, no-store, must-revalidate, private",
+            "Pragma": "no-cache",
+            "X-Accel-Buffering": "no",  # Disable nginx proxy buffering
+        }
     )
 
 @app.post("/api/camera/capture")
@@ -179,6 +239,26 @@ async def camera_capture():
     try:
         filename = camera_svc.capture()
         return {"filename": filename, "url": f"/photos/{filename}"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/camera/standby")
+async def camera_standby():
+    if not GPHOTO2_AVAILABLE:
+        raise HTTPException(status_code=501, detail="gphoto2 not installed")
+    try:
+        camera_svc.standby()
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/camera/resume")
+async def camera_resume():
+    if not GPHOTO2_AVAILABLE:
+        raise HTTPException(status_code=501, detail="gphoto2 not installed")
+    try:
+        camera_svc.resume_preview()
+        return {"status": "success"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -220,6 +300,13 @@ async def emergency_action(req: EmergencyRequest):
     log.warn("system", "system_emergency", f"Emergency action triggered: {req.action}", data={"action": req.action})
     result = execute_emergency(req.action)
     return result
+
+@app.get("/api/sse")
+async def sse_endpoint(request: Request):
+    """Eventstream for real-time updates to the frontend."""
+    client = SseClient(request)
+    sse_svc.setup_client(client)
+    return EventSourceResponse(sse_svc.event_iterator(client))
 
 # --- Change PIN ---
 class ChangePinRequest(BaseModel):

@@ -1,35 +1,9 @@
 import { useState, useCallback, useEffect } from 'react';
 import { logger } from '../utils/logger';
 
-export default function useCamera() {
+export default function useCamera(cameraStatus) {
   const [mode, setMode] = useState('gphoto2'); // Always use gphoto2
-  const [cameraStatus, setCameraStatus] = useState({ connected: false, error: null });
 
-  // Poll camera status from backend
-  useEffect(() => {
-    let active = true;
-    const checkStatus = async () => {
-      try {
-        const res = await fetch('/api/camera/status');
-        if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-        const data = await res.json();
-        if (active) {
-          setCameraStatus({ connected: data.connected, error: data.error || null });
-        }
-      } catch (err) {
-        if (active) {
-          setCameraStatus({ connected: false, error: 'Cannot reach backend camera service' });
-        }
-      }
-    };
-
-    checkStatus();
-    const interval = setInterval(checkStatus, 3000);
-    return () => {
-      active = false;
-      clearInterval(interval);
-    };
-  }, []);
 
   const previewUrl = '/api/camera/preview';
 
@@ -51,5 +25,23 @@ export default function useCamera() {
     }
   }, []);
 
-  return { previewUrl, captureFrame, mode, cameraStatus };
+  const resumePreview = useCallback(async () => {
+    try {
+      logger.info('camera', 'resume_start', 'Waking up backend camera worker');
+      await fetch('/api/camera/resume', { method: 'POST' });
+    } catch (err) {
+      logger.error('camera', 'resume_fail', `Failed to resume camera: ${err.message}`);
+    }
+  }, []);
+
+  const standbyPreview = useCallback(async () => {
+    try {
+      logger.info('camera', 'standby_start', 'Pausing backend camera worker (pre-capture)');
+      await fetch('/api/camera/standby', { method: 'POST' });
+    } catch (err) {
+      logger.error('camera', 'standby_fail', `Failed to standby camera: ${err.message}`);
+    }
+  }, []);
+
+  return { previewUrl, captureFrame, resumePreview, standbyPreview, mode, cameraStatus };
 }

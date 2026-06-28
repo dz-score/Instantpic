@@ -18,18 +18,22 @@ export default function CountdownScreen({
   previewUrl,
   layoutMode,
   captureFrame,
+  resumePreview,
+  standbyPreview,
   onComplete,
   config,
   language,
 }) {
   const COUNTDOWN_FROM = config?.countdown_duration || 3;
   const flashEnabled = config?.flash_enabled !== false;
-  const [phase, setPhase] = useState('COUNTDOWN'); // COUNTDOWN | BETWEEN
+  const [phase, setPhase] = useState('COUNTDOWN'); // COUNTDOWN | POSING | BETWEEN
   const [count, setCount] = useState(COUNTDOWN_FROM);
   const [shotIndex, setShotIndex] = useState(0);
   const [flashActive, setFlashActive] = useState(false);
   const [lastCapture, setLastCapture] = useState(null);
   const [isCapturing, setIsCapturing] = useState(false);
+  const [cameraReady, setCameraReady] = useState(false);
+  const [sessionStarted, setSessionStarted] = useState(false);
   const pendingTimeouts = useRef([]);
   const imagesRef = useRef([]);
   const totalShots = layoutMode === 'collage' ? 3 : 1;
@@ -73,13 +77,19 @@ export default function CountdownScreen({
         // Hide the countdown overlay and give them ~1 second
         // of pure live view to hold their pose before capture.
         setPhase('POSING');
+        // PRE-CAPTURE STANDBY: Stop the live view polling now so the camera's
+        // USB bus has a full 1000ms to naturally drain and go idle.
+        // This prevents [-1] crashes and [-110] config rejections during the actual capture.
+        if (standbyPreview) {
+          standbyPreview();
+        }
       } else {
         // c < 0 — the pose gap is over, fire the shutter
         clearInterval(timerRef.current);
         onDone();
       }
     }, 1000);
-  }, [COUNTDOWN_FROM]);
+  }, [COUNTDOWN_FROM, standbyPreview]);
 
   // Fire shutter: capture, then flash + sound on success (with auto-retry)
   const fireShutter = useCallback(async () => {
@@ -113,8 +123,14 @@ export default function CountdownScreen({
     return frame;
   }, [captureFrame, flashEnabled, safeTimeout]);
 
-  const startRound = useCallback((idx) => {
+  const startRound = useCallback(async (idx) => {
     setShotIndex(idx);
+    
+    // Wake up the camera worker from standby
+    if (resumePreview) {
+      await resumePreview();
+    }
+    
     runCountdown(async () => {
       await fireShutter();
       if (idx + 1 >= totalShots) {
@@ -128,21 +144,47 @@ export default function CountdownScreen({
         }, BETWEEN_SHOT_DELAY);
       }
     });
-  }, [runCountdown, fireShutter, totalShots, safeTimeout, onComplete]);
+  }, [runCountdown, fireShutter, totalShots, safeTimeout, onComplete, resumePreview]);
 
-  // Orchestrate the full session
+  // 1. Mount: Wake up camera and subscribe to SSE
   useEffect(() => {
     imagesRef.current = [];
     setShotIndex(0);
-    startRound(0);
+
+    if (resumePreview) {
+      resumePreview();
+    }
+
+    // Subscribe to SSE for diagnostic metrics
+    const evtSource = new EventSource('/api/events');
+    evtSource.addEventListener('camera_metrics', (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        const el = document.getElementById('diag-metrics');
+        if (el) {
+          el.innerHTML = `FPS: ${data.fps} | Latency: ${data.latency_ms}ms<br/>` +
+                         `Worker: ${data.worker_running ? 'ON' : 'OFF'} | Allowed: ${data.allowed ? 'YES' : 'NO'}<br/>` +
+                         `Time since last: ${data.time_since_last_frame_ms}ms`;
+        }
+      } catch (err) {}
+    });
 
     return () => {
       clearInterval(timerRef.current);
       pendingTimeouts.current.forEach(clearTimeout);
       pendingTimeouts.current = [];
+      evtSource.close();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // 2. Start session only when camera stream actually loads
+  useEffect(() => {
+    if (cameraReady && !sessionStarted) {
+      setSessionStarted(true);
+      startRound(0);
+    }
+  }, [cameraReady, sessionStarted, startRound]);
 
 
   return (
@@ -155,7 +197,17 @@ export default function CountdownScreen({
           src={previewSrc.current}
           className="countdown-video"
           alt="Camera Live View"
+          onLoad={() => setCameraReady(true)}
+          style={{ opacity: cameraReady ? 1 : 0, transition: 'opacity 0.3s' }}
         />
+
+        {/* Loading Spinner for cold start */}
+        {!cameraReady && (
+          <div className="countdown-loading">
+            <div className="spinner"></div>
+            <p>{t('camera.wakingUp', language) || "Waking up camera..."}</p>
+          </div>
+        )}
 
         {/* Warm overlay tint */}
         <div className="countdown-overlay" />
@@ -202,6 +254,26 @@ export default function CountdownScreen({
             <ProgressDots current={shotIndex} total={totalShots} />
           </div>
         )}
+
+        {/* --- Diagnostic Overlay --- */}
+        <div style={{
+          position: 'absolute',
+          top: '10px',
+          left: '10px',
+          background: 'rgba(0,0,0,0.7)',
+          color: '#0f0',
+          padding: '10px',
+          fontFamily: 'monospace',
+          fontSize: '12px',
+          zIndex: 9999,
+          pointerEvents: 'none',
+          borderRadius: '4px'
+        }}>
+          <b>Diagnostics</b><br/>
+          Phase: {phase}<br/>
+          Capturing: {isCapturing ? 'Yes' : 'No'}<br/>
+          Metrics: <span id="diag-metrics">Waiting...</span>
+        </div>
       </div>
     </div>
   );
