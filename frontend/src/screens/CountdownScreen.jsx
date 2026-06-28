@@ -70,17 +70,15 @@ export default function CountdownScreen({
     }
 
     timerRef.current = setInterval(() => {
-      c -= 1;
+      c -= 0.25;
       if (c > 0) {
-        setCount(c);
+        if (c % 1 === 0) setCount(c);
       } else if (c === 0) {
-        // Countdown finished (guest just saw "1").
-        // Hide the countdown overlay and give them ~1 second
-        // of pure live view to hold their pose before capture.
+        // At 0, we show "Pose!" and let the user hold their pose.
         setPhase('POSING');
-        // PRE-CAPTURE STANDBY: Stop the live view polling now so the camera's
-        // USB bus has a full 1000ms to naturally drain and go idle.
-        // This prevents [-1] crashes and [-110] config rejections during the actual capture.
+        // We stop the live view polling now so the camera's USB bus has a brief moment
+        // to settle before the heavy high-res capture command.
+        // With active event flushing in place, a short 250ms gap is sufficient.
         if (standbyPreview) {
           standbyPreview();
         }
@@ -89,7 +87,7 @@ export default function CountdownScreen({
         clearInterval(timerRef.current);
         onDone();
       }
-    }, 1000);
+    }, 250);
   }, [COUNTDOWN_FROM, standbyPreview]);
 
   const triggerCapture = useCallback(async (attempt = 1) => {
