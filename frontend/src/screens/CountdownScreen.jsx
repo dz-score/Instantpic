@@ -34,7 +34,14 @@ export default function CountdownScreen({
   const [lastCapture, setLastCapture] = useState(null);
   const [isCapturing, setIsCapturing] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
+  const [cameraError, setCameraError] = useState(false);
   const [sessionStarted, setSessionStarted] = useState(false);
+
+  useEffect(() => {
+    if (cameraReady) return;
+    const t = setTimeout(() => setCameraError(true), 10000);
+    return () => clearTimeout(t);
+  }, [cameraReady]);
   const pendingTimeouts = useRef([]);
   const imagesRef = useRef([]);
   const totalShots = layoutMode === 'collage' ? 3 : 1;
