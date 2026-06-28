@@ -170,7 +170,7 @@ export default function CountdownScreen({
     }
 
     // Subscribe to SSE for diagnostic metrics and job updates
-    const evtSource = new EventSource('/api/events');
+    const evtSource = new EventSource('/api/sse');
     
     evtSource.addEventListener('camera_metrics', (e) => {
       try {
