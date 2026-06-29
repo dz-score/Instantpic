@@ -38,6 +38,10 @@ class CameraService:
         self._init_backoff = 5
         self._init_fail_count = 0
         self._shutdown_event = threading.Event()
+        
+        # Watchdog for auto-standby
+        self._last_preview_request = time.monotonic()
+        self._preview_idle_timeout = 10.0
 
         # --- Decoupled frame buffer ---
         # The worker thread writes the latest frame here.
@@ -278,6 +282,11 @@ class CameraService:
 
                 # Target ~15fps
                 time.sleep(0.066)
+                
+                # Watchdog check
+                if time.monotonic() - self._last_preview_request > self._preview_idle_timeout:
+                    log.info("camera", "camera_watchdog", f"No preview requested for {self._preview_idle_timeout}s. Auto-pausing worker.")
+                    self.standby()
 
             except Exception as e:
                 consecutive_errors += 1
@@ -312,6 +321,10 @@ class CameraService:
         if not self.connected:
             self.init()
 
+        # Update timestamp and wake up worker
+        self._last_preview_request = time.monotonic()
+        self.resume_preview()
+        
         # If the worker isn't running, start it
         self._start_worker()
 
@@ -334,6 +347,8 @@ class CameraService:
             if my_generation != self._preview_generation:
                 log.debug("camera_timing", "http_generator_superseded", "HTTP generator superseded, exiting")
                 return
+                
+            self._last_preview_request = time.monotonic()
 
             yield (b'--frame\r\n'
                    b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
