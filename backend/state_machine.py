@@ -14,6 +14,19 @@ class BoothState(BaseModel):
     isProcessing: bool = False
     config_overlays: List[Dict[str, Any]] = [] # We might need this for routing logic
 
+VALID_TRANSITIONS = {
+    "ATTRACT": ["START_SESSION"],
+    "CHOOSE_STYLE": ["SELECT_LAYOUT"],
+    "COUNTDOWN": ["CAPTURE_DONE"],
+    "REVEAL": ["RETAKE", "PRINT_FROM_REVEAL"],
+    "PICK_FAVORITE": ["FAVORITE_SELECT"],
+    "FRAME_PICKER": ["FRAME_SELECT", "FRAME_SKIP"],
+    "PRINTING": ["FINISH", "ANOTHER"]
+}
+
+# Events that are valid from ANY state
+GLOBAL_EVENTS = ["TIMEOUT", "FINISH"]
+
 class StateMachine:
     def __init__(self):
         self._state = BoothState()
@@ -39,6 +52,12 @@ class StateMachine:
 
     async def handle_event(self, event_type: str, payload: dict):
         async with self._get_lock():
+            if event_type not in GLOBAL_EVENTS:
+                valid_events = VALID_TRANSITIONS.get(self._state.screen, [])
+                if event_type not in valid_events:
+                    log.warn("state_machine", "invalid_transition", f"Event {event_type} is not allowed from state {self._state.screen}")
+                    return
+
             log.info("state_machine", "event_received", f"Handling event: {event_type}", data=payload)
             
             if event_type == "START_SESSION":
