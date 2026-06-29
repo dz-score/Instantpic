@@ -32,3 +32,6 @@ scratch/*
 *.swp
 .venv/
 .agents/
+
+# Test coverage file
+.coverage
