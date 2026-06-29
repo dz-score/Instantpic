@@ -28,6 +28,7 @@ export default function AdminPanel({
   emergencyAction,
   changePin,
   getRecentLogs,
+  cameraStatus,
 }) {
   const [authed, setAuthed] = useState(false);
   const [activeTab, setActiveTab] = useState('event');
@@ -173,6 +174,7 @@ export default function AdminPanel({
               changePin={changePin}
               currentPin={adminPin}
               getRecentLogs={getRecentLogs}
+              cameraStatus={cameraStatus}
             />
           )}
         </div>

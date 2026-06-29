@@ -13,6 +13,11 @@ export const translations = {
       collageTitle: 'Collage Strip',
       collageDesc: 'Three fun sequential shots',
     },
+    camera: {
+      loading: 'Camera is loading',
+      error: 'Camera Connection Failed',
+      errorSub: 'Please check the camera connection',
+    },
     countdown: {
       getReady: 'Get Ready!',
       smile: 'Smile!',
@@ -104,6 +109,11 @@ export const translations = {
       singleDesc: 'Une seule photo parfaite',
       collageTitle: 'Bandelette',
       collageDesc: 'Trois photos séquentielles',
+    },
+    camera: {
+      loading: 'Chargement de l\'appareil...',
+      error: 'Échec de la connexion à l\'appareil',
+      errorSub: 'Veuillez vérifier la connexion de l\'appareil photo',
     },
     countdown: {
       getReady: 'Préparez-vous !',

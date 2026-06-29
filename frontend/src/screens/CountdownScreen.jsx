@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ProgressDots from '../components/ProgressDots';
 import { playShutterSound } from '../utils/sounds';
 import { t } from '../utils/i18n';
+import { Home } from 'lucide-react';
 import './CountdownScreen.css';
 
 const BETWEEN_SHOT_DELAY = 3000; // ms between collage shots
@@ -21,6 +22,7 @@ export default function CountdownScreen({
   resumePreview,
   standbyPreview,
   onComplete,
+  onCancel,
   config,
   language,
 }) {
@@ -33,7 +35,14 @@ export default function CountdownScreen({
   const [lastCapture, setLastCapture] = useState(null);
   const [isCapturing, setIsCapturing] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
+  const [cameraError, setCameraError] = useState(false);
   const [sessionStarted, setSessionStarted] = useState(false);
+
+  useEffect(() => {
+    if (cameraReady) return;
+    const t = setTimeout(() => setCameraError(true), 10000);
+    return () => clearTimeout(t);
+  }, [cameraReady]);
   const pendingTimeouts = useRef([]);
   const imagesRef = useRef([]);
   const totalShots = layoutMode === 'collage' ? 3 : 1;
@@ -234,14 +243,42 @@ export default function CountdownScreen({
           className="countdown-video"
           alt="Camera Live View"
           onLoad={() => setCameraReady(true)}
+          onError={() => setCameraError(true)}
           style={{ opacity: cameraReady ? 1 : 0, transition: 'opacity 0.3s' }}
         />
 
-        {/* Loading Spinner for cold start */}
-        {!cameraReady && (
+        {/* Error State for camera timeout/failure */}
+        {cameraError && !cameraReady && (
           <div className="countdown-loading">
-            <div className="spinner"></div>
-            <p>{t('camera.wakingUp', language) || "Waking up camera..."}</p>
+            <div className="countdown-loading-glow" aria-hidden="true" />
+            <div className="countdown-loading-content">
+              <p className="countdown-loading__kicker" style={{ color: 'var(--error)' }}>
+                {t('camera.error', language) || "Camera Connection Failed"}
+              </p>
+              <p className="countdown-loading__sub" style={{ marginTop: '8px' }}>
+                {t('camera.errorSub', language) || "Please check the camera connection"}
+              </p>
+              <button 
+                className="countdown-btn-home" 
+                onClick={onCancel}
+                style={{ marginTop: '2rem' }}
+              >
+                <span className="btn-icon"><Home strokeWidth={1.5} size={20} /></span>
+                <span>{t('reveal.home', language)}</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Loading Spinner for cold start */}
+        {!cameraReady && !cameraError && (
+          <div className="countdown-loading">
+            <div className="countdown-loading-glow" aria-hidden="true" />
+            <div className="countdown-loading-content">
+              <div className="countdown-spinner"></div>
+              <p className="countdown-loading__kicker">{t('camera.loading', language) || "Camera is loading"}</p>
+              <p className="countdown-loading__sub">{t('reveal.justAMoment', language)}</p>
+            </div>
           </div>
         )}
 

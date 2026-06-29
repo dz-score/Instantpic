@@ -214,6 +214,7 @@ export default function App() {
           resumePreview={camera.resumePreview}
           standbyPreview={camera.standbyPreview}
           onComplete={handleCaptureComplete}
+          onCancel={() => api.sendEvent('FINISH')}
           config={api.config}
           language={language}
         />
@@ -307,6 +308,7 @@ export default function App() {
           emergencyAction={api.emergencyAction}
           changePin={api.changePin}
           getRecentLogs={api.getRecentLogs}
+          cameraStatus={camera.cameraStatus}
         />
       )}
 

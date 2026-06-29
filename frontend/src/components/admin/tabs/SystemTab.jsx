@@ -5,7 +5,7 @@ import './SystemTab.css';
  * System tab — live diagnostics, emergency controls, PIN change, log viewer.
  * Auto-refreshes diagnostics every 5 seconds.
  */
-export default function SystemTab({ getDiagnostics, emergencyAction, changePin, currentPin, getRecentLogs }) {
+export default function SystemTab({ getDiagnostics, emergencyAction, changePin, currentPin, getRecentLogs, cameraStatus }) {
   const [diagnostics, setDiagnostics] = useState(null);
   const [loading, setLoading] = useState({});
   const [confirmAction, setConfirmAction] = useState(null);
@@ -173,11 +173,15 @@ export default function SystemTab({ getDiagnostics, emergencyAction, changePin, 
           {/* Camera (frontend-only check) */}
           <div className="sys-diag-card">
             <div className="sys-diag-card__header">
-              <span className="sys-dot sys-dot--green" />
+              <span className={`sys-dot ${cameraStatus?.error ? 'sys-dot--red' : 'sys-dot--green'}`} />
               <span className="sys-diag-card__label">Camera</span>
             </div>
-            <span className="sys-diag-card__value">Active</span>
-            <span className="sys-diag-card__sub">Stream initialized</span>
+            <span className="sys-diag-card__value">
+              {cameraStatus?.error ? 'Disconnected' : 'Active'}
+            </span>
+            <span className="sys-diag-card__sub" style={{ fontSize: cameraStatus?.error ? '0.8rem' : 'inherit', lineHeight: 1.2 }}>
+              {cameraStatus?.error ? cameraStatus.error : 'Stream initialized'}
+            </span>
           </div>
         </div>
       </section>
