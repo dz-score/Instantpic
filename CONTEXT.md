@@ -10,7 +10,7 @@ Every important file in the project, grouped by layer. Use this as a quick-refer
 |---|---|
 | [`config.json`](config.json) | Runtime configuration store (couple names, overlay, printer, timeouts). Read and written by the backend; the single source of truth for all operator settings. |
 | [`run.sh`](run.sh) | Production startup script: builds the frontend, starts uvicorn in the background, then launches Chromium in kiosk mode pointing to `localhost:8000`. |
-| [`project.md`](project.md) | Full architecture reference: modules, data flow, FSM diagram, deployment, and dependency map. |
+| [`ARCHITECTURE.md`](ARCHITECTURE.md) | Full architecture reference: modules, data flow, FSM diagram, deployment, and dependency map. |
 | [`CONTEXT.md`](CONTEXT.md) | This file. One-liner responsibility for every important file. |
 | [`DEPLOYMENT_GUIDE.md`](DEPLOYMENT_GUIDE.md) | Step-by-step guide for deploying the booth on a Raspberry Pi / Linux host. |
 
