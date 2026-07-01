@@ -1,5 +1,5 @@
 #!/bin/bash
-cd /home/instantpic/Documents/instantpic-antigravity
+cd /home/instantpic/Projects/instantpic-antigravity
 
 source backend/.venv/bin/activate
 
