@@ -20,5 +20,6 @@ chromium-browser \
   --disable-pinch \
    --noerrdialogs \
    --disable-background-networking \
+   --disable-cache
     http://localhost:8000 &
 
