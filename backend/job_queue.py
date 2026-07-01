@@ -2,9 +2,16 @@ import asyncio
 from backend.logger import log
 from backend.photo_processor import process_photo_layout
 from backend.storage import enforce_circular_storage
-from backend.state_machine import state_machine
 
 class JobQueue:
+    """Async worker that runs photo-processing jobs off the event loop.
+
+    The queue reports results through per-job ``on_success`` / ``on_failure``
+    coroutines supplied by the submitter. It does not know or import whoever
+    consumes those results, so there is no dependency back onto the state
+    machine (the submitter owns that wiring).
+    """
+
     def __init__(self):
         self._queue = None
         self._worker_task = None
@@ -31,14 +38,17 @@ class JobQueue:
                     
                 job_type = job_data.get("type")
                 log.info("job_queue", "job_start", f"Processing job type: {job_type}")
-                
+
+                on_success = job_data.get("on_success")
+                on_failure = job_data.get("on_failure")
+
                 try:
                     if job_type == "PROCESS_PHOTO" or job_type == "PROCESS_FRAME":
                         images = job_data.get("images")
                         layout = job_data.get("layout")
                         text = job_data.get("text", "")
                         overlay_id = job_data.get("overlay_id", "none")
-                        
+
                         # Process photo synchronously in a thread pool to avoid blocking asyncio
                         loop = asyncio.get_running_loop()
                         filename = await loop.run_in_executor(
@@ -46,24 +56,23 @@ class JobQueue:
                             process_photo_layout,
                             images, layout, text, overlay_id
                         )
-                        
+
                         # Cleanup storage in background
                         task = asyncio.create_task(self._run_cleanup())
                         self._background_tasks.add(task)
                         task.add_done_callback(self._background_tasks.discard)
-                        
-                        # Update state machine
-                        if job_type == "PROCESS_PHOTO":
-                            await state_machine.job_photo_processed(filename, images)
-                        else:
-                            await state_machine.job_frame_processed(filename)
-                            
+
+                        # Hand the result back to whoever submitted the job.
+                        if on_success:
+                            await on_success(filename)
+
                     else:
                         log.warn("job_queue", "unknown_job", f"Unknown job type: {job_type}")
-                        
+
                 except Exception as e:
                     log.error("job_queue", "job_error", f"Error processing job {job_type}: {e}")
-                    await state_machine.job_failed(str(e))
+                    if on_failure:
+                        await on_failure(str(e))
                 finally:
                     self._get_queue().task_done()
                     

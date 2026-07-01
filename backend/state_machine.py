@@ -101,12 +101,15 @@ class StateMachine:
 
                     if self._job_queue:
                         settings = load_settings()
+                        images = list(self._state.capturedImages)
                         await self._job_queue.enqueue({
                             "type": "PROCESS_PHOTO",
-                            "images": list(self._state.capturedImages),
+                            "images": images,
                             "layout": self._state.layoutMode,
                             "text": self._compose_banner_text(settings),
                             "overlay_id": settings.selected_overlay or "none",
+                            "on_success": lambda filename: self.job_photo_processed(filename, images),
+                            "on_failure": self.job_failed,
                         })
                 # Otherwise stay in COUNTDOWN; broadcasting the new state lets the
                 # UI advance its shot-progress presentation.
@@ -147,6 +150,8 @@ class StateMachine:
                         "layout": self._state.layoutMode,
                         "text": self._compose_banner_text(settings),
                         "overlay_id": overlay_id,
+                        "on_success": self.job_frame_processed,
+                        "on_failure": self.job_failed,
                     })
                     
             elif event_type == "FRAME_SKIP":
