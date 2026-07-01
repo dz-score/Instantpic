@@ -15,6 +15,7 @@ export default function useSse() {
     is_online: false,
   });
   const [backendState, setBackendState] = useState(null);
+  const [config, setConfig] = useState(null);
   const [cameraJob, setCameraJob] = useState(null);
   const [cameraMetrics, setCameraMetrics] = useState(null);
   const [isOnline, setIsOnline] = useState(false);
@@ -61,6 +62,16 @@ export default function useSse() {
         }
       });
 
+      // Config is pushed by the backend on connect and on every change, so the
+      // frontend always holds a fresh copy without a separate REST fetch.
+      eventSource.addEventListener('config_update', (e) => {
+        try {
+          setConfig(JSON.parse(e.data));
+        } catch (err) {
+          console.error('Failed to parse config_update SSE:', err);
+        }
+      });
+
       // Camera capture lifecycle (pending/started/fired/downloading/completed/failed).
       // Exposed centrally so screens consume the single app event stream rather
       // than opening their own EventSource connections.
@@ -98,5 +109,5 @@ export default function useSse() {
     };
   }, []);
 
-  return { cameraStatus, printerStatus, isOnline, backendState, cameraJob, cameraMetrics };
+  return { cameraStatus, printerStatus, isOnline, backendState, config, cameraJob, cameraMetrics };
 }

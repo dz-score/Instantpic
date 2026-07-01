@@ -27,6 +27,7 @@ export default function App() {
   const sse = useSse();
   const camera = useCamera(sse.cameraStatus);
   const api = useApi(sse.isOnline);
+  const config = sse.config;   // pushed over SSE (connect + on change)
   const inactivityTimer = useRef(null);
   const adminTapTimer = useRef(null);
 
@@ -55,7 +56,7 @@ export default function App() {
   const resetInactivityTimer = useCallback(() => {
     if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
 
-    const timeoutSec = api.config?.session_timeout || 120;
+    const timeoutSec = config?.session_timeout || 120;
     inactivityTimer.current = setTimeout(() => {
       if (
         currentScreen !== 'ATTRACT' &&
@@ -67,7 +68,7 @@ export default function App() {
         api.sendEvent('TIMEOUT');
       }
     }, timeoutSec * 1000);
-  }, [api, showAdmin, currentScreen]);
+  }, [api, config, showAdmin, currentScreen]);
 
   useEffect(() => {
     if (currentScreen === 'ATTRACT' || currentScreen === 'DOWNLOAD' || currentScreen === 'LOADING') {
@@ -173,7 +174,7 @@ export default function App() {
 
       {currentScreen === 'ATTRACT' && (
         <AttractScreen 
-          config={api.config} 
+          config={config} 
           onStart={handleStart} 
           language={language}
           setLanguage={setLanguage}
@@ -200,7 +201,7 @@ export default function App() {
           cameraMetrics={sse.cameraMetrics}
           onShotCaptured={handleShotCaptured}
           onCancel={() => api.sendEvent('FINISH')}
-          config={api.config}
+          config={config}
           language={language}
         />
       )}
@@ -210,7 +211,7 @@ export default function App() {
           finalPhoto={appState?.finalPhoto}
           isProcessing={appState?.isProcessing || false}
           retakeCount={appState?.retakeCount || 0}
-          maxRetakes={api.config?.max_photos_per_session || 5}
+          maxRetakes={config?.max_photos_per_session || 5}
           onRetake={handleRetake}
           onPrint={handlePrintFromReveal}
           onCancel={() => api.sendEvent('FINISH')}
@@ -231,8 +232,8 @@ export default function App() {
       {currentScreen === 'FRAME_PICKER' && (
         <FramePickerScreen
           finalPhoto={appState?.finalPhoto}
-          overlays={api.config?.overlays || []}
-          currentOverlay={api.config?.selected_overlay || 'none'}
+          overlays={config?.overlays || []}
+          currentOverlay={config?.selected_overlay || 'none'}
           onSelect={handleFrameSelect}
           onSkip={handleFrameSkip}
           onBack={handleFinish}
@@ -247,7 +248,7 @@ export default function App() {
           printPhoto={api.printPhoto}
           getQrUrl={api.getQrUrl}
           getDownloadUrl={api.getDownloadUrl}
-          config={api.config}
+          config={config}
           onFinish={handleFinish}
           onAnother={handleAnother}
           language={language}
@@ -286,7 +287,7 @@ export default function App() {
       {/* ─── Admin Panel (full-page) ─── */}
       {showAdmin && (
         <AdminPanel
-          config={api.config}
+          config={config}
           onSave={handleAdminSave}
           onClose={() => setShowAdmin(false)}
           getDiagnostics={api.getDiagnostics}

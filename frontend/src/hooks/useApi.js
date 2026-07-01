@@ -1,32 +1,19 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { logger } from '../utils/logger';
 
 const API = '';
 
 /**
- * Centralises all API interactions + health-check polling.
+ * Centralises all API interactions.
+ *
+ * Config is NOT fetched here — it is pushed by the backend over SSE (see
+ * useSse) on connect and on every change, so the frontend always has a fresh,
+ * self-healing copy. This hook only handles writes (saveConfig, changePin) and
+ * other REST calls.
  */
 export default function useApi(isOnline) {
-  const [config, setConfig] = useState(null);
   const [gallery, setGallery] = useState([]);
   const [boothBaseUrl, setBoothBaseUrl] = useState('');
-  const configRef = useRef(null);
-
-  /* ── Load config on mount ── */
-  const fetchConfig = useCallback(async () => {
-    try {
-      const r = await fetch(`${API}/api/config`);
-      const data = await r.json();
-      setConfig(data);
-      configRef.current = data;
-      return data;
-    } catch (e) {
-      logger.error('api', 'api_error', `Failed to load config: ${e.message}`, { endpoint: '/api/config', error: e.message });
-      return null;
-    }
-  }, []);
-
-  useEffect(() => { fetchConfig(); }, [fetchConfig]);
 
   /* ── Fetch booth LAN IP on mount ── */
   useEffect(() => {
@@ -105,10 +92,8 @@ export default function useApi(isOnline) {
       body: JSON.stringify(updates),
     });
     if (!r.ok) throw new Error('Config save failed');
-    const data = await r.json();
-    setConfig(data);
-    configRef.current = data;
-    return data;
+    // The backend broadcasts the updated config over SSE, so no local set here.
+    return await r.json();
   }, []);
 
   /* ── QR / download helpers ── */
@@ -150,10 +135,9 @@ export default function useApi(isOnline) {
       const err = await r.json();
       throw new Error(err.detail || 'PIN change failed');
     }
-    // Refresh config to get updated PIN
-    await fetchConfig();
+    // Backend broadcasts the updated config (incl. new PIN) over SSE.
     return await r.json();
-  }, [fetchConfig]);
+  }, []);
 
   /* ── Recent Logs ── */
   const getRecentLogs = useCallback(async (count = 50, source = 'both') => {
@@ -163,10 +147,8 @@ export default function useApi(isOnline) {
   }, []);
 
   return {
-    config,
     isOnline,
     gallery,
-    fetchConfig,
     fetchGallery,
     printPhoto,
     saveConfig,
