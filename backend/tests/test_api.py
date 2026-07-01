@@ -13,20 +13,21 @@ def test_post_config(client):
     data = response.json()
     assert data["countdown_duration"] == 5
 
-def test_event_capture_done(client, mock_base64_image):
-    """Test sending a valid capture done event."""
-    payload = {
-        "type": "CAPTURE_DONE",
-        "payload": {
-            "images": [mock_base64_image],
-            "text": "API Integration Test",
-            "overlay_id": "none"
-        }
-    }
-    response = client.post("/api/events", json=payload)
+def test_event_capture_flow(client):
+    """A single-shot capture sequence drives the FSM to REVEAL.
+
+    The UI reports one completed shot; the backend owns the decision to advance.
+    """
+    client.post("/api/events", json={"type": "START_SESSION", "payload": {}})
+    client.post("/api/events", json={"type": "SELECT_LAYOUT", "payload": {"mode": "single"}})
+
+    response = client.post("/api/events", json={
+        "type": "SHOT_CAPTURED",
+        "payload": {"filename": "capture_test.jpg"},
+    })
     assert response.status_code == 200
-    
-    # State should now be processing/reveal
+
+    # Single-shot layout: one shot completes the sequence -> REVEAL.
     state_resp = client.get("/api/state")
     assert state_resp.status_code == 200
     assert state_resp.json()["screen"] == "REVEAL"

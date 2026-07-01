@@ -15,6 +15,8 @@ export default function useSse() {
     is_online: false,
   });
   const [backendState, setBackendState] = useState(null);
+  const [cameraJob, setCameraJob] = useState(null);
+  const [cameraMetrics, setCameraMetrics] = useState(null);
   const [isOnline, setIsOnline] = useState(false);
   const eventSourceRef = useRef(null);
 
@@ -59,6 +61,25 @@ export default function useSse() {
         }
       });
 
+      // Camera capture lifecycle (pending/started/fired/downloading/completed/failed).
+      // Exposed centrally so screens consume the single app event stream rather
+      // than opening their own EventSource connections.
+      eventSource.addEventListener('camera_job', (e) => {
+        try {
+          setCameraJob(JSON.parse(e.data));
+        } catch (err) {
+          console.error('Failed to parse camera_job SSE:', err);
+        }
+      });
+
+      eventSource.addEventListener('camera_metrics', (e) => {
+        try {
+          setCameraMetrics(JSON.parse(e.data));
+        } catch (err) {
+          console.error('Failed to parse camera_metrics SSE:', err);
+        }
+      });
+
       eventSource.onerror = (e) => {
         console.error('SSE connection error, attempting to reconnect...', e);
         setIsOnline(false);
@@ -77,5 +98,5 @@ export default function useSse() {
     };
   }, []);
 
-  return { cameraStatus, printerStatus, isOnline, backendState };
+  return { cameraStatus, printerStatus, isOnline, backendState, cameraJob, cameraMetrics };
 }

@@ -111,24 +111,13 @@ export default function App() {
     api.sendEvent('SELECT_LAYOUT', { mode });
   }, [api]);
 
-  const handleCaptureComplete = useCallback((images) => {
-    logger.info('camera', 'camera_capture', `Captured ${images.length} image(s)`);
-    if (!images || images.length === 0) {
-      logger.error('photo', 'photo_process_fail', 'No images captured — all capture attempts failed');
-      return;
-    }
-    
-    const cfg = api.config || {};
-    const showNames = cfg.show_names_on_photo !== false;
-    const text = showNames
-      ? ([cfg.couple_names, cfg.event_date].filter(Boolean).join(' · ') || cfg.default_text || '')
-      : '';
-      
-    api.sendEvent('CAPTURE_DONE', {
-      images,
-      text,
-      overlay_id: cfg.selected_overlay || 'none'
-    });
+  // Report a single completed capture to the backend. The FSM owns shot
+  // accumulation, sequencing, and the decision to advance to REVEAL — the UI
+  // only relays the filename it was handed.
+  const handleShotCaptured = useCallback((filename) => {
+    if (!filename) return;
+    logger.info('camera', 'camera_capture', `Shot captured: ${filename}`);
+    api.sendEvent('SHOT_CAPTURED', { filename });
   }, [api]);
 
   const handleRetake = useCallback(() => {
@@ -137,23 +126,16 @@ export default function App() {
   }, [api]);
 
   const handlePrintFromReveal = useCallback(() => {
-    api.sendEvent('PRINT_FROM_REVEAL', { overlays: api.config?.overlays || [] });
+    api.sendEvent('PRINT_FROM_REVEAL');
   }, [api]);
 
   const handleFavoriteSelect = useCallback((selectedFilename) => {
-    api.sendEvent('FAVORITE_SELECT', { 
-      filename: selectedFilename, 
-      overlays: api.config?.overlays || [] 
-    });
+    api.sendEvent('FAVORITE_SELECT', { filename: selectedFilename });
   }, [api]);
 
   const handleFrameSelect = useCallback((overlayId) => {
-    const cfg = api.config || {};
-    const showNames = cfg.show_names_on_photo !== false;
-    const text = showNames
-      ? ([cfg.couple_names, cfg.event_date].filter(Boolean).join(' · ') || cfg.default_text || '')
-      : '';
-    api.sendEvent('FRAME_SELECT', { overlay_id: overlayId, text });
+    // Only the guest's frame choice is sent; banner text is composed by the backend.
+    api.sendEvent('FRAME_SELECT', { overlay_id: overlayId });
   }, [api]);
 
   const handleFrameSkip = useCallback(() => {
@@ -209,11 +191,14 @@ export default function App() {
       {currentScreen === 'COUNTDOWN' && (
         <CountdownScreen
           previewUrl={camera.previewUrl}
-          layoutMode={appState?.layoutMode || 'single'}
+          totalShots={appState?.totalShots || 1}
+          capturedCount={appState?.capturedImages?.length || 0}
           captureFrame={camera.captureFrame}
           resumePreview={camera.resumePreview}
           standbyPreview={camera.standbyPreview}
-          onComplete={handleCaptureComplete}
+          cameraJob={sse.cameraJob}
+          cameraMetrics={sse.cameraMetrics}
+          onShotCaptured={handleShotCaptured}
           onCancel={() => api.sendEvent('FINISH')}
           config={api.config}
           language={language}
