@@ -84,34 +84,6 @@ export default function useApi(isOnline) {
     }
   }, []);
 
-  /* ── Save photo (process on backend) ── */
-  const savePhoto = useCallback(async (images, layout, overlayId) => {
-    const cfg = configRef.current || {};
-    const showNames = cfg.show_names_on_photo !== false;
-    const text = showNames
-      ? ([cfg.couple_names, cfg.event_date].filter(Boolean).join(' · ') || cfg.default_text || '')
-      : '';
-    const t0 = performance.now();
-    const r = await fetch(`${API}/api/save-photo`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        images,
-        layout,
-        text,
-        overlay_id: overlayId || cfg.selected_overlay || 'none',
-      }),
-    });
-    const dur = Math.round(performance.now() - t0);
-    if (!r.ok) {
-      logger.error('api', 'api_error', `Save photo failed (${r.status})`, { endpoint: '/api/save-photo', status: r.status });
-      throw new Error((await r.json()).detail || 'Processing failed');
-    }
-    const result = await r.json();
-    logger.info('api', 'api_request', `Photo saved: ${result.filename}`, { endpoint: '/api/save-photo', filename: result.filename }, dur);
-    return result;
-  }, []);
-
   /* ── Print ── */
   const printPhoto = useCallback(async (filename) => {
     logger.info('printer', 'printer_sent', `Print requested: ${filename}`, { filename });
@@ -196,7 +168,6 @@ export default function useApi(isOnline) {
     gallery,
     fetchConfig,
     fetchGallery,
-    savePhoto,
     printPhoto,
     saveConfig,
     getQrUrl,
