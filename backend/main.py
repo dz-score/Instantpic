@@ -209,11 +209,11 @@ async def health_check():
 
 # --- Camera Integration ---
 @app.get("/api/camera/preview")
-async def camera_preview():
+async def camera_preview(request: Request):
     if not GPHOTO2_AVAILABLE:
         raise HTTPException(status_code=501, detail="gphoto2 not installed")
     return StreamingResponse(
-        camera_svc.preview_generator(),
+        camera_svc.preview_generator(request),
         media_type="multipart/x-mixed-replace; boundary=frame",
         headers={
             "Age": "0",

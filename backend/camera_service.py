@@ -3,6 +3,7 @@ import time
 import os
 import uuid
 import queue
+import anyio.from_thread
 import gphoto2 as gp
 from pydantic import BaseModel
 from typing import Optional
@@ -42,6 +43,11 @@ class CameraService:
         # Watchdog for auto-standby
         self._last_preview_request = time.monotonic()
         self._preview_idle_timeout = 10.0
+
+        # Grace period right after init() during which preview errors are
+        # expected (Canon live-view needs a moment to settle) and shouldn't
+        # be treated as a real disconnect.
+        self._preview_warmup_grace = 3.0
 
         # --- Decoupled frame buffer ---
         # The worker thread writes the latest frame here.
@@ -290,14 +296,15 @@ class CameraService:
 
             except Exception as e:
                 consecutive_errors += 1
-                log.debug("camera_timing", "worker_preview_err", f"Preview error #{consecutive_errors}: {e}")
-                
-                if consecutive_errors > 5 and not self._capture_in_progress:
+                log.debug("camera_timing", "worker_preview_err", f"Preview error #{consecutive_errors}: {e}")    
+
+                warming_up = (time.monotonic() - self._last_init_time) < self._preview_warmup_grace
+                if consecutive_errors > 5 and not self._capture_in_progress and not warming_up:
                     log.error("camera", "camera_preview_fail", f"Preview worker failed: {e}")
                     self.connected = False
                     sse_svc.dispatch_event("camera_status", self.get_status())
                 
-                # Sleep briefly on error. 0.1s is enough to let USB settle 
+                # Sleep briefly on error. 0.1s is enough to let USB settle
                 # without causing a massive freeze on the frontend.
                 time.sleep(0.1)
 
@@ -306,13 +313,17 @@ class CameraService:
 
     # ─── MJPEG Stream (HTTP consumer) ─────────────────────────────
 
-    def preview_generator(self):
+    def preview_generator(self, request=None):
         """Generator yielding MJPEG frames for the live view.
 
         Reads from the shared frame buffer. The camera worker thread produces
         frames independently — this generator just waits for the latest one
         and yields it. If the HTTP connection is slow, frames are skipped,
         not queued. No backpressure reaches the camera.
+
+        `request` (if provided) lets us notice a client that went away while
+        the camera is in standby: with no frames being produced, we'd never
+        otherwise hit the yield/send() that would surface a broken socket.
         """
         self._preview_generation += 1
         my_generation = self._preview_generation
@@ -324,7 +335,7 @@ class CameraService:
         # Update timestamp and wake up worker
         self._last_preview_request = time.monotonic()
         self.resume_preview()
-        
+
         # If the worker isn't running, start it
         self._start_worker()
 
@@ -334,9 +345,13 @@ class CameraService:
                 # Wait up to 2s for a new frame from the worker
                 got_frame = self._frame_condition.wait(timeout=2.0)
                 wait_time = time.perf_counter() - wait_start
-                
+
                 if not got_frame:
                     log.debug("camera_timing", "http_generator_timeout", "HTTP generator timed out waiting for frame (2s)")
+                    if request is not None and anyio.from_thread.run(request.is_disconnected):
+                        log.debug("camera_timing", "http_generator_client_gone",
+                                  "Client disconnected while idle, exiting generator")
+                        return
                     continue
                 frame = self._latest_frame
 
