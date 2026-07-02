@@ -38,11 +38,15 @@ export default function App() {
     }
   }, [sse.backendState]);
 
+  // One-time fallback fetch in case SSE hasn't delivered state yet. `api` is a
+  // fresh object every render (useApi returns a new literal each call), so it
+  // can't be a dependency here without re-firing this fetch on every render.
   useEffect(() => {
     api.fetchState().then(state => {
       if (state) setAppState(prev => prev || state);
     });
-  }, [api]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ─── URL Routing (mobile download) ───
   // We still handle /download/ locally since it's just a static page
