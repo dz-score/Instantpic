@@ -3,7 +3,7 @@ import time
 import os
 import uuid
 import queue
-import anyio.from_thread
+import anyio.to_thread
 import gphoto2 as gp
 from pydantic import BaseModel
 from typing import Optional
@@ -313,17 +313,27 @@ class CameraService:
 
     # ─── MJPEG Stream (HTTP consumer) ─────────────────────────────
 
-    def preview_generator(self, request=None):
-        """Generator yielding MJPEG frames for the live view.
+    def _wait_for_frame(self, timeout):
+        """Blocks the calling (worker) thread for up to `timeout`s for a new frame."""
+        with self._frame_condition:
+            return self._frame_condition.wait(timeout=timeout)
+
+    async def preview_generator(self):
+        """Async generator yielding MJPEG frames for the live view.
 
         Reads from the shared frame buffer. The camera worker thread produces
         frames independently — this generator just waits for the latest one
         and yields it. If the HTTP connection is slow, frames are skipped,
         not queued. No backpressure reaches the camera.
 
-        `request` (if provided) lets us notice a client that went away while
-        the camera is in standby: with no frames being produced, we'd never
-        otherwise hit the yield/send() that would surface a broken socket.
+        This must be a native async generator, not a sync one run in a
+        thread pool: when the client disconnects, Starlette cancels the
+        task awaiting this generator, and cancellation only lands where
+        we actually have an `await` point — a thread blocked inside a
+        plain sync call can't be cancelled at all. Frame waits are done
+        in short slices so a cancellation is never more than one slice
+        away from taking effect, instead of leaving an orphaned thread
+        looping forever.
         """
         self._preview_generation += 1
         my_generation = self._preview_generation
@@ -339,20 +349,21 @@ class CameraService:
         # If the worker isn't running, start it
         self._start_worker()
 
-        while my_generation == self._preview_generation and not self._shutdown_event.is_set():
-            wait_start = time.perf_counter()
-            with self._frame_condition:
-                # Wait up to 2s for a new frame from the worker
-                got_frame = self._frame_condition.wait(timeout=2.0)
-                wait_time = time.perf_counter() - wait_start
+        POLL_SLICE = 0.5  # bounds how long a cancelled request can outlive its client
+        idle_time = 0.0
 
-                if not got_frame:
+        while my_generation == self._preview_generation and not self._shutdown_event.is_set():
+            got_frame = await anyio.to_thread.run_sync(self._wait_for_frame, POLL_SLICE)
+
+            if not got_frame:
+                idle_time += POLL_SLICE
+                if idle_time >= 2.0:
                     log.debug("camera_timing", "http_generator_timeout", "HTTP generator timed out waiting for frame (2s)")
-                    if request is not None and anyio.from_thread.run(request.is_disconnected):
-                        log.debug("camera_timing", "http_generator_client_gone",
-                                  "Client disconnected while idle, exiting generator")
-                        return
-                    continue
+                    idle_time = 0.0
+                continue
+            idle_time = 0.0
+
+            with self._frame_condition:
                 frame = self._latest_frame
 
             if frame is None:
@@ -362,13 +373,11 @@ class CameraService:
             if my_generation != self._preview_generation:
                 log.debug("camera_timing", "http_generator_superseded", "HTTP generator superseded, exiting")
                 return
-                
+
             self._last_preview_request = time.monotonic()
 
             yield (b'--frame\r\n'
                    b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
-            
-            # log.debug("camera_timing", "http_generator_yield", f"Yielded frame (wait={wait_time*1000:.1f}ms)")
 
     # ─── High-res Capture ─────────────────────────────────────────
 
