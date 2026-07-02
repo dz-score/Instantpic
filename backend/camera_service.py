@@ -228,6 +228,17 @@ class CameraService:
             if self._shutdown_event.is_set():
                 break
 
+            # Watchdog check — runs every iteration regardless of whether the
+            # camera is connected or the previous capture attempt errored, so
+            # a camera that's erroring intermittently (never enough
+            # consecutive failures to trip a full disconnect) still gets
+            # forced to rest within _preview_idle_timeout of the last viewer.
+            if self._preview_allowed.is_set() and \
+                    time.monotonic() - self._last_preview_request > self._preview_idle_timeout:
+                log.info("camera", "camera_watchdog", f"No preview requested for {self._preview_idle_timeout}s. Auto-pausing worker.")
+                self.standby()
+                continue
+
             if not self.connected:
                 if self._capture_in_progress:
                     time.sleep(0.5)
@@ -288,11 +299,6 @@ class CameraService:
 
                 # Target ~15fps
                 time.sleep(0.066)
-                
-                # Watchdog check
-                if time.monotonic() - self._last_preview_request > self._preview_idle_timeout:
-                    log.info("camera", "camera_watchdog", f"No preview requested for {self._preview_idle_timeout}s. Auto-pausing worker.")
-                    self.standby()
 
             except Exception as e:
                 consecutive_errors += 1
