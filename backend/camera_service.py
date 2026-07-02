@@ -340,6 +340,15 @@ class CameraService:
         in short slices so a cancellation is never more than one slice
         away from taking effect, instead of leaving an orphaned thread
         looping forever.
+
+        Relying on the client disconnect alone isn't enough in practice:
+        some browsers don't promptly close the underlying connection for
+        a multipart/x-mixed-replace stream when the <img> is unmounted,
+        so Starlette never learns the client is gone. As a backstop, this
+        generator closes itself after MAX_IDLE_S of receiving no frames
+        (which, once the camera's own idle watchdog has paused the
+        worker, means nobody has been actively watching for a while) so
+        an abandoned connection can't outlive its viewer indefinitely.
         """
         self._preview_generation += 1
         my_generation = self._preview_generation
@@ -356,18 +365,26 @@ class CameraService:
         self._start_worker()
 
         POLL_SLICE = 0.5  # bounds how long a cancelled request can outlive its client
+        MAX_IDLE_S = 30.0  # self-close backstop for connections the browser never actually closed
         idle_time = 0.0
+        total_idle = 0.0
 
         while my_generation == self._preview_generation and not self._shutdown_event.is_set():
             got_frame = await anyio.to_thread.run_sync(self._wait_for_frame, POLL_SLICE)
 
             if not got_frame:
                 idle_time += POLL_SLICE
+                total_idle += POLL_SLICE
                 if idle_time >= 2.0:
                     log.debug("camera_timing", "http_generator_timeout", "HTTP generator timed out waiting for frame (2s)")
                     idle_time = 0.0
+                if total_idle >= MAX_IDLE_S:
+                    log.debug("camera_timing", "http_generator_idle_close",
+                              f"No frames for {total_idle:.0f}s, closing stream (client likely gone)")
+                    return
                 continue
             idle_time = 0.0
+            total_idle = 0.0
 
             with self._frame_condition:
                 frame = self._latest_frame
