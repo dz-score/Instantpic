@@ -27,6 +27,7 @@ export default function App() {
   const sse = useSse();
   const camera = useCamera(sse.cameraStatus);
   const api = useApi(sse.isOnline);
+  const config = sse.config;   // pushed over SSE (connect + on change)
   const inactivityTimer = useRef(null);
   const adminTapTimer = useRef(null);
 
@@ -37,11 +38,15 @@ export default function App() {
     }
   }, [sse.backendState]);
 
+  // One-time fallback fetch in case SSE hasn't delivered state yet. `api` is a
+  // fresh object every render (useApi returns a new literal each call), so it
+  // can't be a dependency here without re-firing this fetch on every render.
   useEffect(() => {
     api.fetchState().then(state => {
       if (state) setAppState(prev => prev || state);
     });
-  }, [api]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ─── URL Routing (mobile download) ───
   // We still handle /download/ locally since it's just a static page
@@ -55,7 +60,7 @@ export default function App() {
   const resetInactivityTimer = useCallback(() => {
     if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
 
-    const timeoutSec = api.config?.session_timeout || 120;
+    const timeoutSec = config?.session_timeout || 120;
     inactivityTimer.current = setTimeout(() => {
       if (
         currentScreen !== 'ATTRACT' &&
@@ -67,7 +72,7 @@ export default function App() {
         api.sendEvent('TIMEOUT');
       }
     }, timeoutSec * 1000);
-  }, [api, showAdmin, currentScreen]);
+  }, [api, config, showAdmin, currentScreen]);
 
   useEffect(() => {
     if (currentScreen === 'ATTRACT' || currentScreen === 'DOWNLOAD' || currentScreen === 'LOADING') {
@@ -111,24 +116,13 @@ export default function App() {
     api.sendEvent('SELECT_LAYOUT', { mode });
   }, [api]);
 
-  const handleCaptureComplete = useCallback((images) => {
-    logger.info('camera', 'camera_capture', `Captured ${images.length} image(s)`);
-    if (!images || images.length === 0) {
-      logger.error('photo', 'photo_process_fail', 'No images captured — all capture attempts failed');
-      return;
-    }
-    
-    const cfg = api.config || {};
-    const showNames = cfg.show_names_on_photo !== false;
-    const text = showNames
-      ? ([cfg.couple_names, cfg.event_date].filter(Boolean).join(' · ') || cfg.default_text || '')
-      : '';
-      
-    api.sendEvent('CAPTURE_DONE', {
-      images,
-      text,
-      overlay_id: cfg.selected_overlay || 'none'
-    });
+  // Report a single completed capture to the backend. The FSM owns shot
+  // accumulation, sequencing, and the decision to advance to REVEAL — the UI
+  // only relays the filename it was handed.
+  const handleShotCaptured = useCallback((filename) => {
+    if (!filename) return;
+    logger.info('camera', 'camera_capture', `Shot captured: ${filename}`);
+    api.sendEvent('SHOT_CAPTURED', { filename });
   }, [api]);
 
   const handleRetake = useCallback(() => {
@@ -137,23 +131,16 @@ export default function App() {
   }, [api]);
 
   const handlePrintFromReveal = useCallback(() => {
-    api.sendEvent('PRINT_FROM_REVEAL', { overlays: api.config?.overlays || [] });
+    api.sendEvent('PRINT_FROM_REVEAL');
   }, [api]);
 
   const handleFavoriteSelect = useCallback((selectedFilename) => {
-    api.sendEvent('FAVORITE_SELECT', { 
-      filename: selectedFilename, 
-      overlays: api.config?.overlays || [] 
-    });
+    api.sendEvent('FAVORITE_SELECT', { filename: selectedFilename });
   }, [api]);
 
   const handleFrameSelect = useCallback((overlayId) => {
-    const cfg = api.config || {};
-    const showNames = cfg.show_names_on_photo !== false;
-    const text = showNames
-      ? ([cfg.couple_names, cfg.event_date].filter(Boolean).join(' · ') || cfg.default_text || '')
-      : '';
-    api.sendEvent('FRAME_SELECT', { overlay_id: overlayId, text });
+    // Only the guest's frame choice is sent; banner text is composed by the backend.
+    api.sendEvent('FRAME_SELECT', { overlay_id: overlayId });
   }, [api]);
 
   const handleFrameSkip = useCallback(() => {
@@ -191,7 +178,7 @@ export default function App() {
 
       {currentScreen === 'ATTRACT' && (
         <AttractScreen 
-          config={api.config} 
+          config={config} 
           onStart={handleStart} 
           language={language}
           setLanguage={setLanguage}
@@ -209,13 +196,16 @@ export default function App() {
       {currentScreen === 'COUNTDOWN' && (
         <CountdownScreen
           previewUrl={camera.previewUrl}
-          layoutMode={appState?.layoutMode || 'single'}
+          totalShots={appState?.totalShots || 1}
+          capturedCount={appState?.capturedImages?.length || 0}
           captureFrame={camera.captureFrame}
           resumePreview={camera.resumePreview}
           standbyPreview={camera.standbyPreview}
-          onComplete={handleCaptureComplete}
+          cameraJob={sse.cameraJob}
+          cameraMetrics={sse.cameraMetrics}
+          onShotCaptured={handleShotCaptured}
           onCancel={() => api.sendEvent('FINISH')}
-          config={api.config}
+          config={config}
           language={language}
         />
       )}
@@ -225,7 +215,7 @@ export default function App() {
           finalPhoto={appState?.finalPhoto}
           isProcessing={appState?.isProcessing || false}
           retakeCount={appState?.retakeCount || 0}
-          maxRetakes={api.config?.max_photos_per_session || 5}
+          maxRetakes={config?.max_photos_per_session || 5}
           onRetake={handleRetake}
           onPrint={handlePrintFromReveal}
           onCancel={() => api.sendEvent('FINISH')}
@@ -246,8 +236,8 @@ export default function App() {
       {currentScreen === 'FRAME_PICKER' && (
         <FramePickerScreen
           finalPhoto={appState?.finalPhoto}
-          overlays={api.config?.overlays || []}
-          currentOverlay={api.config?.selected_overlay || 'none'}
+          overlays={config?.overlays || []}
+          currentOverlay={config?.selected_overlay || 'none'}
           onSelect={handleFrameSelect}
           onSkip={handleFrameSkip}
           onBack={handleFinish}
@@ -262,7 +252,7 @@ export default function App() {
           printPhoto={api.printPhoto}
           getQrUrl={api.getQrUrl}
           getDownloadUrl={api.getDownloadUrl}
-          config={api.config}
+          config={config}
           onFinish={handleFinish}
           onAnother={handleAnother}
           language={language}
@@ -301,7 +291,7 @@ export default function App() {
       {/* ─── Admin Panel (full-page) ─── */}
       {showAdmin && (
         <AdminPanel
-          config={api.config}
+          config={config}
           onSave={handleAdminSave}
           onClose={() => setShowAdmin(false)}
           getDiagnostics={api.getDiagnostics}

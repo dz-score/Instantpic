@@ -58,17 +58,13 @@ def test_auth_change_pin_short(client):
 
 # --- 4. Request Isolation (Concurrency) Test ---
 
-def test_request_isolation_concurrency(client, temp_workspace, mock_base64_image):
+def test_request_isolation_concurrency(client, temp_workspace):
     """Fire 3 rapid requests sequentially (TestClient isn't thread-safe for async locking)."""
     payload = {
-        "type": "CAPTURE_DONE",
-        "payload": {
-            "images": [mock_base64_image],
-            "text": "Concurrency Test",
-            "overlay_id": "none"
-        }
+        "type": "SHOT_CAPTURED",
+        "payload": {"filename": "capture_test.jpg"},
     }
-    
+
     results = []
     for _ in range(3):
         res = client.post("/api/events", json=payload)

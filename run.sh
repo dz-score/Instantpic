@@ -1,5 +1,5 @@
 #!/bin/bash
-cd /home/instantpic/Documents/instantpic-antigravity
+cd /home/instantpic/Projects/instantpic-antigravity
 
 source backend/.venv/bin/activate
 
@@ -20,5 +20,6 @@ chromium-browser \
   --disable-pinch \
    --noerrdialogs \
    --disable-background-networking \
+   --disable-cache \
     http://localhost:8000 &
 

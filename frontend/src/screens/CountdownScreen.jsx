@@ -9,19 +9,29 @@ const BETWEEN_SHOT_DELAY = 3000; // ms between collage shots
 
 /**
  * Full-screen camera feed with countdown overlay.
- * Handles entire capture sequence internally:
- * - Single mode: 1 countdown → 1 capture → callback
- * - Collage mode: 3 rounds of (countdown → capture → interstitial)
  *
- * The <video> element is passed in from App so it stays mounted.
+ * Presentation + input + dispatch only. This screen renders the live view and
+ * countdown, plays capture effects, invokes the backend capture action, and
+ * reports each completed shot back to the FSM via `onShotCaptured`.
+ *
+ * It does NOT decide how many shots a layout needs or when the sequence is
+ * finished — that workflow authority lives in the backend FSM. `totalShots`
+ * arrives as backend state, and the backend advances to REVEAL once it has
+ * received all the shots (which unmounts this screen).
+ *
+ * Camera events are consumed from the app's single SSE stream (`cameraJob`,
+ * `cameraMetrics`) passed down as props, rather than opening a second stream.
  */
 export default function CountdownScreen({
   previewUrl,
-  layoutMode,
+  totalShots = 1,
+  capturedCount = 0,
   captureFrame,
   resumePreview,
   standbyPreview,
-  onComplete,
+  cameraJob,
+  cameraMetrics,
+  onShotCaptured,
   onCancel,
   config,
   language,
@@ -44,8 +54,8 @@ export default function CountdownScreen({
     return () => clearTimeout(t);
   }, [cameraReady]);
   const pendingTimeouts = useRef([]);
-  const imagesRef = useRef([]);
-  const totalShots = layoutMode === 'collage' ? 3 : 1;
+  const totalShotsRef = useRef(totalShots);
+  totalShotsRef.current = totalShots;
   const timerRef = useRef(null);
   const countdownVideoRef = useRef(null);
   const captureResolvers = useRef({});
@@ -58,6 +68,26 @@ export default function CountdownScreen({
     pendingTimeouts.current.push(id);
     return id;
   }, []);
+
+  // Route capture-lifecycle events from the app's central SSE stream to the
+  // resolver registered for the in-flight job. Only presentation effects and
+  // the "report this shot" dispatch happen here.
+  useEffect(() => {
+    if (!cameraJob) return;
+    const resolvers = captureResolvers.current[cameraJob.job_id];
+    if (!resolvers) return;
+
+    if (cameraJob.status === 'fired' && resolvers.onFired) {
+      resolvers.onFired();
+      resolvers.onFired = null; // Prevent duplicate fires if SSE re-delivers
+    } else if (cameraJob.status === 'completed' && resolvers.onCompleted) {
+      resolvers.onCompleted(cameraJob.filename);
+      delete captureResolvers.current[cameraJob.job_id];
+    } else if (cameraJob.status === 'failed' && resolvers.onFailed) {
+      resolvers.onFailed(cameraJob.error);
+      delete captureResolvers.current[cameraJob.job_id];
+    }
+  }, [cameraJob]);
 
   // Run a single countdown round
   const runCountdown = useCallback((onDone) => {
@@ -102,7 +132,7 @@ export default function CountdownScreen({
   const triggerCapture = useCallback(async (attempt = 1) => {
     setIsCapturing(true);
     const jobId = await captureFrame();
-    
+
     if (!jobId) {
       setIsCapturing(false);
       return null;
@@ -120,8 +150,10 @@ export default function CountdownScreen({
         },
         onCompleted: (filename) => {
           setIsCapturing(false);
-          imagesRef.current = [...imagesRef.current, filename];
           setLastCapture(`/photos/${filename}`);
+          // Report the shot to the FSM — the backend owns accumulation and
+          // decides when the sequence is complete.
+          if (onShotCaptured) onShotCaptured(filename);
           resolve(filename);
         },
         onFailed: async (error) => {
@@ -137,7 +169,7 @@ export default function CountdownScreen({
         }
       };
     });
-  }, [captureFrame, flashEnabled, safeTimeout]);
+  }, [captureFrame, flashEnabled, safeTimeout, onShotCaptured]);
 
   // Fire shutter orchestrator
   const fireShutter = useCallback(async () => {
@@ -146,79 +178,38 @@ export default function CountdownScreen({
 
   const startRound = useCallback(async (idx) => {
     setShotIndex(idx);
-    
+
     // Wake up the camera worker from standby
     if (resumePreview) {
       await resumePreview();
     }
-    
+
     runCountdown(async () => {
       await fireShutter();
-      if (idx + 1 >= totalShots) {
-        // All shots taken — transition immediately (no preview resumption)
-        onComplete(imagesRef.current);
-      } else {
-        // Show between-shots interstitial
+      // The backend decides completion. If more shots are still expected for
+      // this layout, show the interstitial and run the next round; otherwise
+      // the FSM will transition to REVEAL and unmount this screen.
+      if (idx + 1 < totalShotsRef.current) {
         setPhase('BETWEEN');
         safeTimeout(() => {
           startRound(idx + 1);
         }, BETWEEN_SHOT_DELAY);
       }
     });
-  }, [runCountdown, fireShutter, totalShots, safeTimeout, onComplete, resumePreview]);
+  }, [runCountdown, fireShutter, safeTimeout, resumePreview]);
 
-  // 1. Mount: Wake up camera and subscribe to SSE
+  // 1. Mount: wake up the camera. Camera events arrive via props (central SSE).
   useEffect(() => {
-    imagesRef.current = [];
     setShotIndex(0);
 
     if (resumePreview) {
       resumePreview();
     }
 
-    // Subscribe to SSE for diagnostic metrics and job updates
-    const evtSource = new EventSource('/api/sse');
-    
-    evtSource.addEventListener('camera_metrics', (e) => {
-      try {
-        const data = JSON.parse(e.data);
-        const el = document.getElementById('diag-metrics');
-        if (el) {
-          el.innerHTML = `FPS: ${data.fps} | Latency: ${data.latency_ms}ms<br/>` +
-                         `Worker: ${data.worker_running ? 'ON' : 'OFF'} | Allowed: ${data.allowed ? 'YES' : 'NO'}<br/>` +
-                         `Time since last: ${data.time_since_last_frame_ms}ms`;
-        }
-      } catch (err) {}
-    });
-
-    evtSource.addEventListener('camera_job', (e) => {
-      try {
-        const job = JSON.parse(e.data);
-        const resolvers = captureResolvers.current[job.job_id];
-        
-        if (resolvers) {
-          if (job.status === 'fired' && resolvers.onFired) {
-            resolvers.onFired();
-            // Prevent duplicate fires if SSE delivers twice
-            resolvers.onFired = null; 
-          } else if (job.status === 'completed' && resolvers.onCompleted) {
-            resolvers.onCompleted(job.filename);
-            delete captureResolvers.current[job.job_id];
-          } else if (job.status === 'failed' && resolvers.onFailed) {
-            resolvers.onFailed(job.error);
-            delete captureResolvers.current[job.job_id];
-          }
-        }
-      } catch (err) {
-        console.error("Error parsing camera_job event", err);
-      }
-    });
-
     return () => {
       clearInterval(timerRef.current);
       pendingTimeouts.current.forEach(clearTimeout);
       pendingTimeouts.current = [];
-      evtSource.close();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -258,8 +249,8 @@ export default function CountdownScreen({
               <p className="countdown-loading__sub" style={{ marginTop: '8px' }}>
                 {t('camera.errorSub', language) || "Please check the camera connection"}
               </p>
-              <button 
-                className="countdown-btn-home" 
+              <button
+                className="countdown-btn-home"
                 onClick={onCancel}
                 style={{ marginTop: '2rem' }}
               >
@@ -289,17 +280,17 @@ export default function CountdownScreen({
         <div className={`countdown-flash ${flashActive ? 'countdown-flash--active' : ''}`} />
 
         {/* Countdown video - always mounted for performance, toggled via opacity */}
-        <div 
-          className="countdown-center" 
+        <div
+          className="countdown-center"
           style={{ opacity: (phase === 'COUNTDOWN' && !isCapturing) ? 1 : 0, transition: 'opacity 0.2s' }}
         >
-          <video 
+          <video
             ref={countdownVideoRef}
-            src="/countdown.mp4" 
-            muted 
-            playsInline 
+            src="/countdown.mp4"
+            muted
+            playsInline
             preload="auto"
-            className="countdown-ring-video" 
+            className="countdown-ring-video"
           />
         </div>
 
@@ -318,11 +309,11 @@ export default function CountdownScreen({
             </p>
           </div>
         )}
-        
 
 
-        {/* Progress dots (collage only) */}
-        {layoutMode === 'collage' && (
+
+        {/* Progress dots (multi-shot layouts only) */}
+        {totalShots > 1 && (
           <div className="countdown-progress">
             <ProgressDots current={shotIndex} total={totalShots} />
           </div>
@@ -345,7 +336,14 @@ export default function CountdownScreen({
           <b>Diagnostics</b><br/>
           Phase: {phase}<br/>
           Capturing: {isCapturing ? 'Yes' : 'No'}<br/>
-          Metrics: <span id="diag-metrics">Waiting...</span>
+          Shots: {capturedCount}/{totalShots}<br/>
+          Metrics: <span>
+            {cameraMetrics
+              ? `FPS: ${cameraMetrics.fps} | Latency: ${cameraMetrics.latency_ms}ms | ` +
+                `Worker: ${cameraMetrics.worker_running ? 'ON' : 'OFF'} | ` +
+                `Allowed: ${cameraMetrics.allowed ? 'YES' : 'NO'}`
+              : 'Waiting...'}
+          </span>
         </div>
       </div>
     </div>

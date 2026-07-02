@@ -29,21 +29,36 @@ class SseService:
         self._shutdown = True
         log.debug("sse", "shutdown_requested", "SSE service shutdown requested")
 
-    def dispatch_event(self, event_type: str, data: dict):
-        if not self._clients:
-            return
-
-        payload = {
+    def _make_payload(self, event_type: str, data: dict) -> dict:
+        return {
             "id": str(uuid.uuid4()),
             "event": event_type,
             "data": json.dumps(data)
         }
-        
+
+    def send_to_client(self, client: SseClient, event_type: str, data: dict):
+        """Send one event to a single client.
+
+        Used to seed a newly connected client with the current snapshot (e.g.
+        config) so it arrives over the same resilient channel as state, without
+        a separate REST pull.
+        """
+        try:
+            client.queue.put_nowait(self._make_payload(event_type, data))
+        except asyncio.QueueFull:
+            pass
+
+    def dispatch_event(self, event_type: str, data: dict):
+        if not self._clients:
+            return
+
+        payload = self._make_payload(event_type, data)
+
         for client in self._clients:
             try:
                 client.queue.put_nowait(payload)
             except asyncio.QueueFull:
-                # If a client is too slow, we might drop events. 
+                # If a client is too slow, we might drop events.
                 # This usually means a stale connection.
                 pass
 

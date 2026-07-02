@@ -155,6 +155,8 @@ async def post_config(updates: ConfigUpdateRequest):
     try:
         changed = {k: v for k, v in updates.model_dump(exclude_unset=True).items() if v is not None}
         updated = update_settings(changed)
+        # Push the new config to all connected clients over SSE.
+        sse_svc.dispatch_event("config_update", updated.model_dump())
         log.info("config", "config_updated", f"Config updated: {list(changed.keys())}", data=changed)
         return updated
     except Exception as e:
@@ -295,6 +297,10 @@ async def sse_endpoint(request: Request):
     """Eventstream for real-time updates to the frontend."""
     client = SseClient(request)
     sse_svc.setup_client(client)
+    # Seed this client with the current config immediately, so the frontend
+    # receives it over the resilient stream (on connect and every reconnect)
+    # instead of relying on a one-shot REST fetch.
+    sse_svc.send_to_client(client, "config_update", load_settings().model_dump())
     return EventSourceResponse(sse_svc.event_iterator(client))
 
 # --- Change PIN ---
@@ -309,6 +315,7 @@ async def change_pin(req: ChangePinRequest):
         log.warn("config", "config_pin_fail", "PIN change attempted with wrong current PIN")
         raise HTTPException(status_code=403, detail="Invalid current PIN")
     updated = update_settings({"admin_pin": req.new_pin})
+    sse_svc.dispatch_event("config_update", updated.model_dump())
     log.info("config", "config_pin_changed", "Admin PIN changed")
     return {"status": "success", "detail": "PIN updated"}
 

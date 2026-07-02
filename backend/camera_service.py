@@ -3,6 +3,7 @@ import time
 import os
 import uuid
 import queue
+import anyio.to_thread
 import gphoto2 as gp
 from pydantic import BaseModel
 from typing import Optional
@@ -38,6 +39,15 @@ class CameraService:
         self._init_backoff = 5
         self._init_fail_count = 0
         self._shutdown_event = threading.Event()
+        
+        # Watchdog for auto-standby
+        self._last_preview_request = time.monotonic()
+        self._preview_idle_timeout = 10.0
+
+        # Grace period right after init() during which preview errors are
+        # expected (Canon live-view needs a moment to settle) and shouldn't
+        # be treated as a real disconnect.
+        self._preview_warmup_grace = 3.0
 
         # --- Decoupled frame buffer ---
         # The worker thread writes the latest frame here.
@@ -218,6 +228,17 @@ class CameraService:
             if self._shutdown_event.is_set():
                 break
 
+            # Watchdog check — runs every iteration regardless of whether the
+            # camera is connected or the previous capture attempt errored, so
+            # a camera that's erroring intermittently (never enough
+            # consecutive failures to trip a full disconnect) still gets
+            # forced to rest within _preview_idle_timeout of the last viewer.
+            if self._preview_allowed.is_set() and \
+                    time.monotonic() - self._last_preview_request > self._preview_idle_timeout:
+                log.info("camera", "camera_watchdog", f"No preview requested for {self._preview_idle_timeout}s. Auto-pausing worker.")
+                self.standby()
+                continue
+
             if not self.connected:
                 if self._capture_in_progress:
                     time.sleep(0.5)
@@ -281,14 +302,15 @@ class CameraService:
 
             except Exception as e:
                 consecutive_errors += 1
-                log.debug("camera_timing", "worker_preview_err", f"Preview error #{consecutive_errors}: {e}")
-                
-                if consecutive_errors > 5 and not self._capture_in_progress:
+                log.debug("camera_timing", "worker_preview_err", f"Preview error #{consecutive_errors}: {e}")    
+
+                warming_up = (time.monotonic() - self._last_init_time) < self._preview_warmup_grace
+                if consecutive_errors > 5 and not self._capture_in_progress and not warming_up:
                     log.error("camera", "camera_preview_fail", f"Preview worker failed: {e}")
                     self.connected = False
                     sse_svc.dispatch_event("camera_status", self.get_status())
                 
-                # Sleep briefly on error. 0.1s is enough to let USB settle 
+                # Sleep briefly on error. 0.1s is enough to let USB settle
                 # without causing a massive freeze on the frontend.
                 time.sleep(0.1)
 
@@ -297,13 +319,36 @@ class CameraService:
 
     # ─── MJPEG Stream (HTTP consumer) ─────────────────────────────
 
-    def preview_generator(self):
-        """Generator yielding MJPEG frames for the live view.
+    def _wait_for_frame(self, timeout):
+        """Blocks the calling (worker) thread for up to `timeout`s for a new frame."""
+        with self._frame_condition:
+            return self._frame_condition.wait(timeout=timeout)
+
+    async def preview_generator(self):
+        """Async generator yielding MJPEG frames for the live view.
 
         Reads from the shared frame buffer. The camera worker thread produces
         frames independently — this generator just waits for the latest one
         and yields it. If the HTTP connection is slow, frames are skipped,
         not queued. No backpressure reaches the camera.
+
+        This must be a native async generator, not a sync one run in a
+        thread pool: when the client disconnects, Starlette cancels the
+        task awaiting this generator, and cancellation only lands where
+        we actually have an `await` point — a thread blocked inside a
+        plain sync call can't be cancelled at all. Frame waits are done
+        in short slices so a cancellation is never more than one slice
+        away from taking effect, instead of leaving an orphaned thread
+        looping forever.
+
+        Relying on the client disconnect alone isn't enough in practice:
+        some browsers don't promptly close the underlying connection for
+        a multipart/x-mixed-replace stream when the <img> is unmounted,
+        so Starlette never learns the client is gone. As a backstop, this
+        generator closes itself after MAX_IDLE_S of receiving no frames
+        (which, once the camera's own idle watchdog has paused the
+        worker, means nobody has been actively watching for a while) so
+        an abandoned connection can't outlive its viewer indefinitely.
         """
         self._preview_generation += 1
         my_generation = self._preview_generation
@@ -312,19 +357,36 @@ class CameraService:
         if not self.connected:
             self.init()
 
+        # Update timestamp and wake up worker
+        self._last_preview_request = time.monotonic()
+        self.resume_preview()
+
         # If the worker isn't running, start it
         self._start_worker()
 
+        POLL_SLICE = 0.5  # bounds how long a cancelled request can outlive its client
+        MAX_IDLE_S = 30.0  # self-close backstop for connections the browser never actually closed
+        idle_time = 0.0
+        total_idle = 0.0
+
         while my_generation == self._preview_generation and not self._shutdown_event.is_set():
-            wait_start = time.perf_counter()
-            with self._frame_condition:
-                # Wait up to 2s for a new frame from the worker
-                got_frame = self._frame_condition.wait(timeout=2.0)
-                wait_time = time.perf_counter() - wait_start
-                
-                if not got_frame:
+            got_frame = await anyio.to_thread.run_sync(self._wait_for_frame, POLL_SLICE)
+
+            if not got_frame:
+                idle_time += POLL_SLICE
+                total_idle += POLL_SLICE
+                if idle_time >= 2.0:
                     log.debug("camera_timing", "http_generator_timeout", "HTTP generator timed out waiting for frame (2s)")
-                    continue
+                    idle_time = 0.0
+                if total_idle >= MAX_IDLE_S:
+                    log.debug("camera_timing", "http_generator_idle_close",
+                              f"No frames for {total_idle:.0f}s, closing stream (client likely gone)")
+                    return
+                continue
+            idle_time = 0.0
+            total_idle = 0.0
+
+            with self._frame_condition:
                 frame = self._latest_frame
 
             if frame is None:
@@ -335,10 +397,10 @@ class CameraService:
                 log.debug("camera_timing", "http_generator_superseded", "HTTP generator superseded, exiting")
                 return
 
+            self._last_preview_request = time.monotonic()
+
             yield (b'--frame\r\n'
                    b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
-            
-            # log.debug("camera_timing", "http_generator_yield", f"Yielded frame (wait={wait_time*1000:.1f}ms)")
 
     # ─── High-res Capture ─────────────────────────────────────────
 

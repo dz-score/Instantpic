@@ -1,32 +1,19 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { logger } from '../utils/logger';
 
 const API = '';
 
 /**
- * Centralises all API interactions + health-check polling.
+ * Centralises all API interactions.
+ *
+ * Config is NOT fetched here — it is pushed by the backend over SSE (see
+ * useSse) on connect and on every change, so the frontend always has a fresh,
+ * self-healing copy. This hook only handles writes (saveConfig, changePin) and
+ * other REST calls.
  */
 export default function useApi(isOnline) {
-  const [config, setConfig] = useState(null);
   const [gallery, setGallery] = useState([]);
   const [boothBaseUrl, setBoothBaseUrl] = useState('');
-  const configRef = useRef(null);
-
-  /* ── Load config on mount ── */
-  const fetchConfig = useCallback(async () => {
-    try {
-      const r = await fetch(`${API}/api/config`);
-      const data = await r.json();
-      setConfig(data);
-      configRef.current = data;
-      return data;
-    } catch (e) {
-      logger.error('api', 'api_error', `Failed to load config: ${e.message}`, { endpoint: '/api/config', error: e.message });
-      return null;
-    }
-  }, []);
-
-  useEffect(() => { fetchConfig(); }, [fetchConfig]);
 
   /* ── Fetch booth LAN IP on mount ── */
   useEffect(() => {
@@ -84,34 +71,6 @@ export default function useApi(isOnline) {
     }
   }, []);
 
-  /* ── Save photo (process on backend) ── */
-  const savePhoto = useCallback(async (images, layout, overlayId) => {
-    const cfg = configRef.current || {};
-    const showNames = cfg.show_names_on_photo !== false;
-    const text = showNames
-      ? ([cfg.couple_names, cfg.event_date].filter(Boolean).join(' · ') || cfg.default_text || '')
-      : '';
-    const t0 = performance.now();
-    const r = await fetch(`${API}/api/save-photo`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        images,
-        layout,
-        text,
-        overlay_id: overlayId || cfg.selected_overlay || 'none',
-      }),
-    });
-    const dur = Math.round(performance.now() - t0);
-    if (!r.ok) {
-      logger.error('api', 'api_error', `Save photo failed (${r.status})`, { endpoint: '/api/save-photo', status: r.status });
-      throw new Error((await r.json()).detail || 'Processing failed');
-    }
-    const result = await r.json();
-    logger.info('api', 'api_request', `Photo saved: ${result.filename}`, { endpoint: '/api/save-photo', filename: result.filename }, dur);
-    return result;
-  }, []);
-
   /* ── Print ── */
   const printPhoto = useCallback(async (filename) => {
     logger.info('printer', 'printer_sent', `Print requested: ${filename}`, { filename });
@@ -133,10 +92,8 @@ export default function useApi(isOnline) {
       body: JSON.stringify(updates),
     });
     if (!r.ok) throw new Error('Config save failed');
-    const data = await r.json();
-    setConfig(data);
-    configRef.current = data;
-    return data;
+    // The backend broadcasts the updated config over SSE, so no local set here.
+    return await r.json();
   }, []);
 
   /* ── QR / download helpers ── */
@@ -178,10 +135,9 @@ export default function useApi(isOnline) {
       const err = await r.json();
       throw new Error(err.detail || 'PIN change failed');
     }
-    // Refresh config to get updated PIN
-    await fetchConfig();
+    // Backend broadcasts the updated config (incl. new PIN) over SSE.
     return await r.json();
-  }, [fetchConfig]);
+  }, []);
 
   /* ── Recent Logs ── */
   const getRecentLogs = useCallback(async (count = 50, source = 'both') => {
@@ -191,12 +147,9 @@ export default function useApi(isOnline) {
   }, []);
 
   return {
-    config,
     isOnline,
     gallery,
-    fetchConfig,
     fetchGallery,
-    savePhoto,
     printPhoto,
     saveConfig,
     getQrUrl,
