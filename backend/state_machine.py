@@ -3,7 +3,7 @@ from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
 from backend.logger import log
 from backend.sse_service import sse_svc
-from backend.config import load_settings
+from backend.config import AppSettings
 
 class BoothState(BaseModel):
     screen: str = "ATTRACT"
@@ -58,7 +58,7 @@ class StateMachine:
         sse_svc.dispatch_event("state_update", state_dict)
         log.info("state_machine", "state_update", f"State transitioned to {self._state.screen}", data=state_dict)
 
-    async def handle_event(self, event_type: str, payload: dict):
+    async def handle_event(self, event_type: str, payload: dict, settings: AppSettings):
         async with self._get_lock():
             if event_type not in GLOBAL_EVENTS:
                 valid_events = VALID_TRANSITIONS.get(self._state.screen, [])
@@ -100,7 +100,6 @@ class StateMachine:
                     self._state.finalPhoto = None
 
                     if self._job_queue:
-                        settings = load_settings()
                         images = list(self._state.capturedImages)
                         await self._job_queue.enqueue({
                             "type": "PROCESS_PHOTO",
@@ -124,7 +123,7 @@ class StateMachine:
                 if len(self._state.allSessionPhotos) > 1:
                     self._state.screen = "PICK_FAVORITE"
                 else:
-                    self._proceed_to_print_flow()
+                    self._proceed_to_print_flow(settings)
 
             elif event_type == "FAVORITE_SELECT":
                 filename = payload.get("filename")
@@ -133,7 +132,7 @@ class StateMachine:
                     if p["filename"] == filename:
                         self._state.capturedImages = p.get("rawImages", [])
                         break
-                self._proceed_to_print_flow()
+                self._proceed_to_print_flow(settings)
 
             elif event_type == "FRAME_SELECT":
                 # overlay_id is genuine user input (which frame they tapped);
@@ -143,7 +142,6 @@ class StateMachine:
 
                 # Push job to queue
                 if self._job_queue:
-                    settings = load_settings()
                     await self._job_queue.enqueue({
                         "type": "PROCESS_FRAME",
                         "images": self._state.capturedImages,
@@ -181,11 +179,11 @@ class StateMachine:
         parts = [p for p in (settings.couple_names, settings.event_date) if p]
         return " · ".join(parts) if parts else (settings.default_text or "")
 
-    def _proceed_to_print_flow(self):
+    def _proceed_to_print_flow(self, settings: AppSettings):
         """Decide whether the guest should pick a frame or go straight to
-        printing. The available overlays are read from config here so the
+        printing. The available overlays are passed in from config so the
         routing decision stays inside the FSM."""
-        overlays = load_settings().overlays
+        overlays = settings.overlays
         has_frame_options = any(o.id != "none" for o in overlays)
         if has_frame_options and len(overlays) > 1:
             self._state.screen = "FRAME_PICKER"

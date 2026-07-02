@@ -179,7 +179,8 @@ async def get_state():
 @app.post("/api/events")
 async def handle_event(req: EventRequest):
     """Handle frontend events."""
-    await state_machine.handle_event(req.type, req.payload)
+    settings = load_settings()
+    await state_machine.handle_event(req.type, req.payload, settings)
     return {"status": "ok"}
 
 @app.post("/api/print/{filename}")
