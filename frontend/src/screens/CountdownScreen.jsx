@@ -49,6 +49,12 @@ export default function CountdownScreen({
   const [cameraReady, setCameraReady] = useState(false);
   const [cameraError, setCameraError] = useState(false);
   const [sessionStarted, setSessionStarted] = useState(false);
+  // Tracks whether the countdown ring video has played to its natural end.
+  // Kept independent of `phase`/`isCapturing` so the ring always finishes
+  // its own animation rather than being cut off the instant standby/capture
+  // starts (which happens on a fixed hardware-driven schedule, not tied to
+  // the video's actual remaining runtime).
+  const [countdownVideoDone, setCountdownVideoDone] = useState(false);
   // Set when a capture fails permanently (backend already retried once and
   // still failed). The backend never emits a further 'completed'/'failed'
   // event on its own here, so without this the screen would otherwise wait
@@ -100,6 +106,7 @@ export default function CountdownScreen({
   // Run a single countdown round
   const runCountdown = useCallback((onDone) => {
     setPhase('COUNTDOWN');
+    setCountdownVideoDone(false);
     let c = COUNTDOWN_FROM;
     setCount(c);
 
@@ -314,10 +321,13 @@ export default function CountdownScreen({
         {/* Flash effect (warm champagne) */}
         <div className={`countdown-flash ${flashActive ? 'countdown-flash--active' : ''}`} />
 
-        {/* Countdown video - always mounted for performance, toggled via opacity */}
+        {/* Countdown video - always mounted for performance, toggled via opacity.
+            Visibility follows the video's own playback (onEnded), not `phase` —
+            standby/capture run on a fixed hardware schedule that shouldn't cut
+            the ring's animation short. z-index keeps it below the flash (100). */}
         <div
           className="countdown-center"
-          style={{ opacity: (phase === 'COUNTDOWN' && !isCapturing) ? 1 : 0, transition: 'opacity 0.2s' }}
+          style={{ opacity: !countdownVideoDone ? 1 : 0, transition: 'opacity 0.2s' }}
         >
           <video
             ref={countdownVideoRef}
@@ -326,6 +336,7 @@ export default function CountdownScreen({
             playsInline
             preload="auto"
             className="countdown-ring-video"
+            onEnded={() => setCountdownVideoDone(true)}
           />
         </div>
 
