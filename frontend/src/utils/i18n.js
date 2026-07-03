@@ -25,6 +25,8 @@ export const translations = {
       processing: 'Processing your gorgeous photo...',
       oneMore: 'Beautiful! 1 more to go — get ready!',
       moreToGo: 'Great shot! {n} more — get ready!',
+      captureFailed: 'That Shot Didn\'t Land',
+      captureFailedSub: 'Please try again or head back home.',
     },
     reveal: {
       creatingKeepsake: 'Creating Your Keepsake',
@@ -122,6 +124,8 @@ export const translations = {
       processing: 'Traitement de votre magnifique photo...',
       oneMore: 'Magnifique ! Plus qu\'une photo — préparez-vous !',
       moreToGo: 'Superbe ! Encore {n} — préparez-vous !',
+      captureFailed: 'La photo n\'a pas abouti',
+      captureFailedSub: 'Veuillez réessayer ou revenir à l\'accueil.',
     },
     reveal: {
       creatingKeepsake: 'Création de votre souvenir',

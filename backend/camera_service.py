@@ -63,6 +63,11 @@ class CameraService:
         # Command queue for the worker thread
         self._cmd_queue = queue.Queue()
 
+        # Retry-once policy for a failed high-res capture (trigger or download),
+        # mirroring PrintService.RETRY_DELAY_S — this is a workflow policy and
+        # must live here, not in the frontend (Rule 14).
+        self.CAPTURE_RETRY_DELAY_S = 1.5
+
         # --- Diagnostics ---
         self._frames_produced = 0
         self._last_frame_time = time.perf_counter()
@@ -425,10 +430,15 @@ class CameraService:
     def _execute_capture_job(self, job_id: str):
         """Internal capture execution on the worker thread.
         Handles trigger, flush, download, save, and emits granular SSE events.
+
+        Retries once on failure before giving up, mirroring PrintService's
+        retry-once policy. This is a workflow decision and must live here,
+        not in the frontend (Rule 14) — callers just see one 'failed' event
+        if both attempts fail.
         """
         self._capture_in_progress = True
         self._emit_job_state(job_id, "started")
-        
+
         if not self.connected:
             self.init()
             if not self.connected:
@@ -436,6 +446,26 @@ class CameraService:
                 self._capture_in_progress = False
                 return
 
+        error = self._attempt_capture(job_id)
+
+        if error:
+            log.warn("camera", "camera_capture_retry",
+                      f"Capture attempt failed: {error}, retrying in {self.CAPTURE_RETRY_DELAY_S}s...")
+            time.sleep(self.CAPTURE_RETRY_DELAY_S)
+            if not self.connected:
+                self.init()
+            error = self._attempt_capture(job_id) if self.connected else "Camera not connected"
+
+        self._capture_in_progress = False
+        if error:
+            self._emit_job_state(job_id, "failed", error=error)
+
+    def _attempt_capture(self, job_id: str) -> Optional[str]:
+        """Runs a single trigger+download+save attempt. Emits the 'fired',
+        'downloading', and (on success) 'completed' events itself. Returns
+        None on success, or an error message on failure — the caller decides
+        whether to retry or emit 'failed'.
+        """
         cap_start = time.perf_counter()
 
         # Since we are on the worker thread, we don't need self.lock for USB operations
@@ -445,7 +475,7 @@ class CameraService:
 
         # 1. Drain pending camera events BEFORE capture.
         flush1_start = time.perf_counter()
-        
+
         try:
             evt_type, evt_data = self.camera.wait_for_event(10)
             while evt_type != gp.GP_EVENT_TIMEOUT:
@@ -459,7 +489,7 @@ class CameraService:
 
         # 3. Trigger capture
         trig_start = time.perf_counter()
-        
+
         # Fire the physical shutter - tell the UI immediately
         self._emit_job_state(job_id, "fired")
         
@@ -470,9 +500,7 @@ class CameraService:
             # Capture failed
             log.error("camera", "camera_capture_fail", f"Capture failed: {e}")
             self.connected = False
-            self._emit_job_state(job_id, "failed", error=str(e))
-            self._capture_in_progress = False
-            return
+            return str(e)
             
         trig_time = time.perf_counter() - trig_start
         log.debug("camera_timing", "capture_trigger", f"Capture triggered in {trig_time*1000:.1f}ms")
@@ -502,9 +530,7 @@ class CameraService:
                 )
         except Exception as e:
             log.error("camera", "camera_download_fail", f"Download failed: {e}")
-            self._emit_job_state(job_id, "failed", error=f"Download failed: {str(e)}")
-            self._capture_in_progress = False
-            return
+            return f"Download failed: {str(e)}"
             
         dl_time = time.perf_counter() - dl_start
         log.debug("camera_timing", "capture_download", f"Image downloaded in {dl_time*1000:.1f}ms")
@@ -517,8 +543,8 @@ class CameraService:
         total_time = time.perf_counter() - cap_start
         log.info("camera", "camera_capture_done", f"Image saved: {filename} (Total: {total_time:.2f}s)")
         
-        self._capture_in_progress = False
         self._emit_job_state(job_id, "completed", filename=filename)
+        return None
 
     def standby(self):
         """Gently pauses the live view worker without acquiring locks or forcing errors.

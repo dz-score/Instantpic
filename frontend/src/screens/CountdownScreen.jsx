@@ -5,8 +5,6 @@ import { t } from '../utils/i18n';
 import { Home } from 'lucide-react';
 import './CountdownScreen.css';
 
-const BETWEEN_SHOT_DELAY = 3000; // ms between collage shots
-
 /**
  * Full-screen camera feed with countdown overlay.
  *
@@ -14,10 +12,14 @@ const BETWEEN_SHOT_DELAY = 3000; // ms between collage shots
  * countdown, plays capture effects, invokes the backend capture action, and
  * reports each completed shot back to the FSM via `onShotCaptured`.
  *
- * It does NOT decide how many shots a layout needs or when the sequence is
- * finished — that workflow authority lives in the backend FSM. `totalShots`
- * arrives as backend state, and the backend advances to REVEAL once it has
- * received all the shots (which unmounts this screen).
+ * It does NOT decide how many shots a layout needs, when the sequence is
+ * finished, how long to pace between shots, or whether a failed capture
+ * gets retried — that workflow authority lives in the backend. `totalShots`
+ * and `capturedCount` arrive as backend state and drive round advancement
+ * here; `shot_interval_ms` arrives via config. CameraService retries a
+ * failed capture internally, so this screen only ever sees one terminal
+ * 'completed' or 'failed' event per shot. The backend advances to REVEAL
+ * once it has received all the shots (which unmounts this screen).
  *
  * Camera events are consumed from the app's single SSE stream (`cameraJob`,
  * `cameraMetrics`) passed down as props, rather than opening a second stream.
@@ -38,15 +40,20 @@ export default function CountdownScreen({
 }) {
   const COUNTDOWN_FROM = config?.countdown_duration || 3;
   const flashEnabled = config?.flash_enabled !== false;
+  const shotIntervalMs = config?.shot_interval_ms || 3000;
   const [phase, setPhase] = useState('COUNTDOWN'); // COUNTDOWN | POSING | BETWEEN
   const [count, setCount] = useState(COUNTDOWN_FROM);
-  const [shotIndex, setShotIndex] = useState(0);
   const [flashActive, setFlashActive] = useState(false);
   const [lastCapture, setLastCapture] = useState(null);
   const [isCapturing, setIsCapturing] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
   const [cameraError, setCameraError] = useState(false);
   const [sessionStarted, setSessionStarted] = useState(false);
+  // Set when a capture fails permanently (backend already retried once and
+  // still failed). The backend never emits a further 'completed'/'failed'
+  // event on its own here, so without this the screen would otherwise wait
+  // forever for capturedCount to advance.
+  const [captureError, setCaptureError] = useState(null);
 
   useEffect(() => {
     if (cameraReady) return;
@@ -54,11 +61,12 @@ export default function CountdownScreen({
     return () => clearTimeout(t);
   }, [cameraReady]);
   const pendingTimeouts = useRef([]);
-  const totalShotsRef = useRef(totalShots);
-  totalShotsRef.current = totalShots;
   const timerRef = useRef(null);
   const countdownVideoRef = useRef(null);
   const captureResolvers = useRef({});
+  // Tracks the capturedCount we've already reacted to, so the round-advance
+  // effect below only fires once per new shot the backend confirms.
+  const lastHandledCount = useRef(capturedCount);
   // Stable MJPEG src — set once on mount, never changes.
   // This ensures exactly ONE backend preview connection for the entire session.
   const previewSrc = useRef(`${previewUrl}?t=${Date.now()}`);
@@ -129,7 +137,10 @@ export default function CountdownScreen({
     }, 250);
   }, [COUNTDOWN_FROM, standbyPreview]);
 
-  const triggerCapture = useCallback(async (attempt = 1) => {
+  // Fire the shutter for one shot and wait for its terminal event. The
+  // backend (CameraService) retries a failed capture internally, so this
+  // only ever sees a single 'completed' or 'failed' outcome.
+  const fireShutter = useCallback(async () => {
     setIsCapturing(true);
     const jobId = await captureFrame();
 
@@ -156,52 +167,34 @@ export default function CountdownScreen({
           if (onShotCaptured) onShotCaptured(filename);
           resolve(filename);
         },
-        onFailed: async (error) => {
-          console.warn(`[CountdownScreen] Capture failed (attempt ${attempt}):`, error);
-          if (attempt === 1) {
-            await new Promise(r => setTimeout(r, 1500));
-            const result = await triggerCapture(2);
-            resolve(result);
-          } else {
-            setIsCapturing(false);
-            resolve(null);
-          }
+        onFailed: (error) => {
+          console.warn('[CountdownScreen] Capture failed:', error);
+          setIsCapturing(false);
+          setCaptureError(error || true);
+          resolve(null);
         }
       };
     });
   }, [captureFrame, flashEnabled, safeTimeout, onShotCaptured]);
 
-  // Fire shutter orchestrator
-  const fireShutter = useCallback(async () => {
-    return await triggerCapture(1);
-  }, [triggerCapture]);
-
-  const startRound = useCallback(async (idx) => {
-    setShotIndex(idx);
-
+  const startRound = useCallback(async () => {
     // Wake up the camera worker from standby
     if (resumePreview) {
       await resumePreview();
     }
 
-    runCountdown(async () => {
-      await fireShutter();
-      // The backend decides completion. If more shots are still expected for
-      // this layout, show the interstitial and run the next round; otherwise
-      // the FSM will transition to REVEAL and unmount this screen.
-      if (idx + 1 < totalShotsRef.current) {
-        setPhase('BETWEEN');
-        safeTimeout(() => {
-          startRound(idx + 1);
-        }, BETWEEN_SHOT_DELAY);
-      }
+    runCountdown(() => {
+      fireShutter();
     });
-  }, [runCountdown, fireShutter, safeTimeout, resumePreview]);
+  }, [runCountdown, fireShutter, resumePreview]);
+
+  const handleRetryShot = useCallback(() => {
+    setCaptureError(null);
+    startRound();
+  }, [startRound]);
 
   // 1. Mount: wake up the camera. Camera events arrive via props (central SSE).
   useEffect(() => {
-    setShotIndex(0);
-
     if (resumePreview) {
       resumePreview();
     }
@@ -218,9 +211,25 @@ export default function CountdownScreen({
   useEffect(() => {
     if (cameraReady && !sessionStarted) {
       setSessionStarted(true);
-      startRound(0);
+      startRound();
     }
   }, [cameraReady, sessionStarted, startRound]);
+
+  // 3. Advance to the next round once the backend confirms a shot landed.
+  // Whether more shots are needed is the FSM's call (totalShots/capturedCount
+  // are backend state); this screen just reacts to it rather than keeping
+  // its own duplicate "are we done" tally.
+  useEffect(() => {
+    if (capturedCount > lastHandledCount.current) {
+      lastHandledCount.current = capturedCount;
+      if (capturedCount < totalShots) {
+        setPhase('BETWEEN');
+        safeTimeout(startRound, shotIntervalMs);
+      }
+    } else {
+      lastHandledCount.current = capturedCount;
+    }
+  }, [capturedCount, totalShots, shotIntervalMs, safeTimeout, startRound]);
 
 
   return (
@@ -257,6 +266,32 @@ export default function CountdownScreen({
                 <span className="btn-icon"><Home strokeWidth={1.5} size={20} /></span>
                 <span>{t('reveal.home', language)}</span>
               </button>
+            </div>
+          </div>
+        )}
+
+        {/* Error state for a shot that failed permanently (backend already
+            retried once). Without this, the screen would otherwise wait
+            forever for a capturedCount bump that will never come. */}
+        {captureError && (
+          <div className="countdown-loading">
+            <div className="countdown-loading-glow" aria-hidden="true" />
+            <div className="countdown-loading-content">
+              <p className="countdown-loading__kicker" style={{ color: 'var(--error)' }}>
+                {t('countdown.captureFailed', language)}
+              </p>
+              <p className="countdown-loading__sub" style={{ marginTop: '8px' }}>
+                {t('countdown.captureFailedSub', language)}
+              </p>
+              <div style={{ display: 'flex', gap: '1rem', marginTop: '2rem' }}>
+                <button className="countdown-btn-home" onClick={handleRetryShot}>
+                  <span>{t('reveal.tryAgain', language)}</span>
+                </button>
+                <button className="countdown-btn-home" onClick={onCancel}>
+                  <span className="btn-icon"><Home strokeWidth={1.5} size={20} /></span>
+                  <span>{t('reveal.home', language)}</span>
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -302,9 +337,9 @@ export default function CountdownScreen({
               )}
             </div>
             <p className="countdown-between__text">
-              {totalShots - (shotIndex + 1) === 1
+              {totalShots - capturedCount === 1
                 ? t('countdown.oneMore', language)
-                : t('countdown.moreToGo', language).replace('{n}', totalShots - (shotIndex + 1))
+                : t('countdown.moreToGo', language).replace('{n}', totalShots - capturedCount)
               }
             </p>
           </div>
@@ -315,7 +350,7 @@ export default function CountdownScreen({
         {/* Progress dots (multi-shot layouts only) */}
         {totalShots > 1 && (
           <div className="countdown-progress">
-            <ProgressDots current={shotIndex} total={totalShots} />
+            <ProgressDots current={capturedCount} total={totalShots} />
           </div>
         )}
 
