@@ -140,6 +140,7 @@ camera_svc.init()             # connect to gphoto2 camera
 ```python
 screen: str                        # Current UI screen name
 layoutMode: str                    # "single" | "collage"
+totalShots: int                    # Shots this layout requires (FSM-owned, from SHOTS_PER_LAYOUT)
 capturedImages: List[str]          # Raw image references for this take
 finalPhoto: Optional[str]          # Filename of processed photo
 retakeCount: int                   # Number of retakes this session
@@ -151,7 +152,8 @@ isProcessing: bool                 # True while job_queue is processing
 ```
 ATTRACT       -> [START_SESSION]
 CHOOSE_STYLE  -> [SELECT_LAYOUT]
-COUNTDOWN     -> [CAPTURE_DONE]
+COUNTDOWN     -> [SHOT_CAPTURED]   # one event per shot; FSM stays in COUNTDOWN
+                                   # until capturedImages reaches totalShots
 REVEAL        -> [RETAKE, PRINT_FROM_REVEAL]
 PICK_FAVORITE -> [FAVORITE_SELECT]
 FRAME_PICKER  -> [FRAME_SELECT, FRAME_SKIP]
@@ -223,7 +225,8 @@ asyncio.Queue -> _worker() task
 - **Decoupled frame buffer**: HTTP is never blocked by camera; old frames are silently overwritten if consumers are slow.
 - **Auto-standby watchdog**: If no preview request arrives within `_preview_idle_timeout` (10s), the camera enters standby to avoid overheating/disconnection.
 - **Command queue (`_cmd_queue`)**: Allows thread-safe commands (`STANDBY`, `RESUME`, `CAPTURE`) from the asyncio thread without locks.
-- **Capture flow**: `enqueue_capture()` -> worker thread fires the shutter, downloads the file, broadcasts `capture_complete` via SSE.
+- **Capture flow**: `enqueue_capture()` -> worker thread runs `_execute_capture_job()`, which emits granular `camera_job` SSE states (`started` -> `fired` -> `downloading` -> `completed`/`failed`) as it triggers the shutter and downloads the file.
+- **Capture retry-once policy**: If a trigger or download attempt fails, `_execute_capture_job()` waits `CAPTURE_RETRY_DELAY_S` (1.5s), reconnects if needed, and retries exactly once before emitting a terminal `failed` event. This mirrors `PrintService`'s retry-once pattern and is a workflow decision — it must never live in the frontend (Rule 14). A shot that fails both attempts stays `failed`; the frontend surfaces a retry/home affordance rather than silently hanging.
 - **Exponential backoff**: On init failure, waits `_init_backoff` seconds (doubles up to 60s) before retrying.
 
 **Mock mode:** `mock_camera.py` provides `MockCameraService` — same API, generates synthetic frames for dev/Windows environments (selected via `config.json -> camera_backend: "mock"`).
@@ -292,7 +295,7 @@ SseService (singleton sse_svc)
 |---|---|---|
 | `state_update` | `state_machine.py` | Full `BoothState` dict |
 | `camera_status` | `camera_service.py` (monitor) | `{connected, is_capturing, error, ...}` |
-| `capture_complete` | `camera_service.py` | `{job_id, filename, status}` |
+| `camera_job` | `camera_service.py` | `{job_id, status, filename?, error?}` — status: `started`/`fired`/`downloading`/`completed`/`failed`, one or more per capture (retried attempts re-emit `fired`) |
 | `printer_status` | `print_service.py` | `{connected, ready, status_text}` |
 
 ---
@@ -321,6 +324,7 @@ SseService (singleton sse_svc)
 | `couple_names` | — | Printed on photos |
 | `event_date` | — | Printed on photos |
 | `countdown_duration` | `3` | Seconds per countdown |
+| `shot_interval_ms` | `3000` | Pacing (ms) between shots in a multi-shot layout — backend-owned per Rule 14 |
 | `max_photos_per_session` | `3` | Retake limit |
 | `session_timeout` | `120` | Inactivity timeout (seconds) |
 | `printer_name` | `"mock"` | CUPS queue name |
@@ -346,7 +350,7 @@ SseService (singleton sse_svc)
   "level": "INFO",
   "source": "backend",
   "module": "camera",
-  "event": "capture_complete",
+  "event": "capture_completed",
   "msg": "Photo captured: photo_abc123.jpg",
   "sid": null,
   "dur": null,
@@ -408,7 +412,7 @@ Mounts `<App />` into `#root`. Minimal boilerplate.
 |---|---|---|---|
 | **AttractScreen** | `AttractScreen.jsx` | `ATTRACT` | Idle welcome. Language picker. Start button. |
 | **ChooseStyleScreen** | `ChooseStyleScreen.jsx` | `CHOOSE_STYLE` | Single vs. collage layout selection. |
-| **CountdownScreen** | `CountdownScreen.jsx` | `COUNTDOWN` | Live MJPEG preview. Per-shot countdown. Triggers captures. |
+| **CountdownScreen** | `CountdownScreen.jsx` | `COUNTDOWN` | Live MJPEG preview. Per-shot countdown. Triggers captures and reports each one via `SHOT_CAPTURED`. Owns no retry, pacing, or completion logic — those are backend-owned (Rule 14); on a permanently failed shot it shows a retry/home overlay rather than deciding what to do next. |
 | **RevealScreen** | `RevealScreen.jsx` | `REVEAL` | Shows processed photo. Retake / proceed to print. |
 | **PickFavoriteScreen** | `PickFavoriteScreen.jsx` | `PICK_FAVORITE` | Choose best photo from multi-retake session. |
 | **FramePickerScreen** | `FramePickerScreen.jsx` | `FRAME_PICKER` | Choose decorative overlay frame. |
@@ -507,7 +511,7 @@ Centralises all REST interactions:
                +----|   COUNTDOWN   |<---- RETAKE
                |    +---------------+
                |           |
-               |      CAPTURE_DONE
+               |    SHOT_CAPTURED x totalShots
                |           |
           FINISH            v
                |    +---------------+
@@ -569,21 +573,31 @@ state_machine: state -> COUNTDOWN (layoutMode="collage")
         v
 CountdownScreen renders with live MJPEG preview at /api/camera/preview
 
-[Repeat 3x] Countdown fires
+[Repeat per shot, up to totalShots=3] Countdown fires
         |  camera.standbyPreview()  -> POST /api/camera/standby
         |  camera.captureFrame()    -> POST /api/camera/capture
-        |  camera_svc.enqueue_capture() -> worker thread fires shutter
-        |  SSE: capture_complete {job_id, filename}
+        |  camera_svc.enqueue_capture() -> worker thread runs _execute_capture_job()
+        |  SSE: camera_job {job_id, status: "fired"}       -> flash/shutter sound
+        |  SSE: camera_job {job_id, status: "downloading"}
+        |  SSE: camera_job {job_id, status: "completed", filename}
+        |      (on failure: CameraService retries once internally after
+        |       CAPTURE_RETRY_DELAY_S before emitting a terminal "failed";
+        |       the frontend never orchestrates the retry — Rule 14)
         |  camera.resumePreview()   -> POST /api/camera/resume
         v
-CountdownScreen collects 3 filenames -> calls onComplete(images)
-
-App.jsx: handleCaptureComplete(images)
-        |  api.sendEvent("CAPTURE_DONE", {images, text, overlay_id})
+CountdownScreen: onShotCaptured(filename)
+        |  api.sendEvent("SHOT_CAPTURED", {filename})
         v
-state_machine: state -> REVEAL, isProcessing=true
-        |  job_queue.enqueue({type:"PROCESS_PHOTO", images, layout, text, overlay_id})
-        |  SSE state_update -> RevealScreen renders with spinner
+state_machine: capturedImages.append(filename)
+        |  len(capturedImages) < totalShots?
+        |    -> stay in COUNTDOWN, SSE state_update (capturedImages/totalShots)
+        |    -> CountdownScreen shows "BETWEEN" interstitial for shot_interval_ms
+        |       (backend config), then fires the next shot
+        |  len(capturedImages) >= totalShots?
+        |    -> state -> REVEAL, isProcessing=true
+        |    -> job_queue.enqueue({type:"PROCESS_PHOTO", images, layout,
+        |         text: _compose_banner_text(settings), overlay_id})
+        |    -> SSE state_update -> RevealScreen renders with spinner
         v
 job_queue._worker() [thread pool]
         |  process_photo_layout(images, "collage", text, overlay_id)
@@ -636,7 +650,7 @@ Backend Module          Event Type          Triggered When
 ----------------------------------------------------------
 state_machine.py   ->   state_update      -> Any FSM transition
 camera_service.py  ->   camera_status     -> Periodic monitor (~5s)
-camera_service.py  ->   capture_complete  -> After shutter fires + download
+camera_service.py  ->   camera_job        -> Per capture, granular: started/fired/downloading/completed/failed
 print_service.py   ->   printer_status    -> On print attempt
 ```
 
@@ -673,8 +687,12 @@ HTTP POST           |  resume_preview()         |
                     |    _latest_frame = frame  |
                     |    notify Condition       |
                     |    check _cmd_queue:      |
-                    |      CAPTURE -> shutter   |
-                    |              -> SSE event |
+                    |      CAPTURE -> _execute_capture_job() |
+                    |        -> fired/downloading/completed |
+                    |           SSE camera_job events        |
+                    |        -> retry once after             |
+                    |           CAPTURE_RETRY_DELAY_S on any  |
+                    |           failure, then "failed"        |
                     |      STANDBY -> sleep     |
                     |                           |
   [Thread: camera-monitor]                      |

@@ -64,12 +64,19 @@ The simplest end-to-end guest journey.
   Countdown ring animates (e.g. 5 → 4 → 3 → 2 → 1)
     → camera.standbyPreview() → POST /api/camera/standby  (pauses preview worker)
     → camera.captureFrame()   → POST /api/camera/capture  (fires shutter)
-    → backend worker: shutter fires, file saved to photos/
-    → SSE: capture_complete {job_id, filename}
+    → backend worker (_execute_capture_job): fires shutter, downloads, saves to photos/
+    → SSE: camera_job {job_id, status: "fired"}       (flash + shutter sound)
+    → SSE: camera_job {job_id, status: "downloading"}
+    → SSE: camera_job {job_id, status: "completed", filename}
+        (on failure, CameraService retries once internally after
+         CAPTURE_RETRY_DELAY_S before giving up — the frontend never
+         orchestrates the retry itself, per Rule 14; a shot that fails
+         both attempts shows a "Try Again / Home" overlay instead)
     → camera.resumePreview()  → POST /api/camera/resume
-  CountdownScreen collects 1 filename → calls onComplete([filename])
-    → POST /api/events {type: "CAPTURE_DONE", images: [filename], text: "...", overlay_id: "none"}
-    → FSM: COUNTDOWN → REVEAL (isProcessing=true)
+  CountdownScreen: onShotCaptured(filename)
+    → POST /api/events {type: "SHOT_CAPTURED", filename}
+    → FSM: capturedImages=[filename], len(capturedImages) >= totalShots (1)
+    → FSM composes banner text/overlay_id itself, state → REVEAL (isProcessing=true)
     → SSE state_update → frontend renders RevealScreen (spinner)
 
 [REVEAL screen — processing]
@@ -103,31 +110,37 @@ The simplest end-to-end guest journey.
 
 ### 2. Full Session — Collage (3 photos)
 
-Same as Flow 1 but CountdownScreen repeats the capture cycle 3 times.
+Same as Flow 1 but the FSM requires `totalShots=3` (`SHOTS_PER_LAYOUT["collage"]`),
+so CountdownScreen's countdown/capture cycle repeats — driven entirely by
+backend-confirmed `capturedCount`, not any frontend-owned counter.
 
 ```
 [CHOOSE_STYLE] Guest taps "3-Photo Collage"
   → POST /api/events {type: "SELECT_LAYOUT", payload: {mode: "collage"}}
-  → FSM: COUNTDOWN (layoutMode="collage")
+  → FSM: COUNTDOWN (layoutMode="collage", totalShots=3)
 
 [COUNTDOWN screen — 3 shots]
   Shot 1:
-    Countdown → standby → capture → resume
-    SSE capture_complete → filename_1 collected
-    ProgressDots shows ● ○ ○
+    Countdown → standby → capture (camera_job: fired/downloading/completed) → resume
+    SHOT_CAPTURED → FSM: capturedImages=[f1], 1 < totalShots
+      → SSE state_update (capturedImages, totalShots)
+      → CountdownScreen: ProgressDots shows ● ○ ○, "BETWEEN" interstitial for
+        shot_interval_ms (backend config, default 3000ms), then fires next shot
 
   Shot 2:
     Countdown → standby → capture → resume
-    SSE capture_complete → filename_2 collected
-    ProgressDots shows ● ● ○
+    SHOT_CAPTURED → FSM: capturedImages=[f1,f2], 2 < totalShots
+      → ProgressDots shows ● ● ○, same BETWEEN pacing
 
   Shot 3:
     Countdown → standby → capture → resume
-    SSE capture_complete → filename_3 collected
-    ProgressDots shows ● ● ●
+    SHOT_CAPTURED → FSM: capturedImages=[f1,f2,f3], 3 >= totalShots
+      → ProgressDots shows ● ● ●
+      → FSM composes banner text/overlay_id itself, state → REVEAL
 
-  onComplete([filename_1, filename_2, filename_3])
-    → CAPTURE_DONE with 3 images
+  A shot that fails both of CameraService's attempts (trigger + one retry)
+  never advances capturedImages; CountdownScreen shows a "Try Again / Home"
+  overlay instead of silently hanging or skipping the shot.
 
 [job_queue — collage layout]
   decode 3 images
@@ -334,8 +347,9 @@ Operator taps "Close" or presses outside
     → frontend: setConfig(data) — live update, no restart needed
 
   Effect on photos:
-    Next CAPTURE_DONE event will use the new couple_names + event_date
-    as the banner text composited onto the photo canvas
+    Next time a shot sequence completes (SHOT_CAPTURED reaches totalShots),
+    state_machine._compose_banner_text(settings) reads the fresh
+    couple_names + event_date as the banner text composited onto the canvas
 ```
 
 ---
@@ -352,7 +366,8 @@ Operator taps "Close" or presses outside
     → config.json updated
 
   Effect on next session:
-    CountdownScreen passes overlay_id from config to CAPTURE_DONE event
+    state_machine reads settings.selected_overlay itself when the shot
+      sequence completes (CountdownScreen never passes overlay_id — Rule 14)
     FramePickerScreen uses config.overlays to show frame options
     photo_processor.py looks up overlay filename from config.overlays[]
       and composites it onto the canvas
@@ -527,68 +542,82 @@ CountdownScreen: countdown hits 0
        → returns {status: "enqueued", job_id}
 
   [_worker_thread]
-  3. dequeues ("CAPTURE", job_id)
-  4. camera.capture(destpath)          (gphoto2 shutter + download)
-       Raw file saved to backend/photos/capture_<job_id>.jpg
-  5. sse_svc.dispatch_event("capture_complete", {
-         job_id, filename: "capture_<job_id>.jpg", status: "completed"
+  3. dequeues ("CAPTURE", job_id) → _execute_capture_job(job_id)
+  4. _attempt_capture(job_id):
+       emits camera_job {job_id, status: "fired"}       (flash + shutter sound)
+       camera.capture(...)                              (gphoto2 shutter)
+       emits camera_job {job_id, status: "downloading"}
+       camera.file_get(...) → save to backend/photos/capture_<job_id>.jpg
+       returns None on success, or an error string on failure
+  5. On error: sleep(CAPTURE_RETRY_DELAY_S=1.5s), reconnect if needed,
+       retry _attempt_capture() exactly once (re-emits "fired"/"downloading")
+  6. sse_svc.dispatch_event("camera_job", {
+         job_id, status: "completed", filename: "capture_<job_id>.jpg"
        })
+       — or, if both attempts failed: {job_id, status: "failed", error}
 
   [CountdownScreen — SSE listener]
-  6. Receives "capture_complete" for matching job_id
-  7. Records filename in captured list
+  7. Receives terminal camera_job event for matching job_id
+     completed → onShotCaptured(filename) → POST SHOT_CAPTURED
+     failed    → shows "Try Again / Home" overlay (no automatic retry —
+                 CameraService already retried once)
   8. camera.resumePreview()
        → POST /api/camera/resume
        → camera_svc.resume_preview()
        → _cmd_queue.put("RESUME")
        → worker thread: _preview_allowed.set() → preview loop resumes
 
-  If all shots collected → onComplete(filenames) → CAPTURE_DONE
+  FSM (not CountdownScreen) decides whether more shots are needed —
+  see Workflow 18.
 ```
 
 ---
 
 ### 18. Photo Processing Job
 
-Triggered by `CAPTURE_DONE` event.
+Triggered by the `SHOT_CAPTURED` event that brings `capturedImages` up to `totalShots`.
 
 ```
-state_machine.handle_event("CAPTURE_DONE", payload):
-  1. state.capturedImages = images
-  2. state.screen = "REVEAL"
-  3. state.isProcessing = true
-  4. job_queue.enqueue({
-       type: "PROCESS_PHOTO",
-       images: [...],   # filenames or base64
-       layout: "single" | "collage",
-       text: "Michael & Sarah · June 14, 2030",
-       overlay_id: "none" | "blush_floral" | ...
-     })
-  5. sse_svc broadcasts state_update → RevealScreen shows spinner
+state_machine.handle_event("SHOT_CAPTURED", {filename}):
+  1. state.capturedImages.append(filename)
+  2. if len(capturedImages) < totalShots:
+       broadcast state_update only — CountdownScreen paces the next shot
+       via shot_interval_ms and fires again (see Workflow 17)
+  3. else (sequence complete):
+       state.screen = "REVEAL"
+       state.isProcessing = true
+       job_queue.enqueue({
+         type: "PROCESS_PHOTO",
+         images: capturedImages,                 # filenames, FSM-owned list
+         layout: state.layoutMode,                # "single" | "collage"
+         text: _compose_banner_text(settings),    # FSM composes this itself
+         overlay_id: settings.selected_overlay or "none",
+       })
+  4. sse_svc broadcasts state_update → RevealScreen shows spinner
 
 job_queue._worker() receives PROCESS_PHOTO:
-  6. loop.run_in_executor(None, process_photo_layout, ...)
+  5. loop.run_in_executor(None, process_photo_layout, ...)
        [thread pool — does not block asyncio event loop]
 
   photo_processor.process_photo_layout():
-  7.  Decode each image (base64 → PIL or filename → open from disk)
-  8.  Create 1800×1200 canvas (cream #fdfbf7)
-  9.  Layout:
+  6.  Decode each image (base64 → PIL or filename → open from disk)
+  7.  Create 1800×1200 canvas (cream #fdfbf7)
+  8.  Layout:
         single  → fit 1440×960, paste at (180, 80)
         collage → fit 3× 540×720, paste at evenly spaced x positions
-  10. Load overlay PNG (if overlay_id ≠ "none")
+  9.  Load overlay PNG (if overlay_id ≠ "none")
         resize to 1800×1200 → composite with RGBA alpha mask
-  11. Draw text with Playfair Display 52pt, centred in bottom margin
-  12. canvas.save(photos/photo_<uuid10>.jpg, quality=95)
-  13. return "photo_<uuid10>.jpg"
+  10. Draw text with Playfair Display 52pt, centred in bottom margin
+  11. canvas.save(photos/photo_<uuid10>.jpg, quality=95)
+  12. return "photo_<uuid10>.jpg"
 
-  14. asyncio.create_task(_run_cleanup())  (triggers storage cleanup)
+  13. asyncio.create_task(_run_cleanup())  (triggers storage cleanup)
 
   state_machine.job_photo_processed(filename, images):
-  15. state.isProcessing = false
-  16. state.finalPhoto = filename
-  17. state.allSessionPhotos.append({filename, rawImages})
-  18. sse_svc broadcasts state_update → RevealScreen hides spinner, shows photo
+  14. state.isProcessing = false
+  15. state.finalPhoto = filename
+  16. state.allSessionPhotos.append({filename, rawImages})
+  17. sse_svc broadcasts state_update → RevealScreen hides spinner, shows photo
 ```
 
 ---

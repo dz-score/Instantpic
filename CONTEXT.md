@@ -23,7 +23,7 @@ Every important file in the project, grouped by layer. Use this as a quick-refer
 | [`main.py`](backend/main.py) | FastAPI app entry point. Declares all HTTP/SSE routes, runs the startup lifespan (init camera, start job queue), and serves the built frontend as static files. |
 | [`state_machine.py`](backend/state_machine.py) | Pure event-driven FSM representing the booth's logical state (`BoothState`). Validates transitions, updates state, and broadcasts changes via SSE. Issues no hardware commands directly. |
 | [`job_queue.py`](backend/job_queue.py) | Async work queue that offloads CPU-bound photo processing to a thread pool, then calls back into the state machine when done. Also triggers circular storage cleanup after each job. |
-| [`camera_service.py`](backend/camera_service.py) | gphoto2 wrapper managing a dedicated background worker thread for live MJPEG preview (decoupled frame buffer) and shutter capture, with auto-standby watchdog and exponential-backoff reconnection. |
+| [`camera_service.py`](backend/camera_service.py) | gphoto2 wrapper managing a dedicated background worker thread for live MJPEG preview (decoupled frame buffer) and shutter capture, with auto-standby watchdog, exponential-backoff reconnection, and a retry-once policy for a failed high-res capture. |
 | [`mock_camera.py`](backend/mock_camera.py) | Drop-in replacement for `camera_service.py` that generates synthetic preview frames; used on Windows/dev when `camera_backend: "mock"` is set in config. |
 | [`photo_processor.py`](backend/photo_processor.py) | Composites captured images into a 1800×1200 px canvas using Pillow: arranges single/collage layouts, blends RGBA overlay PNGs, renders Playfair Display branding text, and saves as JPEG. |
 | [`print_service.py`](backend/print_service.py) | Abstracts printer hardware behind a `PrinterDriver` ABC with `CupsPrinterDriver` (Linux, `lp` CLI) and `MockPrinterDriver` (dev). The `PrintService` singleton adds retry logic, status caching, and structured logging. |
@@ -50,7 +50,7 @@ Every important file in the project, grouped by layer. Use this as a quick-refer
 | [`conftest.py`](backend/tests/conftest.py) | Shared pytest fixtures: FastAPI `TestClient`, mock camera instance, temp directories, and pre-wired app overrides. |
 | [`test_api.py`](backend/tests/test_api.py) | Happy-path integration tests for all REST endpoints. |
 | [`test_api_errors.py`](backend/tests/test_api_errors.py) | Error-handling tests: 404, 400, 500 responses across endpoints. |
-| [`test_camera.py`](backend/tests/test_camera.py) | Unit tests for `CameraService` initialization, standby, resume, and status. |
+| [`test_camera.py`](backend/tests/test_camera.py) | Unit tests for `CameraService` initialization, standby, resume, status, and the capture retry-once policy (succeeds on retry / fails after retry). |
 | [`test_camera_worker.py`](backend/tests/test_camera_worker.py) | Tests for the background worker thread: frame production, command queue processing, capture flow. |
 | [`test_config.py`](backend/tests/test_config.py) | Tests for `load_settings`, `save_settings`, and `update_settings` round-trips. |
 | [`test_job_queue.py`](backend/tests/test_job_queue.py) | Tests for job enqueue, worker dispatch, state machine callbacks, and cleanup task triggering. |
@@ -89,7 +89,7 @@ Every important file in the project, grouped by layer. Use this as a quick-refer
 |---|---|
 | [`AttractScreen.jsx`](frontend/src/screens/AttractScreen.jsx) | Idle/attract loop: displays welcome message, language picker (EN/FR), and the "Start" button that fires `START_SESSION`. |
 | [`ChooseStyleScreen.jsx`](frontend/src/screens/ChooseStyleScreen.jsx) | Lets the guest pick Single photo or 3-photo Collage layout; fires `SELECT_LAYOUT` with the chosen mode. |
-| [`CountdownScreen.jsx`](frontend/src/screens/CountdownScreen.jsx) | Shows the live MJPEG camera preview, runs per-shot countdowns, triggers captures via `captureFrame()`, and collects filenames before firing `CAPTURE_DONE`. |
+| [`CountdownScreen.jsx`](frontend/src/screens/CountdownScreen.jsx) | Shows the live MJPEG camera preview, runs per-shot countdowns, triggers captures via `captureFrame()`, and reports each completed shot via `SHOT_CAPTURED`. Owns no retry, pacing, or completion logic (Rule 14) — the backend retries a failed capture once and drives round pacing/advancement via `shot_interval_ms`/`capturedCount`. |
 | [`RevealScreen.jsx`](frontend/src/screens/RevealScreen.jsx) | Displays the processed photo (or a spinner while `isProcessing`); offers Retake (up to limit) or Print actions. |
 | [`PickFavoriteScreen.jsx`](frontend/src/screens/PickFavoriteScreen.jsx) | Shows thumbnails of all photos from multi-retake sessions so the guest can choose their favourite before printing. |
 | [`FramePickerScreen.jsx`](frontend/src/screens/FramePickerScreen.jsx) | Presents available overlay frames side-by-side; fires `FRAME_SELECT` (with overlay id) or `FRAME_SKIP`. |

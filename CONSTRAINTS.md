@@ -92,7 +92,7 @@ These two events bypass `VALID_TRANSITIONS` and are accepted from **any** screen
 ---
 
 ### Rule: `isProcessing` must always be cleared by job callbacks
-The job queue is the **only** entity allowed to set `isProcessing=False`. The FSM sets it to `True` in `CAPTURE_DONE` and `FRAME_SELECT`, then waits for `job_photo_processed()`, `job_frame_processed()`, or `job_failed()`.
+The job queue is the **only** entity allowed to set `isProcessing=False`. The FSM sets it to `True` when `SHOT_CAPTURED` completes the sequence (`capturedImages` reaches `totalShots`) and in `FRAME_SELECT`, then waits for `job_photo_processed()`, `job_frame_processed()`, or `job_failed()`.
 
 > **Why:** If something else clears `isProcessing`, the frontend might proceed while the job is still running, showing a stale `finalPhoto`.
 
@@ -119,7 +119,7 @@ The frame buffer (`_latest_frame`) is a **single slot** that the worker thread o
 ---
 
 ### Rule: Standby/resume must bracket every capture
-The capture sequence is always: `standby()` → `enqueue_capture()` → `(wait for SSE capture_complete)` → `resume_preview()`. Skipping standby causes the preview worker to race with the capture command.
+The capture sequence is always: `standby()` → `enqueue_capture()` → `(wait for SSE camera_job: completed/failed)` → `resume_preview()`. Skipping standby causes the preview worker to race with the capture command.
 
 > **Why:** gphoto2 cannot simultaneously stream preview and fire the shutter. If preview is running when capture is triggered, gphoto2 returns a `GP_ERROR_IO` error.
 
@@ -131,6 +131,15 @@ The capture sequence is always: `standby()` → `enqueue_capture()` → `(wait f
 On failure, `_init_backoff` starts at 5 seconds and doubles up to a cap of 60 seconds.
 
 > **Why:** The Canon M50 takes ~3 seconds to enumerate over USB after being connected. Hammering gphoto2 with rapid retries during this window worsens the error state and delays successful connection.
+
+---
+
+### Rule: Capture retry-once policy lives in CameraService, not the frontend
+On a failed trigger or download, `_execute_capture_job()` waits `CAPTURE_RETRY_DELAY_S` (1.5s), reconnects if needed, and retries **exactly once** before emitting a terminal `failed` `camera_job` event. The frontend (`CountdownScreen.jsx`) only ever observes one `completed` or `failed` outcome per shot — it never counts attempts or schedules its own retry delay.
+
+> **Why:** Retry count and backoff timing for hardware I/O are workflow/business decisions (Rule 14) and must be owned by the backend so every consumer (frontend, future integrations) sees the same behavior, not a client-specific reimplementation.
+
+> **What breaks:** Reintroducing a retry loop in `CountdownScreen.jsx` (as before this fix) duplicates a decision the backend already makes, and desyncs UI feedback (flash/shutter-sound) from which physical attempt actually succeeded, since CameraService may itself have already retried once.
 
 ---
 
@@ -290,7 +299,7 @@ Never use `print()` for operational logging in production code. `print()` is acc
 ---
 
 ### Rule: Log events use `snake_case` slugs
-`event` field examples: `camera_init_ok`, `capture_complete`, `job_error`, `config_updated`.
+`event` field examples: `camera_init_ok`, `capture_completed`, `job_error`, `config_updated`.
 
 > **Why:** The Admin Panel log viewer and any future log analysis tooling rely on filterable, machine-readable event slugs.
 
