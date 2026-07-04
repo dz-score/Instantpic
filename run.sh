@@ -1,4 +1,5 @@
 #!/bin/bash
+rm -rf /home/instantpic/.cache/chromium/*
 cd /home/instantpic/Projects/instantpic-antigravity
 
 source backend/.venv/bin/activate
@@ -6,7 +7,7 @@ source backend/.venv/bin/activate
 cd frontend && npm run build
 cd ..
 uvicorn backend.main:app --host 0.0.0.0 --port 8000 &
-sleep 1
+sleep 2
 chromium-browser \
   --kiosk \
   --start-maximized \
