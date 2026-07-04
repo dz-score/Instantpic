@@ -73,9 +73,29 @@ export default function CountdownScreen({
   // Tracks the capturedCount we've already reacted to, so the round-advance
   // effect below only fires once per new shot the backend confirms.
   const lastHandledCount = useRef(capturedCount);
+  // Mirrors countdownVideoDone in a ref so onFired (created inside a
+  // useCallback that doesn't depend on that state) always reads the current
+  // value instead of a stale closure. If the backend's 'fired' event beats
+  // the ring's own 'ended' event (real decode/seek latency varies), the
+  // flash is deferred here instead of firing over the still-playing ring.
+  const countdownVideoDoneRef = useRef(false);
+  const pendingFlashRef = useRef(null);
   // Stable MJPEG src — set once on mount, never changes.
   // This ensures exactly ONE backend preview connection for the entire session.
   const previewSrc = useRef(`${previewUrl}?t=${Date.now()}`);
+
+  // Marks the ring as "done" (natural end, or a load/decode error) and
+  // flushes any flash/sound that was waiting on it — an error must still
+  // unblock the pending flash, or a missing/broken video file would
+  // silently swallow the shutter feedback for the rest of the session.
+  const handleCountdownVideoDone = useCallback(() => {
+    setCountdownVideoDone(true);
+    countdownVideoDoneRef.current = true;
+    if (pendingFlashRef.current) {
+      pendingFlashRef.current();
+      pendingFlashRef.current = null;
+    }
+  }, []);
 
   const safeTimeout = useCallback((fn, ms) => {
     const id = setTimeout(fn, ms);
@@ -107,6 +127,8 @@ export default function CountdownScreen({
   const runCountdown = useCallback((onDone) => {
     setPhase('COUNTDOWN');
     setCountdownVideoDone(false);
+    countdownVideoDoneRef.current = false;
+    pendingFlashRef.current = null;
     let c = COUNTDOWN_FROM;
     setCount(c);
 
@@ -159,12 +181,23 @@ export default function CountdownScreen({
     return new Promise((resolve) => {
       captureResolvers.current[jobId] = {
         onFired: () => {
-          // Flash + sound EXACTLY when the backend confirms the shutter opened!
-          if (flashEnabled) {
-            setFlashActive(true);
-            safeTimeout(() => setFlashActive(false), 250);
+          // Flash + sound once the backend confirms the shutter opened —
+          // but never before the countdown ring has actually finished
+          // playing. The two are only usually in sync by timing coincidence;
+          // if the ring is still mid-playback when 'fired' arrives, defer
+          // the flash to the ring's own 'ended' event instead of overlapping it.
+          const triggerFlash = () => {
+            if (flashEnabled) {
+              setFlashActive(true);
+              safeTimeout(() => setFlashActive(false), 250);
+            }
+            playShutterSound();
+          };
+          if (countdownVideoDoneRef.current) {
+            triggerFlash();
+          } else {
+            pendingFlashRef.current = triggerFlash;
           }
-          playShutterSound();
         },
         onCompleted: (filename) => {
           setIsCapturing(false);
@@ -336,7 +369,8 @@ export default function CountdownScreen({
             playsInline
             preload="auto"
             className="countdown-ring-video"
-            onEnded={() => setCountdownVideoDone(true)}
+            onEnded={handleCountdownVideoDone}
+            onError={handleCountdownVideoDone}
           />
         </div>
 
