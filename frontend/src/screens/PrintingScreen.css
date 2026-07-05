@@ -326,7 +326,7 @@
   height: 60px;
   padding: 0 var(--space-lg);
   border-radius: var(--radius-button);
-  border: 4px solid transparent;
+  border: 2px solid transparent;
   cursor: pointer;
   background: var(--blush-gradient) padding-box, var(--border-gold-gradient) border-box; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
   box-shadow: var(--shadow-button);
