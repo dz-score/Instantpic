@@ -22,8 +22,8 @@ import './CountdownScreen.css';
  * 'completed' or 'failed' event per shot. The backend advances to REVEAL
  * once it has received all the shots (which unmounts this screen).
  *
- * Camera events are consumed from the app's single SSE stream (`cameraJob`,
- * `cameraMetrics`) passed down as props, rather than opening a second stream.
+ * Camera events are consumed from the app's single SSE stream (`cameraJob`)
+ * passed down as a prop, rather than opening a second stream.
  */
 export default function CountdownScreen({
   previewUrl,
@@ -33,7 +33,6 @@ export default function CountdownScreen({
   resumePreview,
   standbyPreview,
   cameraJob,
-  cameraMetrics,
   onShotCaptured,
   onCancel,
   config,
@@ -402,32 +401,6 @@ export default function CountdownScreen({
           </div>
         )}
 
-        {/* --- Diagnostic Overlay --- */}
-        <div style={{
-          position: 'absolute',
-          top: '10px',
-          left: '10px',
-          background: 'rgba(0,0,0,0.7)',
-          color: '#0f0',
-          padding: '10px',
-          fontFamily: 'monospace',
-          fontSize: '12px',
-          zIndex: 9999,
-          pointerEvents: 'none',
-          borderRadius: '4px'
-        }}>
-          <b>Diagnostics</b><br/>
-          Phase: {phase}<br/>
-          Capturing: {isCapturing ? 'Yes' : 'No'}<br/>
-          Shots: {capturedCount}/{totalShots}<br/>
-          Metrics: <span>
-            {cameraMetrics
-              ? `FPS: ${cameraMetrics.fps} | Latency: ${cameraMetrics.latency_ms}ms | ` +
-                `Worker: ${cameraMetrics.worker_running ? 'ON' : 'OFF'} | ` +
-                `Allowed: ${cameraMetrics.allowed ? 'YES' : 'NO'}`
-              : 'Waiting...'}
-          </span>
-        </div>
       </div>
     </div>
   );
