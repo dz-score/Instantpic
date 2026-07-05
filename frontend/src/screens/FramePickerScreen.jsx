@@ -129,7 +129,7 @@ export default function FramePickerScreen({
           onClick={handleConfirm}
           disabled={isProcessing}
         >
-          <span className="btn-icon"><Printer strokeWidth={1.5} size={24} /></span>
+          <span className="btn-icon"><Printer strokeWidth={1.5} size={36} /></span>
           <span className="frame__btn-print-main">
             {isProcessing ? t('framePicker.applying', language) : t('framePicker.printBtn', language)}
           </span>

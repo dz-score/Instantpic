@@ -25,6 +25,7 @@
   --gold-light:         #E3C792;
   --gold-dark:          #B98B3D;
   --gold-gradient:      linear-gradient(135deg, #E3C792 0%, #D4AF6A 50%, #B98B3D 100%);
+  --border-gold-gradient: linear-gradient(135deg, #E3C792 0%, #D4AF6A 50%, #B98B3D 100%);
   --sage:               #8B9E8B;
   --dusty-rose:         #D9B4AD;
 
@@ -70,6 +71,7 @@
   --radius-md:          20px;
   --radius-lg:          36px;
   --radius-full:        9999px;
+  --radius-button:      20px;
 
   /* ── Shadows (Soft Luxury) ── */
   --shadow-sm:          0 8px 30px rgba(0, 0, 0, 0.08);
