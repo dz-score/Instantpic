@@ -1,8 +1,11 @@
 """
 Structured JSONL logger for the photo booth backend.
 
-- Writes one JSON object per line to logs/backend.log
-- RotatingFileHandler: 5MB per file, 3 backups (~20MB max)
+- Writes one JSON object per line to logs/backend_<startup-timestamp>.log
+- Each process startup gets its own timestamped file, so runs are never
+  mixed together in the same log
+- RotatingFileHandler: 5MB per file, 3 backups (~20MB max) as a safety net
+  for a single very long-running session
 - Also logs to stdout for systemd journal capture
 
 Usage:
@@ -21,8 +24,9 @@ from datetime import datetime, timezone
 # ── Paths ──
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LOG_DIR = os.path.join(BASE_DIR, "logs")
-BACKEND_LOG = os.path.join(LOG_DIR, "backend.log")
-FRONTEND_LOG = os.path.join(LOG_DIR, "frontend.log")
+_STARTUP_TS = datetime.now().strftime("%Y%m%d_%H%M%S")
+BACKEND_LOG = os.path.join(LOG_DIR, f"backend_{_STARTUP_TS}.log")
+FRONTEND_LOG = os.path.join(LOG_DIR, f"frontend_{_STARTUP_TS}.log")
 
 os.makedirs(LOG_DIR, exist_ok=True)
 

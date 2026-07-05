@@ -340,8 +340,8 @@ SseService (singleton sse_svc)
 **Responsibility:** JSONL logging to rotating files, with dual output (file + stdout).
 
 **Log files:**
-- `logs/backend.log` — structured JSONL from backend (5MB x 3 backups)
-- `logs/frontend.log` — pre-formatted JSONL lines forwarded from the frontend via `POST /api/logs`
+- `logs/backend_<startup-timestamp>.log` — structured JSONL from backend, one new file per process startup (5MB x 3 backups within a run)
+- `logs/frontend_<startup-timestamp>.log` — pre-formatted JSONL lines forwarded from the frontend via `POST /api/logs`, same per-startup naming
 
 **JSONL schema:**
 ```json
@@ -811,14 +811,14 @@ backend/logger.py
         log.write_frontend_line(json_line)  <- from POST /api/logs
 
     Output:
-        logs/backend.log   (RotatingFileHandler, 5MB x3, JSONL)
+        logs/backend_<startup-timestamp>.log   (new file per run; RotatingFileHandler, 5MB x3, JSONL)
         stdout             (INFO+, human-readable for systemd journal)
 
 frontend/src/utils/logger.js
     logger.info(module, event, msg, data, dur)
     Batches lines in-memory, flushes every 10s (or on 20 lines)
     -> POST /api/logs  {lines: ["..."]}
-    -> backend writes to logs/frontend.log
+    -> backend writes to logs/frontend_<startup-timestamp>.log
 ```
 
 ---
