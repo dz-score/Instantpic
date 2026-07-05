@@ -406,7 +406,8 @@
 }
 
 .sys-log-row--debug .sys-log-level {
-  color: var(--champagne);
+  color: var(--text-secondary);
+  opacity: 0.65;
 }
 
 /* ── Cell-specific ── */

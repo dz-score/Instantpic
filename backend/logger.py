@@ -31,6 +31,12 @@ FRONTEND_LOG = os.path.join(LOG_DIR, f"frontend_{_STARTUP_TS}.log")
 os.makedirs(LOG_DIR, exist_ok=True)
 
 # ── JSONL Formatter ──
+# Python's own levelname for logging.WARNING is "WARNING", but the frontend
+# logger (logger.js) and the admin panel's CSS/level-filter both use "WARN" —
+# normalize here so backend and frontend entries render identically.
+_LEVELNAME_MAP = {"WARNING": "WARN"}
+
+
 class JSONLFormatter(logging.Formatter):
     """Formats each log record as a single JSON line."""
 
@@ -38,7 +44,7 @@ class JSONLFormatter(logging.Formatter):
         entry = {
             "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.") +
                   f"{datetime.now(timezone.utc).microsecond // 1000:03d}Z",
-            "level": record.levelname,
+            "level": _LEVELNAME_MAP.get(record.levelname, record.levelname),
             "source": "backend",
             "module": getattr(record, "mod", "system"),
             "event": getattr(record, "event", "log"),
