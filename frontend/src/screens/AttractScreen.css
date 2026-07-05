@@ -42,7 +42,7 @@
 .attract-flourish__line {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-xs);
 }
 
 .attract-flourish__curl {
@@ -95,7 +95,7 @@
 
 /* ═══ Heart Divider ═══ */
 .attract-heart {
-  font-size: 1rem;
+  font-size: var(--text-caption);
   color: var(--dusty-rose);
   opacity: 0.6;
   margin-bottom: var(--space-sm);
@@ -126,7 +126,7 @@
   min-width: 380px;
   height: 80px;
   padding: 0 var(--space-xl);
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   overflow: hidden;
 
   background: var(--blush-gradient);
@@ -141,18 +141,18 @@
 }
 
 .attract-cta__icon {
-  font-size: 1.5rem;
-  color: white;
+  font-size: var(--text-h3);
+  color: var(--text-on-gold);
   z-index: 1;
 }
 
 .attract-cta__text {
   font-family: var(--font-body);
-  font-size: 1.25rem;
+  font-size: var(--text-body);
   font-weight: 700;
   letter-spacing: 3px;
   text-transform: uppercase;
-  color: white;
+  color: var(--text-on-gold);
   z-index: 1;
 }
 
@@ -191,10 +191,10 @@
   right: var(--space-xl);
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
+  gap: var(--space-xs);
+  padding: var(--space-xs) 12px;
   border-radius: 30px;
-  background: rgba(249, 245, 239, 0.85);
+  background: var(--bg-frosted);
   border: 1px solid var(--gold);
   backdrop-filter: blur(8px);
   box-shadow: var(--shadow-sm);
@@ -209,7 +209,7 @@
 }
 
 .lang-flag {
-  font-size: 1.5rem;
+  font-size: var(--text-h3);
   opacity: 0.4;
   filter: grayscale(80%);
   transition: all var(--duration-normal) ease;

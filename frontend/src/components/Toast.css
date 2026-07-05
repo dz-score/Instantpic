@@ -39,7 +39,7 @@
   justify-content: center;
   font-size: 12px;
   font-weight: 700;
-  color: white;
+  color: var(--text-on-gold);
   flex-shrink: 0;
 }
 

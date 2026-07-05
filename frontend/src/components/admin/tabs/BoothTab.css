@@ -9,7 +9,7 @@
 .booth-section {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-xs);
   padding: var(--space-sm) 0;
   border-bottom: 1px solid var(--surface-border);
 }

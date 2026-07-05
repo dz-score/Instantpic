@@ -246,7 +246,7 @@
 .sys-pin-save {
   border: none;
   background: var(--gold-gradient);
-  color: white;
+  color: var(--text-on-gold);
   box-shadow: var(--shadow-button);
 }
 

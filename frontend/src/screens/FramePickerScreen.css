@@ -15,7 +15,7 @@
   left: var(--space-md);
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-xs);
   padding: 10px 20px;
   border-radius: var(--radius-full);
   border: 1px solid var(--gold);
@@ -64,7 +64,7 @@
 .frame__flourish-line {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-xs);
 }
 
 .frame__flourish-curl {
@@ -199,7 +199,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-xs);
   padding: var(--space-xs);
   border-radius: var(--radius-md);
   border: 2px solid rgba(212, 175, 106, 0.15);
@@ -260,7 +260,7 @@
   height: 24px;
   border-radius: 50%;
   background: var(--gold);
-  color: white;
+  color: var(--text-on-gold);
   font-size: 12px;
   font-weight: 700;
   display: flex;
@@ -302,7 +302,7 @@
   cursor: pointer;
   background: var(--blush-gradient); text-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
   box-shadow: var(--shadow-button);
-  color: white;
+  color: var(--text-on-gold);
   transition: all var(--duration-normal) var(--ease-out);
 }
 
@@ -318,7 +318,7 @@
 
 .frame__btn-print-main {
   font-family: var(--font-body);
-  font-size: 1rem;
+  font-size: var(--text-caption);
   font-weight: 700;
   letter-spacing: 3px;
   text-transform: uppercase;

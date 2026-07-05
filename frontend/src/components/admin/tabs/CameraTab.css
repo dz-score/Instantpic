@@ -19,7 +19,7 @@
 .camera-retry-btn {
   background: var(--bg-elevated);
   border: 1px solid var(--surface-border);
-  padding: 8px 16px;
+  padding: var(--space-xs) var(--space-sm);
   border-radius: var(--radius-full);
   cursor: pointer;
   font-family: var(--font-body);
@@ -34,7 +34,7 @@
 .camera-saving-indicator {
   background: var(--champagne-light);
   color: var(--gold-dark);
-  padding: 8px 16px;
+  padding: var(--space-xs) var(--space-sm);
   border-radius: var(--radius-sm);
   font-size: 0.9rem;
   font-weight: 500;
@@ -61,7 +61,7 @@
 }
 
 .camera-select {
-  padding: 12px 16px;
+  padding: 12px var(--space-sm);
   border: 1.5px solid var(--surface-border);
   border-radius: var(--radius-md);
   background: var(--bg-elevated);
