@@ -30,7 +30,7 @@ Every important file in the project, grouped by layer. Use this as a quick-refer
 | [`sse_service.py`](backend/sse_service.py) | Fan-out Server-Sent Events service. Any backend module calls `sse_svc.dispatch_event()` to push state updates, camera status, and capture results to all connected browser clients simultaneously. |
 | [`storage.py`](backend/storage.py) | Ensures `photos/` and `overlays/` directories exist, lists photos by recency, and enforces circular storage (deletes oldest files when count or disk-space limits are exceeded). |
 | [`config.py`](backend/config.py) | Pydantic `AppSettings` model with `load_settings()`, `save_settings()`, and `update_settings()` helpers that read/write `config.json` at the project root. |
-| [`logger.py`](backend/logger.py) | Structured JSONL logger (`BoothLogger` singleton `log`) writing to rotating `logs/backend.log` (5 MB × 3) and stdout. Also accepts pre-formatted frontend log lines for `logs/frontend.log`. |
+| [`logger.py`](backend/logger.py) | Structured JSONL logger (`BoothLogger` singleton `log`) writing to a fresh `logs/backend_<startup-timestamp>.log` (5 MB × 3) each process start, plus stdout. Also accepts pre-formatted frontend log lines for `logs/frontend_<startup-timestamp>.log`. |
 | [`diagnostics.py`](backend/diagnostics.py) | Aggregates system health (printer status, disk usage, photo count) for the admin panel, and executes emergency actions (`restart_booth`, `restart_printer`, `clear_queue`) via systemd/CUPS CLI. |
 | [`generate_sound.py`](backend/generate_sound.py) | One-off utility script to generate audio asset files (beeps, shutter click) used by the frontend sound system. |
 | [`requirements.txt`](backend/requirements.txt) | Python dependencies: FastAPI, uvicorn, gphoto2, Pillow, pydantic, sse-starlette, qrcode. |
@@ -134,7 +134,7 @@ Every important file in the project, grouped by layer. Use this as a quick-refer
 | File | Responsibility |
 |---|---|
 | [`i18n.js`](frontend/src/utils/i18n.js) | English/French translation map with a `t(key, lang)` lookup helper used by every screen for bilingual support. |
-| [`logger.js`](frontend/src/utils/logger.js) | Frontend structured logger: buffers JSONL entries in memory and periodically flushes them to `POST /api/logs` so they land in `logs/frontend.log`. |
+| [`logger.js`](frontend/src/utils/logger.js) | Frontend structured logger: buffers JSONL entries in memory and periodically flushes them to `POST /api/logs` so they land in the current run's `logs/frontend_<startup-timestamp>.log`. |
 | [`sounds.js`](frontend/src/utils/sounds.js) | Web Audio API sound effect helpers: countdown beep, shutter click, and success chime, with graceful no-op if audio is unavailable. |
 | [`compliments.js`](frontend/src/utils/compliments.js) | Small array of compliment strings randomly shown on the RevealScreen to delight guests. |
 
@@ -144,8 +144,8 @@ Every important file in the project, grouped by layer. Use this as a quick-refer
 
 | File | Responsibility |
 |---|---|
-| `backend.log` | Rotating JSONL log written by the backend (`logger.py`). 5 MB × 3 backups. Each line is a structured JSON object with `ts`, `level`, `module`, `event`, `msg`, and optional `data`. |
-| `frontend.log` | Rotating JSONL log for frontend events, forwarded via `POST /api/logs` and written as-is by the backend logger. Same schema as `backend.log` with `source: "frontend"`. |
+| `backend_<startup-timestamp>.log` | Rotating JSONL log written by the backend (`logger.py`), one new file per process start. 5 MB × 3 backups within a run. Each line is a structured JSON object with `ts`, `level`, `module`, `event`, `msg`, and optional `data`. |
+| `frontend_<startup-timestamp>.log` | Rotating JSONL log for frontend events, forwarded via `POST /api/logs` and written as-is by the backend logger. Same per-run naming and schema as the backend log, with `source: "frontend"`. |
 
 ---
 

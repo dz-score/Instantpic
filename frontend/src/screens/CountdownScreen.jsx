@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ProgressDots from '../components/ProgressDots';
 import { playShutterSound } from '../utils/sounds';
+import { logger } from '../utils/logger';
 import { t } from '../utils/i18n';
 import { Home } from 'lucide-react';
 import './CountdownScreen.css';
@@ -21,8 +22,8 @@ import './CountdownScreen.css';
  * 'completed' or 'failed' event per shot. The backend advances to REVEAL
  * once it has received all the shots (which unmounts this screen).
  *
- * Camera events are consumed from the app's single SSE stream (`cameraJob`,
- * `cameraMetrics`) passed down as props, rather than opening a second stream.
+ * Camera events are consumed from the app's single SSE stream (`cameraJob`)
+ * passed down as a prop, rather than opening a second stream.
  */
 export default function CountdownScreen({
   previewUrl,
@@ -32,7 +33,6 @@ export default function CountdownScreen({
   resumePreview,
   standbyPreview,
   cameraJob,
-  cameraMetrics,
   onShotCaptured,
   onCancel,
   config,
@@ -142,7 +142,9 @@ export default function CountdownScreen({
     // Hardware accelerated restart of video
     if (countdownVideoRef.current) {
       countdownVideoRef.current.currentTime = startTime;
-      countdownVideoRef.current.play().catch(err => console.log('Video playback error:', err));
+      countdownVideoRef.current.play().catch(err =>
+        logger.warn('countdown', 'countdown_video_play_fail', 'Countdown ring video failed to play', { error: err.message })
+      );
     }
 
     timerRef.current = setInterval(() => {
@@ -208,7 +210,7 @@ export default function CountdownScreen({
           resolve(filename);
         },
         onFailed: (error) => {
-          console.warn('[CountdownScreen] Capture failed:', error);
+          logger.warn('countdown', 'capture_failed', 'Shot capture failed permanently', { error });
           setIsCapturing(false);
           setCaptureError(error || true);
           resolve(null);
@@ -399,32 +401,6 @@ export default function CountdownScreen({
           </div>
         )}
 
-        {/* --- Diagnostic Overlay --- */}
-        <div style={{
-          position: 'absolute',
-          top: '10px',
-          left: '10px',
-          background: 'rgba(0,0,0,0.7)',
-          color: '#0f0',
-          padding: '10px',
-          fontFamily: 'monospace',
-          fontSize: '12px',
-          zIndex: 9999,
-          pointerEvents: 'none',
-          borderRadius: '4px'
-        }}>
-          <b>Diagnostics</b><br/>
-          Phase: {phase}<br/>
-          Capturing: {isCapturing ? 'Yes' : 'No'}<br/>
-          Shots: {capturedCount}/{totalShots}<br/>
-          Metrics: <span>
-            {cameraMetrics
-              ? `FPS: ${cameraMetrics.fps} | Latency: ${cameraMetrics.latency_ms}ms | ` +
-                `Worker: ${cameraMetrics.worker_running ? 'ON' : 'OFF'} | ` +
-                `Allowed: ${cameraMetrics.allowed ? 'YES' : 'NO'}`
-              : 'Waiting...'}
-          </span>
-        </div>
       </div>
     </div>
   );

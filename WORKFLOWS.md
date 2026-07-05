@@ -393,7 +393,7 @@ Operator taps "Close" or presses outside
   Log viewer:
     Tapping "Load Logs" → api.getRecentLogs(50, "both")
       → GET /api/logs/recent?count=50&source=both
-      → backend: tail last 50 lines from backend.log + frontend.log
+      → backend: tail last 50 lines from the current run's backend_<ts>.log + frontend_<ts>.log
       → sort by timestamp descending
       → returns JSON array of log entries
       → displayed as a scrollable list, colour-coded by level
