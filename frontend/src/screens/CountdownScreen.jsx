@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ProgressDots from '../components/ProgressDots';
 import { playShutterSound } from '../utils/sounds';
+import { logger } from '../utils/logger';
 import { t } from '../utils/i18n';
 import { Home } from 'lucide-react';
 import './CountdownScreen.css';
@@ -142,7 +143,9 @@ export default function CountdownScreen({
     // Hardware accelerated restart of video
     if (countdownVideoRef.current) {
       countdownVideoRef.current.currentTime = startTime;
-      countdownVideoRef.current.play().catch(err => console.log('Video playback error:', err));
+      countdownVideoRef.current.play().catch(err =>
+        logger.warn('countdown', 'countdown_video_play_fail', 'Countdown ring video failed to play', { error: err.message })
+      );
     }
 
     timerRef.current = setInterval(() => {
@@ -208,7 +211,7 @@ export default function CountdownScreen({
           resolve(filename);
         },
         onFailed: (error) => {
-          console.warn('[CountdownScreen] Capture failed:', error);
+          logger.warn('countdown', 'capture_failed', 'Shot capture failed permanently', { error });
           setIsCapturing(false);
           setCaptureError(error || true);
           resolve(null);
