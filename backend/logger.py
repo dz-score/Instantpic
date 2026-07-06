@@ -22,8 +22,10 @@ from logging.handlers import RotatingFileHandler
 from datetime import datetime, timezone
 
 # ── Paths ──
+# BOOTH_LOG_DIR overrides the destination directory — used by the test
+# suite (conftest.py) to keep pytest runs out of the real logs/ folder.
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-LOG_DIR = os.path.join(BASE_DIR, "logs")
+LOG_DIR = os.environ.get("BOOTH_LOG_DIR") or os.path.join(BASE_DIR, "logs")
 _STARTUP_TS = datetime.now().strftime("%Y%m%d_%H%M%S")
 BACKEND_LOG = os.path.join(LOG_DIR, f"backend_{_STARTUP_TS}.log")
 FRONTEND_LOG = os.path.join(LOG_DIR, f"frontend_{_STARTUP_TS}.log")

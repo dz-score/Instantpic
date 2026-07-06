@@ -1,5 +1,14 @@
 import os
 import json
+import tempfile
+
+# Route the structured logger's files into a temp dir so test runs don't
+# pollute the real logs/ directory. backend.logger creates its log files at
+# import time, so this must be set before any backend module is imported —
+# pytest imports conftest.py before collecting the test modules, making this
+# the one place that reliably runs first.
+os.environ.setdefault("BOOTH_LOG_DIR", tempfile.mkdtemp(prefix="booth-test-logs-"))
+
 import pytest
 import base64
 from io import BytesIO
