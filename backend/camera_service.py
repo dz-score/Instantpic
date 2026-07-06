@@ -49,6 +49,15 @@ class CameraService:
         # be treated as a real disconnect.
         self._preview_warmup_grace = 3.0
 
+        # True while the current session's init-time warmup preview has
+        # failed — the reliable signature of a wedged live-view session
+        # (stale camera-side state left by a previous unclean process kill;
+        # config reads work but every capture_preview stalls ~3s then
+        # errors [-1]). While set, the worker fails fast into its
+        # exit+re-init heal and the idle watchdog defers resting so the
+        # heal isn't stranded until the next viewer arrives.
+        self._warmup_failed = False
+
         # --- Decoupled frame buffer ---
         # The worker thread writes the latest frame here.
         # HTTP consumers wait on _frame_condition for new frames.
@@ -194,9 +203,13 @@ class CameraService:
                     with self._frame_condition:
                         self._latest_frame = bytes(memoryview(file_data))
                         self._frame_condition.notify_all()
+                    self._warmup_failed = False
                     log.debug("camera", "camera_warmup", "Viewfinder pre-warmed")
-                except Exception:
-                    pass
+                except Exception as e:
+                    self._warmup_failed = True
+                    log.warn("camera", "camera_warmup_fail",
+                             f"Warmup preview failed ({e}) — live-view session likely "
+                             "stale from an unclean shutdown; worker will fail fast to re-init")
 
                 # Start the background worker if not already running
                 self._start_worker()
@@ -258,7 +271,11 @@ class CameraService:
             # a camera that's erroring intermittently (never enough
             # consecutive failures to trip a full disconnect) still gets
             # forced to rest within _preview_idle_timeout of the last viewer.
-            if self._preview_allowed.is_set() and \
+            # Exception: while the session is wedged (_warmup_failed) the
+            # worker is mid-heal — pausing now would strand the fail-fast →
+            # re-init cascade until the next viewer arrives, so the rest is
+            # deferred until the session produces a frame again.
+            if self._preview_allowed.is_set() and not self._warmup_failed and \
                     time.monotonic() - self._last_preview_request > self._preview_idle_timeout:
                 log.info("camera", "camera_watchdog", f"No preview requested for {self._preview_idle_timeout}s. Auto-pausing worker.")
                 self.standby()
@@ -306,6 +323,8 @@ class CameraService:
                     frame = bytes(memoryview(file_data))
                     cap_time = time.perf_counter() - cap_start
                     consecutive_errors = 0
+                    # A real frame proves the session healed.
+                    self._warmup_failed = False
                 finally:
                     self.lock.release()
 
@@ -330,9 +349,18 @@ class CameraService:
                 log.debug("camera_timing", "worker_preview_err", f"Preview error #{consecutive_errors}: {e}")    
 
                 warming_up = (time.monotonic() - self._last_init_time) < self._preview_warmup_grace
-                if consecutive_errors > 5 and not self._capture_in_progress and not warming_up:
+                # A session whose warmup preview already failed is almost
+                # certainly wedged — every further attempt just burns a ~3s
+                # stall — so give up after 2 errors instead of 6 to reach the
+                # exit+re-init heal fast.
+                error_limit = 2 if self._warmup_failed else 6
+                if consecutive_errors >= error_limit and not self._capture_in_progress and not warming_up:
                     log.error("camera", "camera_preview_fail", f"Preview worker failed: {e}")
                     self.connected = False
+                    # Start the next session's error count from zero —
+                    # carrying it over gave the healed session a hair trigger
+                    # where a single transient stall re-tripped a disconnect.
+                    consecutive_errors = 0
                     sse_svc.dispatch_event("camera_status", self.get_status())
                 
                 # Sleep briefly on error. 0.1s is enough to let USB settle
@@ -395,6 +423,11 @@ class CameraService:
         total_idle = 0.0
 
         while my_generation == self._preview_generation and not self._shutdown_event.is_set():
+            # An attached viewer counts as a preview request even while no
+            # frames arrive (camera erroring / mid-re-init) — otherwise the
+            # idle watchdog pauses the worker 10s into an outage and the
+            # stream stays black until the next screen entry.
+            self._last_preview_request = time.monotonic()
             got_frame = await anyio.to_thread.run_sync(self._wait_for_frame, POLL_SLICE)
 
             if not got_frame:
@@ -421,8 +454,6 @@ class CameraService:
             if my_generation != self._preview_generation:
                 log.debug("camera_timing", "http_generator_superseded", "HTTP generator superseded, exiting")
                 return
-
-            self._last_preview_request = time.monotonic()
 
             yield (b'--frame\r\n'
                    b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')

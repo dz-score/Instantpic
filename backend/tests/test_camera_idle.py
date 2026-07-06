@@ -48,6 +48,81 @@ def test_watchdog_fires_despite_repeated_capture_errors(mock_gphoto2):
         mock_camera.capture_preview.assert_not_called()
 
 
+def test_watchdog_defers_rest_while_session_wedged(mock_gphoto2):
+    """
+    Regression test: while _warmup_failed is set the worker is mid-heal of a
+    wedged live-view session (stale state from an unclean shutdown). The idle
+    watchdog must NOT pause it — doing so stranded the fail-fast → re-init
+    cascade until the next viewer arrived, leaving the first session's stream
+    black for its entire countdown. The rest is deferred until the session
+    produces a frame again.
+    """
+    with patch('backend.camera_service.gp', mock_gphoto2):
+        mock_gphoto2.GP_EVENT_TIMEOUT = 2
+        mock_camera = mock_gphoto2.Camera.return_value
+        mock_camera.wait_for_event.return_value = (mock_gphoto2.GP_EVENT_TIMEOUT, None)
+
+        from backend.camera_service import CameraService
+        camera = CameraService()
+        camera.connected = True
+        camera.camera = mock_camera
+        camera._warmup_failed = True
+        camera._preview_allowed.set()
+
+        # Nobody has requested a preview in a while — the watchdog would
+        # normally pause the worker on this very iteration.
+        camera._last_preview_request = time.monotonic() - (camera._preview_idle_timeout + 1)
+
+        # Run exactly one iteration of the worker loop.
+        camera._shutdown_event.is_set = MagicMock(side_effect=[False, False, True])
+
+        with patch('time.sleep'):
+            camera._camera_worker()
+
+        # The worker must have stayed awake and attempted a preview instead
+        # of resting.
+        assert camera._preview_allowed.is_set() is True
+        mock_camera.capture_preview.assert_called_once()
+
+
+@pytest.mark.anyio
+async def test_preview_generator_refreshes_watchdog_while_frameless(mock_gphoto2):
+    """
+    Regression test: an attached viewer must count as a preview request even
+    while no frames are arriving (camera erroring or mid-re-init). Previously
+    _last_preview_request was only refreshed when a frame was actually
+    yielded, so 10s into an outage the watchdog judged the viewer absent and
+    paused the worker — blocking the auto-heal while a guest stared at a
+    black stream.
+    """
+    with patch('backend.camera_service.gp', mock_gphoto2):
+        from backend.camera_service import CameraService
+        camera = CameraService()
+        camera.connected = True
+
+        stale = time.monotonic() - 100
+        refreshes = 0
+
+        def fake_wait_for_frame(timeout):
+            nonlocal refreshes
+            if camera._last_preview_request != stale:
+                refreshes += 1
+            # Re-stale it: the generator must refresh again before the next
+            # poll, not just once on entry.
+            camera._last_preview_request = stale
+            return False  # never a frame
+
+        camera._wait_for_frame = fake_wait_for_frame
+
+        with patch.object(camera, '_start_worker'), patch.object(camera, 'resume_preview'):
+            gen = camera.preview_generator()
+            with pytest.raises(StopAsyncIteration):
+                await gen.__anext__()
+
+        # One refresh per poll slice until the MAX_IDLE_S self-close.
+        assert refreshes == 30.0 / 0.5
+
+
 @pytest.mark.anyio
 async def test_preview_generator_self_closes_when_idle(mock_gphoto2):
     """
