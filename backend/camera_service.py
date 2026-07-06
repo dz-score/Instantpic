@@ -167,6 +167,26 @@ class CameraService:
                 except Exception as cfg_err:
                     log.debug("camera", "camera_config_warn", f"Could not set initial config: {cfg_err}")
 
+                # Log display/live-view related widgets once per init — no
+                # runtime cost, and invaluable when diagnosing camera
+                # behavior on-site (kept from the 2026-07 whine investigation).
+                try:
+                    config = self.camera.get_config()
+                    for key in ['output', 'movierecordtarget', 'liveviewsize', 'eosmovieswitch', 'capturetarget']:
+                        ok, widget = gp.gp_widget_get_child_by_name(config, key)
+                        if ok >= gp.GP_OK:
+                            choices = []
+                            try:
+                                choices = [widget.get_choice(i) for i in range(widget.count_choices())]
+                            except Exception:
+                                pass
+                            log.debug("camera", "camera_widget_info",
+                                      f"Widget '{key}': value={widget.get_value()!r} choices={choices}")
+                        else:
+                            log.debug("camera", "camera_widget_info", f"Widget '{key}': not exposed")
+                except Exception as e:
+                    log.debug("camera", "camera_widget_info_fail", f"Could not enumerate widgets: {e}")
+
                 # Pre-warm the viewfinder so the first preview frame is instant
                 try:
                     camera_file = self.camera.capture_preview()
