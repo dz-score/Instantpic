@@ -134,9 +134,9 @@
   align-items: center;
   justify-content: center;
 
-  background: linear-gradient(135deg, var(--blush) 0%, var(--dusty-rose) 100%);
-  color: var(--text-on-gold);
-  border: 3px solid rgba(255, 253, 248, 0.9);
+  background: var(--bg-frosted);
+  color: var(--gold);
+  border: 2px solid var(--gold-light);
   box-shadow: var(--shadow-sm);
 }
 

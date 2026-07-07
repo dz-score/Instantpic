@@ -1,7 +1,7 @@
 import React from 'react';
 import ScreenShell from '../components/ScreenShell';
 import { t } from '../utils/i18n';
-import { Home } from 'lucide-react';
+import { Home, Image, Columns3 } from 'lucide-react';
 import './ChooseStyleScreen.css';
 
 /**
@@ -32,11 +32,7 @@ export default function ChooseStyleScreen({ onSelect, onBack, language }) {
         {/* Single Photo Card */}
         <button className="choose-card" onClick={() => onSelect('single')}>
           <div className="choose-card__badge">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="3" y="3" width="18" height="18" rx="2" />
-              <circle cx="12" cy="12" r="3" />
-              <path d="M3 16l5-5 4 4 3-3 6 6" />
-            </svg>
+            <Image strokeWidth={1.5} size={28} />
           </div>
           <div className="choose-card__preview">
             <img src="/preview-single.png" alt="Single photo" className="choose-card__img" />
@@ -47,11 +43,7 @@ export default function ChooseStyleScreen({ onSelect, onBack, language }) {
         {/* Collage Strip Card */}
         <button className="choose-card" onClick={() => onSelect('collage')}>
           <div className="choose-card__badge">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="4" y="2" width="16" height="6" rx="1" />
-              <rect x="4" y="9" width="16" height="6" rx="1" />
-              <rect x="4" y="16" width="16" height="6" rx="1" />
-            </svg>
+            <Columns3 strokeWidth={1.5} size={28} />
           </div>
           <div className="choose-card__preview">
             <img src="/preview-collage.png" alt="Photo strip" className="choose-card__img" />
