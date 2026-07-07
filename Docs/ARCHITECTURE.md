@@ -232,6 +232,8 @@ asyncio.Queue -> _worker() task
 
 **Mock mode:** `mock_camera.py` provides `MockCameraService` — same API, generates synthetic frames for dev/Windows environments (selected via `config.json -> camera_backend: "mock"`).
 
+**Hardware field knowledge:** [CAMERA_NOTES.md](CAMERA_NOTES.md) documents how this specific M50 body behaves (wedged sessions, stall cycles, widgets that must never be written, diagnostic log signatures). Read it before changing `camera_service.py`.
+
 ---
 
 ### `photo_processor.py` — Image Compositor
