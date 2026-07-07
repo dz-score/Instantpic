@@ -62,7 +62,7 @@
   font-weight: 600;
   color: var(--text-secondary);
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: var(--tracking-hairline);
 }
 
 .sys-diag-card__value {
@@ -154,7 +154,7 @@
 }
 
 .sys-action-result--ok {
-  background: rgba(123, 163, 123, 0.1);
+  background: var(--success-tint);
   color: var(--success);
   border-left: 3px solid var(--success);
 }
@@ -363,7 +363,7 @@
   font-weight: 600;
   font-size: 10px;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: var(--tracking-hairline);
   color: var(--text-secondary);
   border-bottom: 2px solid var(--surface-border);
   white-space: nowrap;

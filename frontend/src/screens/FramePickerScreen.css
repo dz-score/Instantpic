@@ -55,7 +55,7 @@
 }
 
 .frame__flourish-hearts {
-  font-size: 1.3rem;
+  font-size: var(--text-body);
   color: var(--dusty-rose);
   letter-spacing: var(--tracking-lg);
   opacity: 0.7;
@@ -68,7 +68,7 @@
 }
 
 .frame__flourish-curl {
-  font-size: 1.2rem;
+  font-size: var(--text-body);
   color: var(--gold);
   opacity: 0.6;
 }
@@ -203,7 +203,7 @@
   padding: var(--space-xs);
   border-radius: var(--radius-md);
   border: 2px solid var(--gold-glow-sm);
-  background: rgba(255, 253, 248, 0.85);
+  background: var(--ivory-glass);
   cursor: pointer;
   transition: all var(--duration-normal) var(--ease-out);
 }
@@ -266,7 +266,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 2px solid rgba(255, 253, 248, 0.9);
+  border: 2px solid var(--ivory-glass);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
   animation: pop-in var(--duration-brisk) var(--ease-spring);
 }

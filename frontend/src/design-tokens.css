@@ -17,6 +17,7 @@
   --champagne-light:    #FAF6F0;
   --ivory:              #FDFBF7;
   --ivory-gradient:     linear-gradient(135deg, #FEFCF9 0%, #F6EFE5 100%);
+  --ivory-glass:        rgba(255, 253, 248, 0.85);
   --blush:              #F3D9D4;
   --blush-primary:      #D68B81;
   --blush-gradient:     linear-gradient(180deg, #ECA89F 0%, #D68B81 100%);
@@ -42,6 +43,7 @@
 
   /* ── Semantic ── */
   --success:            #7BA37B;
+  --success-tint:       rgba(123, 163, 123, 0.08);
   --error:              #C27070;
   --error-tint:         rgba(194, 112, 112, 0.08);
   --warning-tint:       rgba(240, 173, 78, 0.08);

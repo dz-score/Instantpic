@@ -18,7 +18,7 @@
 }
 
 .countdown-ring__arc {
-  transition: stroke-dashoffset 0.9s var(--ease-out);
+  transition: stroke-dashoffset var(--duration-slower) var(--ease-out);
 }
 
 .countdown-ring__number {
@@ -27,7 +27,7 @@
   font-weight: 300;
   color: var(--text-on-gold);
   text-shadow: 0 4px 30px rgba(0, 0, 0, 0.4);
-  animation: countdown-pop 0.6s var(--ease-spring);
+  animation: countdown-pop var(--duration-slow) var(--ease-spring);
   z-index: 1;
 }
 

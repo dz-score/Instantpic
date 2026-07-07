@@ -32,8 +32,8 @@
 
 .toggle-switch__thumb {
   position: absolute;
-  top: 4px;
-  left: 4px;
+  top: var(--space-2xs);
+  left: var(--space-2xs);
   width: 32px;
   height: 32px;
   border-radius: 50%;

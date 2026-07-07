@@ -136,7 +136,7 @@
 }
 
 .admin-status-pill--dirty {
-  background: rgba(240, 173, 78, 0.12);
+  background: var(--warning-tint);
   color: #9a7b2f;
 }
 
@@ -146,7 +146,7 @@
 }
 
 .admin-status-pill--saved {
-  background: rgba(123, 163, 123, 0.12);
+  background: var(--success-tint);
   color: var(--success);
 }
 

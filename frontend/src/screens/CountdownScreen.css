@@ -151,7 +151,7 @@
   border: 8px solid var(--champagne);
   border-top-color: var(--gold);
   border-radius: 50%;
-  animation: spin 0.9s linear infinite;
+  animation: spin var(--duration-slower) linear infinite;
   margin-bottom: var(--space-sm);
 }
 

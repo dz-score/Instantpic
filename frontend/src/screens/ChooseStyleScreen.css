@@ -18,7 +18,7 @@
 }
 
 .choose-flourish__hearts {
-  font-size: 1.3rem;
+  font-size: var(--text-body);
   color: var(--dusty-rose);
   opacity: 0.7;
 }
@@ -30,7 +30,7 @@
 }
 
 .choose-flourish__curl {
-  font-size: 1.2rem;
+  font-size: var(--text-body);
   color: var(--gold);
   opacity: 0.6;
 }
@@ -124,7 +124,7 @@
 /* ── Icon badge (circle on top of card) ── */
 .choose-card__badge {
   position: absolute;
-  top: -24px;
+  top: calc(-1 * var(--space-md));
   left: 50%;
   transform: translateX(-50%);
   width: 52px;
@@ -202,7 +202,7 @@
 }
 
 .choose-back__icon {
-  font-size: 1.3rem;
+  font-size: var(--text-body);
   color: var(--gold-dark);
 }
 

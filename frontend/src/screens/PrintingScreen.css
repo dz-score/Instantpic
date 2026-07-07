@@ -27,7 +27,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 253, 248, 0.85);
+  background: var(--ivory-glass);
   border: 2px solid var(--gold-light);
   color: var(--gold);
   margin-bottom: var(--space-xs);
@@ -127,7 +127,7 @@
 }
 
 .print-done__hearts {
-  font-size: 1.2rem;
+  font-size: var(--text-body);
   color: var(--dusty-rose);
   letter-spacing: var(--tracking-lg);
   opacity: 0.7;
@@ -239,7 +239,7 @@
   align-items: center;
   gap: var(--space-xs);
   padding-bottom: var(--space-xs);
-  border-bottom: 1px dashed rgba(212, 175, 106, 0.3);
+  border-bottom: 1px dashed var(--gold-glow-md);
 }
 
 .print-done__inst-num {
@@ -253,7 +253,7 @@
   justify-content: center;
   font-family: var(--font-body);
   font-weight: 700;
-  font-size: 0.85rem;
+  font-size: var(--text-small);
   box-shadow: var(--shadow-sm);
 }
 
@@ -307,7 +307,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 253, 248, 0.85);
+  background: var(--ivory-glass);
   border: 2px solid var(--gold-light);
   color: var(--gold);
 }
@@ -340,7 +340,7 @@
 }
 
 .print-done__btn-icon {
-  font-size: 2.1rem;
+  font-size: var(--text-h2);
 }
 
 .print-done__btn-main {

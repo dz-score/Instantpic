@@ -33,7 +33,7 @@
 }
 
 .attract-flourish__hearts {
-  font-size: 1.3rem;
+  font-size: var(--text-body);
   color: var(--dusty-rose);
   letter-spacing: var(--tracking-lg);
   opacity: 0.7;
@@ -46,7 +46,7 @@
 }
 
 .attract-flourish__curl {
-  font-size: 1.2rem;
+  font-size: var(--text-body);
   color: var(--gold);
   opacity: 0.6;
 }
@@ -104,7 +104,7 @@
 /* ═══ Subtitle / Welcome Message ═══ */
 .attract-subtitle {
   font-family: var(--font-body);
-  font-size: 1.05rem;
+  font-size: var(--text-caption);
   font-weight: 400;
   letter-spacing: var(--tracking-md);
   text-transform: uppercase;
@@ -221,7 +221,7 @@
   align-items: center;
   gap: var(--space-xs);
   padding: var(--space-xs) var(--space-xs);
-  border-radius: 30px;
+  border-radius: var(--radius-full);
   background: var(--bg-frosted);
   border: 1px solid var(--gold);
   backdrop-filter: blur(8px);

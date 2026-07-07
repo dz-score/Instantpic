@@ -22,7 +22,7 @@
   border: 8px solid var(--champagne);
   border-top-color: var(--gold);
   border-radius: 50%;
-  animation: spin 0.9s linear infinite;
+  animation: spin var(--duration-slower) linear infinite;
   margin-bottom: var(--space-sm);
 }
 
@@ -52,7 +52,7 @@
 }
 
 .reveal-flourish__hearts {
-  font-size: 1.2rem;
+  font-size: var(--text-body);
   color: var(--dusty-rose);
   letter-spacing: var(--tracking-lg);
   opacity: 0.7;
@@ -180,7 +180,7 @@
 
 .reveal-btn-print__main {
   font-family: var(--font-body);
-  font-size: 1.05rem;
+  font-size: var(--text-caption);
   font-weight: 700;
   letter-spacing: var(--tracking-md);
   text-transform: uppercase;
@@ -210,7 +210,7 @@
 }
 
 .reveal-btn-retake__icon {
-  font-size: 1.2rem;
+  font-size: var(--text-body);
 }
 
 .reveal-btn-retake__main {

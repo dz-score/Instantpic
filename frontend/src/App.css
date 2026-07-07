@@ -20,7 +20,7 @@
   width: var(--touch-comfortable);
   height: var(--touch-comfortable);
   border-radius: 50%;
-  background: rgba(194, 112, 112, 0.1);
+  background: var(--error-tint);
   display: flex;
   align-items: center;
   justify-content: center;
