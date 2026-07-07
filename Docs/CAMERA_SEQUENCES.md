@@ -132,7 +132,7 @@ sequenceDiagram
     S-->>F: camera_job: pending → started
     W->>M: flush leftover events (~15ms)
     S-->>F: camera_job: fired
-    Note over F: flash + shutter sound<br/>(deferred until the ring video finished;<br/>slightly LEADS the real exposure)
+    Note over F: flash + shutter sound<br/>(deferred until the ring video finished —<br/>slightly LEADS the real exposure)
     W->>M: capture(GP_CAPTURE_IMAGE)  — blocks ~1.5s
     M-->>W: file path (image in camera RAM)
     W->>M: flush again (drains FILE_ADDED etc.)
