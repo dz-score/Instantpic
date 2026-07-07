@@ -63,7 +63,7 @@ export default function CountdownScreen({
 
   useEffect(() => {
     if (cameraReady) return;
-    const t = setTimeout(() => setCameraError(true), 30000);
+    const t = setTimeout(() => setCameraError(true), 15000);
     return () => clearTimeout(t);
   }, [cameraReady]);
   const pendingTimeouts = useRef([]);
