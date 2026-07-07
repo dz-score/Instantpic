@@ -42,5 +42,5 @@
   color: var(--text-on-gold);
   text-shadow: 0 2px 12px rgba(0, 0, 0, 0.5);
   white-space: nowrap;
-  animation: fade-in 0.3s ease;
+  animation: fade-in var(--duration-normal) ease;
 }

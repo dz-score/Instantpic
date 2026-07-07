@@ -50,7 +50,7 @@
   font-family: var(--font-body);
   font-size: 1.15rem;
   font-weight: 400;
-  letter-spacing: 6px;
+  letter-spacing: var(--tracking-lg);
   text-transform: uppercase;
   color: var(--gold);
   margin-bottom: 4px;
@@ -75,9 +75,9 @@
 
 .choose-subtitle {
   font-family: var(--font-body);
-  font-size: 0.95rem;
+  font-size: var(--text-label);
   font-weight: 400;
-  letter-spacing: 3px;
+  letter-spacing: var(--tracking-md);
   text-transform: uppercase;
   color: var(--text-secondary);
   margin-bottom: var(--space-md);
@@ -161,9 +161,9 @@
 /* ── Card text ── */
 .choose-card__title {
   font-family: var(--font-body);
-  font-size: 1.1rem;
+  font-size: var(--text-caption);
   font-weight: 700;
-  letter-spacing: 4px;
+  letter-spacing: var(--tracking-md);
   text-transform: uppercase;
   color: var(--gold);
   margin-bottom: 0;
@@ -171,9 +171,9 @@
 
 .choose-card__desc {
   font-family: var(--font-body);
-  font-size: 0.85rem;
+  font-size: var(--text-label);
   font-weight: 400;
-  letter-spacing: 2px;
+  letter-spacing: var(--tracking-sm);
   text-transform: uppercase;
   color: var(--text-secondary);
 }
@@ -210,7 +210,7 @@
   font-family: var(--font-body);
   font-size: var(--text-caption);
   font-weight: 700;
-  letter-spacing: 3px;
+  letter-spacing: var(--tracking-md);
   text-transform: uppercase;
   color: var(--gold-dark);
 }

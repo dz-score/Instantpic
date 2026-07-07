@@ -8,7 +8,7 @@
   align-items: center;
   justify-content: center;
   z-index: 10000;
-  animation: fade-in 0.3s ease;
+  animation: fade-in var(--duration-normal) ease;
 }
 
 .pin-gate__card {
@@ -42,8 +42,8 @@
 }
 
 .pin-gate__dot {
-  width: 20px;
-  height: 20px;
+  width: var(--icon-xs);
+  height: var(--icon-xs);
   border-radius: 50%;
   border: 2px solid var(--champagne);
   background: transparent;
@@ -59,7 +59,7 @@
 .pin-gate__dot--error {
   border-color: var(--error);
   background: var(--error);
-  animation: tap-bounce 0.3s ease;
+  animation: tap-bounce var(--duration-normal) ease;
 }
 
 .pin-gate__error {

@@ -6,7 +6,7 @@
   display: flex;
   background: var(--bg-base);
   z-index: 10000;
-  animation: fade-in 0.25s ease;
+  animation: fade-in var(--duration-brisk) ease;
 }
 
 /* ═══ Sidebar ═══ */
@@ -203,5 +203,5 @@
   font-weight: 500;
   box-shadow: var(--shadow-lg);
   z-index: 10001;
-  animation: fade-up 0.3s var(--ease-out);
+  animation: fade-up var(--duration-normal) var(--ease-out);
 }

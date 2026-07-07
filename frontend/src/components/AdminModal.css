@@ -88,7 +88,7 @@
 }
 .admin-input--pin {
   text-align: center;
-  letter-spacing: 6px;
+  letter-spacing: var(--tracking-lg);
   font-size: var(--text-h3);
 }
 
@@ -146,5 +146,5 @@
   border-radius: var(--radius-full);
   font-size: var(--text-small);
   font-weight: 500;
-  animation: fade-in 0.2s ease;
+  animation: fade-in var(--duration-brisk) ease;
 }
