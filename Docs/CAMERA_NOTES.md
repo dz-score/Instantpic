@@ -4,7 +4,9 @@ Hard-won facts about how **this specific camera body** behaves over USB/PTP
 (gphoto2/libgphoto2), gathered during the July 2026 investigations
 ("35s whine" saga and the "first preview always fails" fix). Everything here
 is **log-proven on the booth hardware** unless marked otherwise. Read this
-before touching `backend/camera_service.py`.
+before touching `backend/camera_service.py`. For step-by-step diagrams of
+the startup and countdown→reveal flows, see
+[CAMERA_SEQUENCES.md](CAMERA_SEQUENCES.md).
 
 ---
 
