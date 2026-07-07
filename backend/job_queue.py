@@ -1,6 +1,9 @@
 import asyncio
+import os
 from backend.logger import log
 from backend.photo_processor import process_photo_layout
+from backend.print_service import print_svc
+from backend import storage
 from backend.storage import enforce_circular_storage
 
 class JobQueue:
@@ -65,6 +68,22 @@ class JobQueue:
                         # Hand the result back to whoever submitted the job.
                         if on_success:
                             await on_success(filename)
+
+                    elif job_type == "PRINT_PHOTO":
+                        # Printing blocks (mock sleeps; CUPS shells out for up to
+                        # ~60s incl. retry), so run it in the thread pool and
+                        # report the real success/failure back to the submitter.
+                        filename = job_data.get("filename")
+                        filepath = os.path.join(storage.PHOTOS_DIR, filename)
+
+                        loop = asyncio.get_running_loop()
+                        result = await loop.run_in_executor(None, print_svc.print, filepath)
+
+                        if result.success:
+                            if on_success:
+                                await on_success(filename)
+                        elif on_failure:
+                            await on_failure(result.error or "Print failed")
 
                     else:
                         log.warn("job_queue", "unknown_job", f"Unknown job type: {job_type}")

@@ -12,7 +12,6 @@ const API = '';
  * other REST calls.
  */
 export default function useApi(isOnline) {
-  const [gallery, setGallery] = useState([]);
   const [boothBaseUrl, setBoothBaseUrl] = useState('');
 
   /* ── Fetch booth LAN IP on mount ── */
@@ -28,21 +27,6 @@ export default function useApi(isOnline) {
       }
     })();
   }, []);
-
-  /* ── Gallery ── */
-  const fetchGallery = useCallback(async () => {
-    try {
-      const r = await fetch(`${API}/api/photos`);
-      const data = await r.json();
-      setGallery(data);
-      return data;
-    } catch (e) {
-      logger.warn('api', 'api_error', `Failed to load gallery: ${e.message}`, { endpoint: '/api/photos' });
-      return [];
-    }
-  }, []);
-
-  // Gallery fetched on-demand after print, not on mount
 
   /* ── Initial State ── */
   const fetchState = useCallback(async () => {
@@ -70,19 +54,6 @@ export default function useApi(isOnline) {
       throw e;
     }
   }, []);
-
-  /* ── Print ── */
-  const printPhoto = useCallback(async (filename) => {
-    logger.info('printer', 'printer_sent', `Print requested: ${filename}`, { filename });
-    const r = await fetch(`${API}/api/print/${filename}`, { method: 'POST' });
-    if (!r.ok) {
-      logger.error('printer', 'printer_fail', `Print failed: ${filename}`, { filename });
-      throw new Error('Print failed');
-    }
-    logger.info('printer', 'printer_done', `Print completed: ${filename}`, { filename });
-    fetchGallery();
-    return await r.json();
-  }, [fetchGallery]);
 
   /* ── Save config (admin) ── */
   const saveConfig = useCallback(async (updates) => {
@@ -148,9 +119,6 @@ export default function useApi(isOnline) {
 
   return {
     isOnline,
-    gallery,
-    fetchGallery,
-    printPhoto,
     saveConfig,
     getQrUrl,
     getDownloadUrl,

@@ -9,24 +9,24 @@ const AUTO_RESET_SECONDS = 25;
 /**
  * Printing & Share screen — the final step.
  *
- * Phase 1 (PRINTING):
- *   - Animated printer icon
- *   - "Printing Your Memory" heading
- *   - Warm patience message
+ * The print itself is backend-owned workflow: the FSM kicks it off on entering
+ * PRINTING and pushes the real outcome as `printStatus` over SSE. This screen
+ * only projects that state — it never triggers the print or guesses the result
+ * from a timer (see Rules 1, 4, 16).
  *
- * Phase 2 (DONE/ERROR):
- *   - "Your Print is on its Way!" heading
+ * Phase 1 (PRINTING):  printStatus === 'printing'
+ *   - Animated printer icon + warm patience message
+ *
+ * Phase 2 (DONE/ERROR): printStatus === 'printed' | 'failed'
  *   - Thank you message (from config)
- *   - Photo preview with gold border
- *   - QR code to download
- *   - Blush "Take Another" button
- *   - Auto-reset countdown
+ *   - Photo preview + QR code to download
+ *   - Blush "Take Another" button + auto-reset countdown
  *
  * Background from ScreenShell (bg-wedding.png).
  */
 export default function PrintingScreen({
   finalPhoto,
-  printPhoto,
+  printStatus,
   getQrUrl,
   getDownloadUrl,
   config,
@@ -34,38 +34,19 @@ export default function PrintingScreen({
   onAnother,
   language,
 }) {
-  const [phase, setPhase] = useState('PRINTING');
+  // Derived directly from backend state — no local success/failure of our own.
+  const phase = printStatus === 'printed' ? 'DONE'
+    : printStatus === 'failed' ? 'ERROR'
+    : 'PRINTING';
+
   const [countdown, setCountdown] = useState(AUTO_RESET_SECONDS);
   const countdownRef = useRef(null);
   const onFinishRef = useRef(onFinish);
-  const printPhotoRef = useRef(printPhoto);
 
   useEffect(() => { onFinishRef.current = onFinish; }, [onFinish]);
-  useEffect(() => { printPhotoRef.current = printPhoto; }, [printPhoto]);
 
   const downloadUrl = getDownloadUrl(finalPhoto);
   const qrSrc = getQrUrl(downloadUrl);
-
-  // Trigger print (with 30s timeout to prevent hanging forever)
-  useEffect(() => {
-    let cancelled = false;
-    const PRINT_TIMEOUT_MS = 30000;
-    (async () => {
-      try {
-        const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Print timed out')), PRINT_TIMEOUT_MS)
-        );
-        await Promise.race([
-          printPhotoRef.current(finalPhoto),
-          timeoutPromise,
-        ]);
-        if (!cancelled) setPhase('DONE');
-      } catch {
-        if (!cancelled) setPhase('ERROR');
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [finalPhoto]);
 
   // Auto-reset countdown
   useEffect(() => {

@@ -248,7 +248,7 @@ export default function App() {
       {currentScreen === 'PRINTING' && (
         <PrintingScreen
           finalPhoto={appState?.finalPhoto}
-          printPhoto={api.printPhoto}
+          printStatus={appState?.printStatus}
           getQrUrl={api.getQrUrl}
           getDownloadUrl={api.getDownloadUrl}
           config={config}
