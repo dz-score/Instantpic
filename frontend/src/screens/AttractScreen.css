@@ -219,8 +219,8 @@
   right: var(--space-xl);
   display: flex;
   align-items: center;
-  gap: var(--space-xs);
-  padding: var(--space-xs) var(--space-xs);
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-sm);
   border-radius: var(--radius-full);
   background: var(--bg-frosted);
   border: 1px solid var(--gold);

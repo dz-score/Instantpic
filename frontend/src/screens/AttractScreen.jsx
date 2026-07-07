@@ -29,7 +29,7 @@ export default function AttractScreen({ config, onStart, language, setLanguage }
       {/* ── Language Toggle (Top Right) ── */}
       <button className="attract-lang-toggle" onClick={(e) => { e.stopPropagation(); toggleLanguage(); }} aria-label="Toggle language">
         <span className={`lang-flag ${language === 'en' ? 'active' : ''}`}>
-          <svg viewBox="0 0 60 30" width="24" height="16" style={{ borderRadius: '2px', display: 'block' }}>
+          <svg viewBox="0 0 60 30" width="48" height="32" style={{ borderRadius: '2px', display: 'block' }}>
             <clipPath id="uk-clip"><path d="M0,0 v30 h60 v-30 z"/></clipPath>
             <clipPath id="uk-cross"><path d="M30,15 h30 v15 z v15 h-30 z h-30 v-15 z v-15 h30 z"/></clipPath>
             <g clipPath="url(#uk-clip)">
@@ -42,7 +42,7 @@ export default function AttractScreen({ config, onStart, language, setLanguage }
           </svg>
         </span>
         <span className={`lang-flag ${language === 'fr' ? 'active' : ''}`}>
-          <svg viewBox="0 0 3 2" width="24" height="16" style={{ borderRadius: '2px', display: 'block' }}>
+          <svg viewBox="0 0 3 2" width="48" height="32" style={{ borderRadius: '2px', display: 'block' }}>
             <rect width="1" height="2" fill="#0055A4" />
             <rect x="1" width="1" height="2" fill="#FFFFFF" />
             <rect x="2" width="1" height="2" fill="#EF4135" />
