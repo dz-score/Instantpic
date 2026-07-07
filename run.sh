@@ -1,5 +1,6 @@
 #!/bin/bash
 rm -rf /home/instantpic/.cache/chromium/*
+rm -rf /home/instantpic/.config/chromium/Default/Cache
 cd /home/instantpic/Projects/instantpic-antigravity
 
 source backend/.venv/bin/activate

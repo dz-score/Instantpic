@@ -1,5 +1,6 @@
 import os
 import shutil
+import anyio.to_thread
 from io import BytesIO
 import qrcode
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
@@ -258,14 +259,17 @@ async def camera_resume():
 async def camera_config_get():
     if not GPHOTO2_AVAILABLE:
         raise HTTPException(status_code=501, detail="gphoto2 not installed")
-    return camera_svc.get_settings()
+    # USB round-trips under the camera lock — if the worker is inside a ~3s
+    # preview stall this blocks until it releases, so keep it off the event
+    # loop (same for the setter below).
+    return await anyio.to_thread.run_sync(camera_svc.get_settings)
 
 @app.post("/api/camera/config")
 async def camera_config_set(req: CameraSettingsRequest):
     if not GPHOTO2_AVAILABLE:
         raise HTTPException(status_code=501, detail="gphoto2 not installed")
     try:
-        camera_svc.set_settings(req.settings)
+        await anyio.to_thread.run_sync(camera_svc.set_settings, req.settings)
         return {"status": "success"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

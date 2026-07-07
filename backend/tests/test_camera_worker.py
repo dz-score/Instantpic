@@ -1,3 +1,4 @@
+import time
 import pytest
 from unittest.mock import patch, MagicMock
 
@@ -76,6 +77,40 @@ def test_capture_job_flushes_and_avoids_preview(mock_gphoto2):
         # CRITICAL: Ensure capture_preview was NOT called. 
         # Calling it here breaks hardware stability.
         mock_camera.capture_preview.assert_not_called()
+
+
+def test_wedged_session_fails_fast_after_two_errors(mock_gphoto2):
+    """
+    Regression test: a session whose init-time warmup preview failed is
+    almost certainly wedged (stale live-view state from an unclean process
+    kill) — every further attempt just burns a ~3s hardware stall. The
+    worker must give up after 2 errors instead of 6 so the exit+re-init
+    heal completes while the booth still sits on the attract screen, not
+    halfway through a guest's countdown.
+    """
+    with patch('backend.camera_service.gp', mock_gphoto2):
+        mock_gphoto2.GP_EVENT_TIMEOUT = 2
+        mock_camera = mock_gphoto2.Camera.return_value
+        mock_camera.wait_for_event.return_value = (mock_gphoto2.GP_EVENT_TIMEOUT, None)
+        mock_camera.capture_preview.side_effect = Exception("[-1] Unspecified error")
+
+        from backend.camera_service import CameraService
+        camera = CameraService()
+        camera.connected = True
+        camera.camera = mock_camera
+        camera._warmup_failed = True
+        camera._preview_allowed.set()
+        camera._last_preview_request = time.monotonic()      # viewer just asked
+        camera._last_init_time = time.monotonic() - 10       # warmup grace elapsed
+
+        # Run exactly two iterations of the worker loop.
+        camera._shutdown_event.is_set = MagicMock(side_effect=[False, False, False, False, True])
+
+        with patch('time.sleep'):
+            camera._camera_worker()
+
+        assert mock_camera.capture_preview.call_count == 2
+        assert camera.connected is False
 
 
 def test_standby_clears_preview_allowed(mock_gphoto2):
