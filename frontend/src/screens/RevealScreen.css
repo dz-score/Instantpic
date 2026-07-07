@@ -13,7 +13,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-xs);
 }
 
 .reveal-spinner {
@@ -93,7 +93,7 @@
 
 .reveal-title {
   font-family: var(--font-script);
-  font-size: clamp(2.5rem, 5.5vw, 4.5rem);
+  font-size: clamp(2.5rem, 5.5vw, var(--text-hero));
   font-weight: 400;
   line-height: 1.4;
   margin-bottom: var(--space-sm);
@@ -160,12 +160,12 @@
   min-width: 260px;
   height: 60px;
   padding: 0 var(--space-lg);
-  border-radius: var(--radius-full);
-  border: 1px solid var(--gold);
+  border-radius: var(--radius-button);
+  border: 2px solid transparent;
   cursor: pointer;
-  background: var(--blush-gradient); text-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+  background: var(--blush-gradient) padding-box, var(--border-gold-gradient) border-box; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
   box-shadow: var(--shadow-button);
-  color: white;
+  color: var(--text-on-gold);
   transition: all var(--duration-normal) var(--ease-out);
 }
 
@@ -175,7 +175,7 @@
 }
 
 .reveal-btn-print__icon {
-  font-size: 1.4rem;
+  font-size: 2.2rem;
 }
 
 .reveal-btn-print__main {

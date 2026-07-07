@@ -207,7 +207,7 @@ export default function PrintingScreen({
           {/* Actions */}
           <div className="print-done__actions">
             <button className="print-done__btn-another" onClick={handleAnother}>
-              <span className="print-done__btn-icon btn-icon"><Camera strokeWidth={1.5} size={20} /></span>
+              <span className="print-done__btn-icon btn-icon"><Camera strokeWidth={1.5} size={34} /></span>
               <span className="print-done__btn-main">{t('printing.takeAnother', language)}</span>
             </button>
           </div>

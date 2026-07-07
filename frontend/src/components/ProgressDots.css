@@ -11,7 +11,7 @@
   font-family: var(--font-body);
   font-size: var(--text-caption);
   font-weight: 600;
-  color: white;
+  color: var(--text-on-gold);
   text-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
   background: rgba(0, 0, 0, 0.25);
   backdrop-filter: blur(8px);
@@ -37,7 +37,7 @@
 }
 
 .progress-dots__dot--active {
-  background: white;
+  background: var(--bg-elevated);
   box-shadow: 0 0 12px rgba(255, 255, 255, 0.6);
   transform: scale(1.2);
 }

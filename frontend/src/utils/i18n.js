@@ -3,7 +3,8 @@ export const translations = {
     welcome: {
       kicker: 'Welcome to our wedding',
       label: '— Photo Booth —',
-      cta: 'Tap to Start the Fun!',
+      ctaMain: 'Tap to Start',
+      ctaSub: 'the Fun!',
     },
     chooseStyle: {
       kicker: 'Pick your look',
@@ -102,7 +103,8 @@ export const translations = {
     welcome: {
       kicker: 'Bienvenue à notre mariage',
       label: '— Borne Photo —',
-      cta: 'Touchez pour commencer !',
+      ctaMain: 'Touchez pour',
+      ctaSub: 'commencer !',
     },
     chooseStyle: {
       kicker: 'Choisissez votre style',

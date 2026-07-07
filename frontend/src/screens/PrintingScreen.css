@@ -16,7 +16,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-xs);
   animation: fade-in 0.4s ease;
 }
 
@@ -37,7 +37,7 @@
 .print-loading__flourish {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-xs);
   margin-bottom: 4px;
 }
 
@@ -79,7 +79,7 @@
 /* Bouncing dots */
 .print-loading__dots {
   display: flex;
-  gap: 8px;
+  gap: var(--space-xs);
 }
 
 .print-loading__dot {
@@ -100,7 +100,7 @@
 }
 
 @keyframes pulse-icon {
-  0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(212, 175, 106, 0.2); }
+  0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 var(--surface-border); }
   50% { transform: scale(1.05); box-shadow: 0 0 0 12px rgba(212, 175, 106, 0); }
 }
 
@@ -136,7 +136,7 @@
 .print-done__flourish-line {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-xs);
 }
 
 .print-done__curl {
@@ -224,7 +224,7 @@
 }
 
 .print-done__inst-card {
-  background: white;
+  background: var(--bg-elevated);
   border-radius: var(--radius-lg);
   padding: var(--space-md);
   border: 1px solid rgba(212, 175, 106, 0.4);
@@ -238,7 +238,7 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  padding-bottom: 8px;
+  padding-bottom: var(--space-xs);
   border-bottom: 1px dashed rgba(212, 175, 106, 0.3);
 }
 
@@ -247,7 +247,7 @@
   height: 24px;
   border-radius: 50%;
   background: var(--blush-gradient); text-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
-  color: white;
+  color: var(--text-on-gold);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -274,8 +274,8 @@
 }
 
 .print-done__qr-frame {
-  padding: 8px;
-  background: white;
+  padding: var(--space-xs);
+  background: var(--bg-elevated);
   border-radius: var(--radius-sm);
   border: 1px solid var(--gold-light);
 }
@@ -325,12 +325,12 @@
   min-width: 260px;
   height: 60px;
   padding: 0 var(--space-lg);
-  border-radius: var(--radius-full);
-  border: 1px solid var(--gold);
+  border-radius: var(--radius-button);
+  border: 2px solid transparent;
   cursor: pointer;
-  background: var(--blush-gradient); text-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+  background: var(--blush-gradient) padding-box, var(--border-gold-gradient) border-box; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
   box-shadow: var(--shadow-button);
-  color: white;
+  color: var(--text-on-gold);
   transition: all var(--duration-normal) var(--ease-out);
 }
 
@@ -340,7 +340,7 @@
 }
 
 .print-done__btn-icon {
-  font-size: 1.3rem;
+  font-size: 2.1rem;
 }
 
 .print-done__btn-main {
@@ -367,7 +367,7 @@
   display: inline-block;
   background-color: var(--champagne);
   color: var(--gold);
-  padding: 10px 24px;
+  padding: 10px var(--space-md);
   border-radius: var(--radius-full);
   font-weight: 700;
   font-size: 1.1rem;

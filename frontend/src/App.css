@@ -17,8 +17,8 @@
 }
 
 .offline-icon {
-  width: 72px;
-  height: 72px;
+  width: var(--touch-comfortable);
+  height: var(--touch-comfortable);
   border-radius: 50%;
   background: rgba(194, 112, 112, 0.1);
   display: flex;

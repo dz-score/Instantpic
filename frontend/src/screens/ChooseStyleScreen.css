@@ -26,7 +26,7 @@
 .choose-flourish__line {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-xs);
 }
 
 .choose-flourish__curl {
@@ -135,7 +135,7 @@
   justify-content: center;
 
   background: linear-gradient(135deg, var(--blush) 0%, var(--dusty-rose) 100%);
-  color: white;
+  color: var(--text-on-gold);
   border: 3px solid rgba(255, 253, 248, 0.9);
   box-shadow: var(--shadow-sm);
 }
@@ -187,7 +187,7 @@
   min-width: 260px;
   height: 60px;
   padding: 0 var(--space-lg);
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   border: none;
   cursor: pointer;
   transition: all var(--duration-normal) var(--ease-out);
@@ -208,7 +208,7 @@
 
 .choose-back__text {
   font-family: var(--font-body);
-  font-size: 1rem;
+  font-size: var(--text-caption);
   font-weight: 700;
   letter-spacing: 3px;
   text-transform: uppercase;

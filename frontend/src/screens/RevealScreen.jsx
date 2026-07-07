@@ -100,7 +100,7 @@ export default function RevealScreen({
               </button>
             )}
             <button className="reveal-btn-print" onClick={onPrint}>
-              <span className="reveal-btn-print__icon btn-icon"><Heart strokeWidth={1.5} size={24} /></span>
+              <span className="reveal-btn-print__icon btn-icon"><Heart strokeWidth={1.5} size={36} /></span>
               <span className="reveal-btn-print__main">{t('reveal.loveIt', language)}</span>
             </button>
           </div>

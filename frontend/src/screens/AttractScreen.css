@@ -42,7 +42,7 @@
 .attract-flourish__line {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-xs);
 }
 
 .attract-flourish__curl {
@@ -95,7 +95,7 @@
 
 /* ═══ Heart Divider ═══ */
 .attract-heart {
-  font-size: 1rem;
+  font-size: var(--text-caption);
   color: var(--dusty-rose);
   opacity: 0.6;
   margin-bottom: var(--space-sm);
@@ -116,7 +116,7 @@
 
 /* ═══ CTA Button ═══ */
 .attract-cta {
-  border: 1.5px solid var(--gold);
+  border: 2px solid transparent;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
   position: relative;
   display: flex;
@@ -126,13 +126,12 @@
   min-width: 380px;
   height: 80px;
   padding: 0 var(--space-xl);
-  border-radius: 999px;
-  overflow: hidden;
+  border-radius: var(--radius-button);
 
-  background: var(--blush-gradient);
-  box-shadow: var(--shadow-button);
+  background: var(--blush-gradient) padding-box, var(--border-gold-gradient) border-box;
+  box-shadow: var(--shadow-button), 0 0 14px 2px rgba(212, 175, 106, 0.35);
 
-  /* Breathing pulse animation */
+  /* Breathing pulse + glow animation */
   animation: cta-breathe 3s ease-in-out infinite;
 }
 
@@ -140,20 +139,43 @@
   box-shadow: var(--shadow-sm);
 }
 
+.attract-cta__shimmer-mask {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  overflow: hidden;
+  pointer-events: none;
+}
+
 .attract-cta__icon {
-  font-size: 1.5rem;
-  color: white;
+  color: var(--text-on-gold);
   z-index: 1;
+  flex-shrink: 0;
 }
 
 .attract-cta__text {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  z-index: 1;
+}
+
+.attract-cta__text-main {
   font-family: var(--font-body);
-  font-size: 1.25rem;
+  font-size: var(--text-body);
   font-weight: 700;
   letter-spacing: 3px;
   text-transform: uppercase;
-  color: white;
-  z-index: 1;
+  color: var(--text-on-gold);
+}
+
+.attract-cta__text-sub {
+  font-family: var(--font-body);
+  font-size: var(--text-small);
+  font-weight: 600;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--text-on-gold);
 }
 
 /* Shimmer sweep */
@@ -174,8 +196,14 @@
 
 /* ═══ Animations ═══ */
 @keyframes cta-breathe {
-  0%, 100% { transform: scale(1); box-shadow: var(--shadow-button); }
-  50% { transform: scale(1.02); box-shadow: 0 12px 36px rgba(212, 175, 106, 0.4); }
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: var(--shadow-button), 0 0 14px 2px rgba(212, 175, 106, 0.35);
+  }
+  50% {
+    transform: scale(1.02);
+    box-shadow: var(--shadow-button), 0 0 28px 6px rgba(212, 175, 106, 0.65);
+  }
 }
 
 @keyframes shimmer-sweep {
@@ -191,10 +219,10 @@
   right: var(--space-xl);
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
+  gap: var(--space-xs);
+  padding: var(--space-xs) 12px;
   border-radius: 30px;
-  background: rgba(249, 245, 239, 0.85);
+  background: var(--bg-frosted);
   border: 1px solid var(--gold);
   backdrop-filter: blur(8px);
   box-shadow: var(--shadow-sm);
@@ -209,7 +237,7 @@
 }
 
 .lang-flag {
-  font-size: 1.5rem;
+  font-size: var(--text-h3);
   opacity: 0.4;
   filter: grayscale(80%);
   transition: all var(--duration-normal) ease;

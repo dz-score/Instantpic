@@ -76,9 +76,14 @@ export default function AttractScreen({ config, onStart, language, setLanguage }
 
         {/* ── CTA Button ── */}
         <div className="attract-cta">
-          <span className="attract-cta__shimmer" aria-hidden="true" />
-          <span className="attract-cta__icon btn-icon"><Camera strokeWidth={1.5} size={24} /></span>
-          <span className="attract-cta__text">{t('welcome.cta', language)}</span>
+          <span className="attract-cta__shimmer-mask" aria-hidden="true">
+            <span className="attract-cta__shimmer" />
+          </span>
+          <span className="attract-cta__icon btn-icon"><Camera strokeWidth={1.5} size={44} /></span>
+          <span className="attract-cta__text">
+            <span className="attract-cta__text-main">{t('welcome.ctaMain', language)}</span>
+            <span className="attract-cta__text-sub">{t('welcome.ctaSub', language)}</span>
+          </span>
         </div>
 
       </button>
