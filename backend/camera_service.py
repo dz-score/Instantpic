@@ -406,9 +406,12 @@ class CameraService:
         self._preview_generation += 1
         my_generation = self._preview_generation
 
-        # Auto-init if not connected (also starts the worker)
+        # Auto-init if not connected (also starts the worker). Must run in a
+        # thread: init() does USB I/O under the camera lock (~1.5s, plus a
+        # ~3s warmup stall on a wedged session) and inline it would freeze
+        # the whole event loop — SSE, state machine, every endpoint.
         if not self.connected:
-            self.init()
+            await anyio.to_thread.run_sync(self.init)
 
         # Update timestamp and wake up worker
         self._last_preview_request = time.monotonic()
