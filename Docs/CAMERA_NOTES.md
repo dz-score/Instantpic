@@ -26,7 +26,7 @@ before touching `backend/camera_service.py`.
 
 | Rule | Why |
 |---|---|
-| **Never write the `output` widget** | Forcing it (e.g. to `'TFT'`) kills every preview for the session. `MOBILE2` as its value is **benign** — see §4. |
+| **Never write the `output` widget** (house rule) | Writing `'TFT'` kills every preview for the session — proven here. Upstream does sanction writing `PC`/`MOBILE`/`MOBILE2` to select a preview size, but that's untested on this body and we don't need it. `MOBILE2` as its value is **benign** — see §4. |
 | **Never set `viewfinder=0`** | Breaks the *next* preview session with persistent `[-1]` until re-init. |
 | **Never do an in-place exit+reconnect inside `init()`** right after a failed warmup | It poisons **every subsequent session** too (commits `7237e7a`/`832ab8e`, reverted in `a4f4d51`). Only the worker-cascade heal works: `connected=False` → worker loop re-enters `init()`, which exits the old handle first. |
 | **Always flush events (`wait_for_event`) between preview frames and around capture** | Without it the M50's event buffer overflows and the camera freezes ~3s with `[-1]`. |
@@ -41,12 +41,15 @@ reliability outweigh idle-time niceties.**
 
 ## 2. The Wedged First Session
 
-**Symptom:** after every app launch, the first PTP session has broken live
-view — `camera.init()` succeeds, config reads work fine (widget dump prints),
-but **every** `capture_preview()` blocks ~3.1s and returns
+**Symptom:** after every app launch that followed a hard kill or power cut
+(which was *every* launch until `stop.sh` existed), the first PTP session has
+broken live view — `camera.init()` succeeds, config reads work fine (widget
+dump prints), but **every** `capture_preview()` blocks ~3.1s and returns
 `[-1] Unspecified error`.
 
-**Root cause:** the previous booth process died without `camera.exit()`
+**Root cause** (best-supported explanation — the timeline below is logged,
+the mechanism inside the camera is inference backed by the battery-pull and
+clean-exit correlations): the previous booth process died without `camera.exit()`
 (power cut or hard kill — `main.py`'s SIGTERM handler never got to run). The
 M50 retains stale remote/live-view state from that abandoned session, and
 that state wedges live view in the *next* session. Only cleanly **exiting the
@@ -78,7 +81,8 @@ stop shows `camera_warmup` succeeding on the very first init.
 
 ## 3. Live-View Behavior Under Sustained Polling
 
-- Under continuous `capture_preview()` polling (any rate), the M50 exhibits
+- Under continuous `capture_preview()` polling (observed at both tested
+  rates, ~2.5fps and 15fps), the M50 exhibits
   **periodic ~3.1s `[-1]` stalls on a ~12.3s cycle**. Healthy sessions show
   these as isolated `worker_preview_err #1` entries that never cascade.
 - A **shutter trigger landing inside a stall runs slow or fails** the first
@@ -105,12 +109,12 @@ DEBUG level):
 
 | Widget | Observed value | Notes |
 |---|---|---|
-| `output` | `'MOBILE2'` | **Read-only for us.** Canon EOS encodes live-view routing/size here; `PC`/`MOBILE`/`MOBILE2` are preview *sizes* managed by libgphoto2 itself (`MOBILE2` = small). It is NOT a stale smartphone connection. Writing `'TFT'` routes live view to the camera LCD and kills USB previews for the session. |
+| `output` | `'MOBILE2'` | **Read-only for us (house rule).** Canon EOS encodes live-view routing/size here; per the [gPhoto remote docs](http://www.gphoto.org/doc/remote/), `PC` is the largest preview size, `MOBILE` second, `MOBILE2` the smallest. It is NOT a stale smartphone connection. Upstream sanctions writing the size values to pick a preview size — untested on this body. Writing `'TFT'` (LCD routing) is **proven** to kill USB previews for the session. |
 | `movierecordtarget` | `'SDRAM'` | Normal. |
 | `liveviewsize` | `'Small'` | Matches `MOBILE2`. |
 | `eosmovieswitch` | `'0'` | Stills mode. |
 | `capturetarget` | `'Internal RAM'` | Set by `init()`. Means a captured photo exists **only in camera RAM** until downloaded — a failed download cannot be recovered, the retry re-shoots instead. Correct trade-off for a booth (no SD card wear/cleanup). |
-| `autofocusdrive` | set to `0` at init | Prevents AF hunting during live view. This write is proven safe; most other config writes into the EOS live-view state machine are not (`viewfinder=0` breaks the next session). |
+| `autofocusdrive` | set to `0` at init | An **action** widget, not a mode switch: per libgphoto2 (`examples/focus.c`), `1` drives autofocus once (`DoAf`) and `0` cancels an in-progress AF (`CancelAf`). Our init write of `0` is therefore at most a one-shot AF cancel — **not** a persistent "AF disabled" state; the "prevents AF hunting" rationale in the code comment is inherited folklore. Harmless in practice, and this write has shipped since the baseline; most other config writes into the EOS live-view state machine are not safe (`viewfinder=0` breaks the next session). |
 
 ---
 
@@ -160,8 +164,9 @@ bus from two threads.
    (`wait_for_event` until timeout) — leftover live-view events from the
    standby period would otherwise stall the trigger.
 3. `camera.capture(GP_CAPTURE_IMAGE)` — the `fired` SSE event is emitted
-   *before* the call so the frontend can flash/sound at the true shutter
-   moment.
+   *just before* the call; `capture()` then blocks ~1.5s and the exposure
+   happens somewhere inside that window, so the frontend flash/sound
+   slightly **leads** the actual shutter rather than marking it exactly.
 4. **Flush again immediately after the trigger** — this drains
    `GP_EVENT_FILE_ADDED` and friends; skipping it lets events pile up and
    poison the next preview session.
@@ -179,12 +184,14 @@ bus from two threads.
   `resume_preview()` (and `init()` in a thread if disconnected).
 - No config writes or session dance are needed to go back — the per-frame
   event flush in the worker loop (step 4 above having done its job) is
-  sufficient, and the first frame typically arrives within ~70ms of resume.
+  sufficient. At fresh-session countdown entries the first frame arrived
+  within ~70ms of resume; retake resumes weren't measured at frame
+  granularity, but no visible delay was ever observed.
 - The retake loop proven in logs: `resume` → frames → `standby`+capture →
   REVEAL (no preview) → RETAKE → `resume` → frames… every cycle clean, no
   re-init needed between shots.
 
-**Three things pause preview, one resumes it:**
+**What pauses preview vs. what resumes it:**
 
 | Trigger | Mechanism |
 |---|---|
