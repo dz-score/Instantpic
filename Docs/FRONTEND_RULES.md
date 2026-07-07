@@ -5,6 +5,14 @@ They apply to all screens, components, stores, and services. Rules are hard
 requirements unless a rule states its own escape hatch; exceptions must be
 justified in the PR that introduces them.
 
+**Scope — guest flow vs. admin panel.** These rules bind the guest flow
+(attract → capture → reveal → print). The admin panel is a conventional
+settings UI, not booth workflow: Rules 1–2 and the projection model do not
+apply there, and request/response calls, forms, and local component state
+are fine. The single API layer (Rule 8), explicit state handling (Rule 15),
+errors as state (Rule 16), and the design system (Rule 14) still bind
+everywhere.
+
 Maintained alongside the frontend. Last revised 2026-07-08.
 
 ---
@@ -41,9 +49,41 @@ different client?* Yes → backend-owned. No → component-local is fine.
 
 ---
 
+# 2. One Screen per Backend State
+
+The concrete pattern for Rule 1. A single top-level switch maps each backend
+state to exactly one screen component. Nothing else in the app decides what
+is on screen.
+
+✅ Good
+
+```jsx
+switch (boothState) {
+  case 'attract':    return <AttractScreen />
+  case 'countdown':  return <CountdownScreen />
+  case 'reveal':     return <RevealScreen />
+  case 'printing':   return <PrintingScreen />
+  // ...
+}
+```
+
+❌ Bad
+
+```js
+// a second place deciding what's visible
+if (photos.length === 4) {
+  setShowReveal(true)
+}
+```
+
+Review check: the app contains exactly one such switch, and no screen is
+ever shown or hidden by any other condition.
+
+---
+
 ## Part I — State Ownership
 
-# 2. UI Never Owns Business Logic
+# 3. UI Never Owns Business Logic
 
 The frontend displays state. The backend decides state.
 The frontend requests. The backend decides.
@@ -72,7 +112,7 @@ if (photos.length === 4) {    // frontend deciding the workflow
 
 ---
 
-# 3. Backend Owns Workflow Timing; Frontend Owns Presentation Timing
+# 4. Backend Owns Workflow Timing; Frontend Owns Presentation Timing
 
 The frontend never advances the workflow on its own clock.
 
@@ -100,7 +140,7 @@ never *decide* when the window ends.
 
 ---
 
-# 4. One Source of Truth
+# 5. One Source of Truth
 
 Never duplicate workflow state. Each piece of state has exactly one owner —
 the store — and components read from it.
@@ -126,10 +166,12 @@ Countdown.state
 
 ---
 
-# 5. State is Immutable as Observed by Consumers
+# 6. Store Hygiene: Immutable Updates, No Stored Derivations
 
-Consumers of the store must never see an object change under them; updates
-produce new references so change detection works.
+Two mechanical rules for the store.
+
+**Updates produce new references.** Consumers must never see an object
+change under them.
 
 ✅ Good
 
@@ -147,11 +189,7 @@ If the store uses a library with a mutable-draft API (e.g. Immer), `push`
 inside a producer is fine — the rule is about what consumers observe, not
 about syntax.
 
----
-
-# 6. Derived State is Never Stored
-
-Compute instead of duplicating.
+**Never store what can be computed.**
 
 ✅ Good
 
@@ -307,10 +345,8 @@ only render.
 A `CameraPage` component that calls backend APIs, manages state, validates
 transitions, renders UI, and starts the countdown.
 
-**Size guideline:** ~200 lines per component file (everything in the file —
-imports, types, JSX). This is a smell threshold, not a hard gate: split when
-a component has multiple responsibilities, multiple layouts, or unrelated
-logic — not merely to duck under the number.
+Split when a component has multiple responsibilities, multiple layouts, or
+unrelated logic — the test is responsibilities, not line count.
 
 ---
 
@@ -423,7 +459,32 @@ The guest should always know what is happening.
 
 ---
 
-# 17. Disconnection Has a Defined Recovery Path
+# 17. Repeated Input is the Normal Case
+
+Guests double-tap, mash buttons, and tap during transitions. Design for it:
+
+- An intent button disables on the first tap and stays disabled until the
+  resulting state change arrives or an error state renders (Rule 16).
+- Taps landing during a screen transition do nothing.
+- The backend treats repeated requests as idempotent — the UI debounce is
+  UX polish, not the protection. Never rely on the frontend to prevent a
+  double print.
+
+✅ Good
+
+```jsx
+<Button disabled={printRequested} onClick={requestPrint} />
+```
+
+❌ Bad
+
+```js
+onClick={() => api.print()}   // two taps, two prints
+```
+
+---
+
+# 18. Disconnection Has a Defined Recovery Path
 
 The booth runs unattended; the WebSocket *will* drop. The frontend must:
 
@@ -442,7 +503,7 @@ socket.onclose = () => {}   // UI silently freezes on the last frame
 
 ---
 
-# 18. Kiosk and Media Constraints
+# 19. Kiosk and Media Constraints
 
 This frontend runs full-screen on a touch kiosk and handles large images.
 
