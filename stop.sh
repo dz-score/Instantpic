@@ -7,7 +7,7 @@
 # ~12s wedged-session heal before previews work.
 
 # Close the kiosk first so its MJPEG/SSE connections drop.
-pkill -f chromium-browser 2>/dev/null
+pkill -f chromium 2>/dev/null
 
 # Ask the backend to shut down cleanly and wait for it.
 if ! pgrep -f "uvicorn backend.main:app" >/dev/null; then
