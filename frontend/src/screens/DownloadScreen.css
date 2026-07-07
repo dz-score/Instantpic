@@ -28,7 +28,7 @@
   font-size: var(--text-h2);
   font-weight: 500;
   color: var(--dusty-rose);
-  margin-bottom: 4px;
+  margin-bottom: var(--space-2xs);
 }
 
 .download-text {
@@ -48,7 +48,7 @@
 .download-photo__img {
   width: 100%;
   height: auto;
-  border-radius: 8px;
+  border-radius: var(--radius-xs);
   display: block;
 }
 

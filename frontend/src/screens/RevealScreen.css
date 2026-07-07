@@ -47,8 +47,8 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
-  margin-bottom: 6px;
+  gap: var(--space-2xs);
+  margin-bottom: var(--space-2xs);
 }
 
 .reveal-flourish__hearts {
@@ -61,7 +61,7 @@
 .reveal-flourish__line {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-xs);
 }
 
 .reveal-flourish__curl {
@@ -85,7 +85,7 @@
   font-family: var(--font-body);
   font-size: var(--text-label);
   font-weight: 500;
-  letter-spacing: 5px;
+  letter-spacing: var(--tracking-md);
   text-transform: uppercase;
   color: var(--gold);
   margin-bottom: 2px;
@@ -97,7 +97,7 @@
   font-weight: 400;
   line-height: 1.4;
   margin-bottom: var(--space-sm);
-  padding: 20px;
+  padding: var(--space-md);
   color: var(--gold);
 }
 
@@ -137,7 +137,7 @@
   font-weight: 500;
   font-style: italic;
   color: var(--gold);
-  letter-spacing: 0.5px;
+  letter-spacing: var(--tracking-hairline);
   margin-bottom: var(--space-md);
   animation: fade-up var(--duration-slower) var(--ease-out) 0.4s both;
 }
@@ -192,8 +192,8 @@
   align-items: center;
   justify-content: center;
   gap: var(--space-sm);
-  min-width: 260px;
-  height: 60px;
+  min-width: var(--cta-min-width-sm);
+  height: var(--cta-height-sm);
   padding: 0 var(--space-md);
   border-radius: var(--radius-full);
   border: 1px solid var(--gold);

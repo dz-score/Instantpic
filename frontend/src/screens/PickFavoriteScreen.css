@@ -16,7 +16,7 @@
   display: flex;
   align-items: center;
   gap: var(--space-xs);
-  padding: 10px 20px;
+  padding: var(--space-xs) var(--space-sm);
   border-radius: var(--radius-full);
   border: none;
   background: var(--ivory-gradient);
@@ -51,7 +51,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-2xs);
   margin-bottom: var(--space-xs);
 }
 
@@ -92,7 +92,7 @@
   letter-spacing: var(--tracking-md);
   text-transform: uppercase;
   color: var(--gold);
-  margin-bottom: 4px;
+  margin-bottom: var(--space-2xs);
 }
 
 .pick-fav__title {
@@ -101,15 +101,15 @@
   font-weight: 400;
   line-height: 1.4;
   margin-bottom: 0;
-  padding: 20px;
+  padding: var(--space-md);
   color: var(--gold);
 }
 
 .pick-fav__heart {
-  font-size: 0.9rem;
+  font-size: var(--text-label);
   color: var(--dusty-rose);
   opacity: 0.6;
-  margin-bottom: 4px;
+  margin-bottom: var(--space-2xs);
 }
 
 .pick-fav__subtitle {
@@ -139,7 +139,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-xs);
   flex: 1;
   min-width: 0;
   max-width: 240px;
@@ -181,7 +181,7 @@
   align-items: center;
   justify-content: center;
   font-family: var(--font-body);
-  font-size: 0.9rem;
+  font-size: var(--text-label);
   font-weight: 700;
   z-index: 2;
   background: var(--dusty-rose);
@@ -218,15 +218,15 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-2xs);
   margin-bottom: var(--space-sm);
 }
 
 .pick-fav__cam-line {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 4px;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-2xs);
 }
 
 .pick-fav__cam-curl {
@@ -303,7 +303,7 @@
 }
 
 .pick-fav__confirm-icon {
-  font-size: 2rem;
+  font-size: var(--text-h2);
   color: var(--text-on-gold);
 }
 

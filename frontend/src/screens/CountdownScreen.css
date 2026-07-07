@@ -184,8 +184,8 @@
   align-items: center;
   justify-content: center;
   gap: var(--space-sm);
-  min-width: 260px;
-  height: 60px;
+  min-width: var(--cta-min-width-sm);
+  height: var(--cta-height-sm);
   padding: 0 var(--space-md);
   border-radius: var(--radius-full);
   border: 1px solid var(--gold);

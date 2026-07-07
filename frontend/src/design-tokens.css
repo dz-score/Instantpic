@@ -29,6 +29,7 @@
   --gold-glow-sm:       rgba(212, 175, 106, 0.15);
   --gold-glow-md:       rgba(212, 175, 106, 0.35);
   --gold-glow-lg:       rgba(212, 175, 106, 0.65);
+  --gold-focus-ring:    rgba(201, 169, 110, 0.12);
   --sage:               #8B9E8B;
   --dusty-rose:         #D9B4AD;
 
@@ -42,6 +43,8 @@
   /* ── Semantic ── */
   --success:            #7BA37B;
   --error:              #C27070;
+  --error-tint:         rgba(194, 112, 112, 0.08);
+  --warning-tint:       rgba(240, 173, 78, 0.08);
   --surface-border:     rgba(212, 175, 106, 0.20);
 
   /* ── Status Indicators (Admin) ── */
@@ -67,11 +70,13 @@
   --text-small:         0.875rem;   /* 14px */
 
   /* ── Letter Spacing ── */
+  --tracking-hairline:  0.5px;
   --tracking-sm:        2px;
   --tracking-md:        4px;
   --tracking-lg:        8px;
 
   /* ── Spacing (8px grid) ── */
+  --space-2xs:          4px;
   --space-xs:           8px;
   --space-sm:           16px;
   --space-md:           24px;
@@ -90,6 +95,7 @@
   --icon-lg:            44px;
 
   /* ── Border Radius ── */
+  --radius-xs:          8px;
   --radius-sm:          12px;
   --radius-md:          20px;
   --radius-lg:          36px;

@@ -36,7 +36,7 @@
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-2xs);
   padding: var(--space-sm) var(--space-xs);
 }
 
@@ -129,7 +129,7 @@
 }
 
 .admin-status-pill {
-  padding: 6px var(--space-sm);
+  padding: var(--space-2xs) var(--space-sm);
   border-radius: var(--radius-full);
   font-size: var(--text-small);
   font-weight: 600;
@@ -141,7 +141,7 @@
 }
 
 .admin-status-pill--saving {
-  background: rgba(201, 169, 110, 0.12);
+  background: var(--gold-focus-ring);
   color: var(--text-accent);
 }
 

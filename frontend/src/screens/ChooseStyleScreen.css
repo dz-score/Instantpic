@@ -13,7 +13,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-2xs);
   margin-bottom: var(--space-sm);
 }
 
@@ -53,7 +53,7 @@
   letter-spacing: var(--tracking-lg);
   text-transform: uppercase;
   color: var(--gold);
-  margin-bottom: 4px;
+  margin-bottom: var(--space-2xs);
 }
 
 .choose-title {
@@ -62,12 +62,12 @@
   font-weight: 400;
   line-height: 1.4;
   margin-bottom: 0;
-  padding: 20px;
+  padding: var(--space-md);
   color: var(--gold);
 }
 
 .choose-title__heart {
-  font-size: 0.9rem;
+  font-size: var(--text-label);
   color: var(--dusty-rose);
   opacity: 0.6;
   margin-bottom: var(--space-xl);
@@ -155,7 +155,7 @@
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
-  border-radius: 8px;
+  border-radius: var(--radius-xs);
 }
 
 /* ── Card text ── */
@@ -184,8 +184,8 @@
   align-items: center;
   justify-content: center;
   gap: var(--space-sm);
-  min-width: 260px;
-  height: 60px;
+  min-width: var(--cta-min-width-sm);
+  height: var(--cta-height-sm);
   padding: 0 var(--space-lg);
   border-radius: var(--radius-full);
   border: none;

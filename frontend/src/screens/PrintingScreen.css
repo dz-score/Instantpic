@@ -38,7 +38,7 @@
   display: flex;
   align-items: center;
   gap: var(--space-xs);
-  margin-bottom: 4px;
+  margin-bottom: var(--space-2xs);
 }
 
 .print-loading__curl {
@@ -62,7 +62,7 @@
   font-size: clamp(2.5rem, 5.5vw, 4rem);
   font-weight: 400;
   line-height: 1.4;
-  padding: 20px;
+  padding: var(--space-md);
   color: var(--gold);
 }
 
@@ -122,8 +122,8 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
-  margin-bottom: 6px;
+  gap: var(--space-2xs);
+  margin-bottom: var(--space-2xs);
 }
 
 .print-done__hearts {
@@ -171,8 +171,8 @@
   font-size: clamp(2.5rem, 5vw, 4rem);
   font-weight: 400;
   line-height: 1.4;
-  margin-bottom: 4px;
-  padding: 20px;
+  margin-bottom: var(--space-2xs);
+  padding: var(--space-md);
   color: var(--gold);
 }
 
@@ -237,7 +237,7 @@
 .print-done__inst-header {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-xs);
   padding-bottom: var(--space-xs);
   border-bottom: 1px dashed rgba(212, 175, 106, 0.3);
 }
@@ -290,7 +290,7 @@
 .print-done__cam-line {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-xs);
   margin-bottom: var(--space-xs);
 }
 
@@ -314,7 +314,7 @@
 
 /* ═══ Actions ═══ */
 .print-done__actions {
-  margin-bottom: 6px;
+  margin-bottom: var(--space-2xs);
 }
 
 .print-done__btn-another {
@@ -367,7 +367,7 @@
   display: inline-block;
   background-color: var(--champagne);
   color: var(--gold);
-  padding: 10px var(--space-md);
+  padding: var(--space-xs) var(--space-md);
   border-radius: var(--radius-full);
   font-weight: 700;
   font-size: var(--text-caption);
