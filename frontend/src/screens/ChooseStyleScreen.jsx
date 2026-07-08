@@ -32,23 +32,25 @@ export default function ChooseStyleScreen({ onSelect, onBack, language }) {
         {/* Single Photo Card */}
         <button className="choose-card" onClick={() => onSelect('single')}>
           <div className="choose-card__badge">
-            <Image strokeWidth={1.5} size={28} />
+            <Image strokeWidth={1.5} size={36} />
           </div>
           <div className="choose-card__preview">
             <img src="/preview-single.png" alt="Single photo" className="choose-card__img" />
           </div>
           <h2 className="choose-card__title">{t('chooseStyle.singleTitle', language)}</h2>
+          <p className="choose-card__desc">{t('chooseStyle.singleDesc', language)}</p>
         </button>
 
         {/* Collage Strip Card */}
         <button className="choose-card" onClick={() => onSelect('collage')}>
           <div className="choose-card__badge">
-            <Columns3 strokeWidth={1.5} size={28} />
+            <Columns3 strokeWidth={1.5} size={36} />
           </div>
           <div className="choose-card__preview">
             <img src="/preview-collage.png" alt="Photo strip" className="choose-card__img" />
           </div>
           <h2 className="choose-card__title">{t('chooseStyle.collageTitle', language)}</h2>
+          <p className="choose-card__desc">{t('chooseStyle.collageDesc', language)}</p>
         </button>
 
       </div>

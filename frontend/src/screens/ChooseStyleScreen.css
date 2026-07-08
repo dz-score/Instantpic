@@ -87,8 +87,8 @@
 .choose-cards {
   display: flex;
   gap: var(--space-lg);
-  width: 100%;
-  max-width: 880px;
+  width: 90%;
+  max-width: 1150px;
   justify-content: center;
   margin-bottom: var(--space-md);
 }
@@ -97,7 +97,7 @@
 .choose-card {
   position: relative;
   flex: 1;
-  max-width: 400px;
+  max-width: 500px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -127,8 +127,8 @@
   top: calc(-1 * var(--space-md));
   left: 50%;
   transform: translateX(-50%);
-  width: 52px;
-  height: 52px;
+  width: 64px;
+  height: 64px;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -143,7 +143,7 @@
 /* ── Preview image ── */
 .choose-card__preview {
   width: 100%;
-  height: 200px;
+  height: 300px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -161,17 +161,17 @@
 /* ── Card text ── */
 .choose-card__title {
   font-family: var(--font-body);
-  font-size: var(--text-caption);
+  font-size: clamp(var(--text-label), 2vw, 1.25rem);
   font-weight: 700;
   letter-spacing: var(--tracking-md);
   text-transform: uppercase;
   color: var(--gold);
-  margin-bottom: 0;
+  margin-bottom: var(--space-xs);
 }
 
 .choose-card__desc {
   font-family: var(--font-body);
-  font-size: var(--text-label);
+  font-size: clamp(var(--text-body), 1.5vw, 1rem);
   font-weight: 400;
   letter-spacing: var(--tracking-sm);
   text-transform: uppercase;
