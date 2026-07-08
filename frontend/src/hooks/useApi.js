@@ -117,6 +117,25 @@ export default function useApi(isOnline) {
     return await r.json();
   }, []);
 
+  /* ── Camera settings (admin) ──
+   * Live gphoto2 EXIF settings are read/written directly (not part of the SSE
+   * config broadcast) because they are a USB round-trip to the camera. */
+  const getCameraConfig = useCallback(async () => {
+    const r = await fetch(`${API}/api/camera/config`);
+    if (!r.ok) throw new Error('Failed to fetch camera settings');
+    return await r.json();
+  }, []);
+
+  const saveCameraConfig = useCallback(async (settings) => {
+    const r = await fetch(`${API}/api/camera/config`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ settings }),
+    });
+    if (!r.ok) throw new Error('Failed to update setting');
+    return await r.json();
+  }, []);
+
   return {
     isOnline,
     saveConfig,
@@ -126,6 +145,8 @@ export default function useApi(isOnline) {
     emergencyAction,
     changePin,
     getRecentLogs,
+    getCameraConfig,
+    saveCameraConfig,
     fetchState,
     sendEvent,
   };

@@ -297,6 +297,8 @@ export default function App() {
           emergencyAction={api.emergencyAction}
           changePin={api.changePin}
           getRecentLogs={api.getRecentLogs}
+          getCameraConfig={api.getCameraConfig}
+          saveCameraConfig={api.saveCameraConfig}
           cameraStatus={camera.cameraStatus}
         />
       )}
