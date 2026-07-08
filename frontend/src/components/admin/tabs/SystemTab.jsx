@@ -3,7 +3,15 @@ import './SystemTab.css';
 
 /**
  * System tab — live diagnostics, emergency controls, PIN change, log viewer.
- * Auto-refreshes diagnostics every 5 seconds.
+ *
+ * Rule 7 escape hatch (documented): diagnostics and logs are polled over REST,
+ * not pushed over SSE. Both are live backend probes with no event source —
+ * printer/storage come from a CUPS query + shutil.disk_usage() on every
+ * /api/diagnostics call (see backend/diagnostics.py), and logs are a tail of
+ * the log files. There is no SSE channel to react to, so periodic polling is
+ * the intended mechanism. It only runs while this panel is mounted (and, for
+ * logs, only when the operator opts into Auto), and every interval is cleared
+ * on unmount.
  */
 export default function SystemTab({ getDiagnostics, emergencyAction, changePin, currentPin, getRecentLogs, cameraStatus }) {
   const [diagnostics, setDiagnostics] = useState(null);
@@ -25,7 +33,9 @@ export default function SystemTab({ getDiagnostics, emergencyAction, changePin, 
   const [logLoading, setLogLoading] = useState(false);
   const [logAutoRefresh, setLogAutoRefresh] = useState(false);
 
-  // Fetch diagnostics on mount and every 5s
+  // Fetch diagnostics on mount and every 5s.
+  // Rule 7 escape hatch: printer/storage health has no SSE channel (they are
+  // live CUPS/disk probes), so we poll while the panel is open.
   const fetchDiag = useCallback(async () => {
     try {
       const data = await getDiagnostics();
@@ -52,7 +62,10 @@ export default function SystemTab({ getDiagnostics, emergencyAction, changePin, 
     finally { setLogLoading(false); }
   }, [getRecentLogs, logSource]);
 
-  // Auto-refresh logs
+  // Auto-refresh logs — Rule 7 escape hatch, opt-in and off by default.
+  // Logs have no event channel; when the operator enables "Auto" we poll
+  // /api/logs/recent every 5s and clear the interval the moment it is turned
+  // off or the tab unmounts.
   useEffect(() => {
     if (!logAutoRefresh) return;
     fetchLogs();
