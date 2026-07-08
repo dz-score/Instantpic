@@ -23,7 +23,12 @@ import './CountdownScreen.css';
  * once it has received all the shots (which unmounts this screen).
  *
  * Camera events are consumed from the app's single SSE stream (`cameraJob`)
- * passed down as a prop, rather than opening a second stream.
+ * passed down as a prop, rather than opening a second stream. Camera *health*
+ * likewise comes from the backend via `cameraStatus` (SSE camera_status, also
+ * surfaced app-wide as a banner) — this screen does not form its own opinion of
+ * whether the camera is broken. The only camera fact it owns is `cameraReady`:
+ * whether our preview <img> has actually painted a frame, which is ephemeral
+ * view state the backend can't observe and only gates when the countdown starts.
  */
 export default function CountdownScreen({
   previewUrl,
@@ -33,6 +38,7 @@ export default function CountdownScreen({
   resumePreview,
   standbyPreview,
   cameraJob,
+  cameraStatus,
   onShotCaptured,
   onCancel,
   config,
@@ -47,7 +53,6 @@ export default function CountdownScreen({
   const [lastCapture, setLastCapture] = useState(null);
   const [isCapturing, setIsCapturing] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
-  const [cameraError, setCameraError] = useState(false);
   const [sessionStarted, setSessionStarted] = useState(false);
   // Tracks whether the countdown ring video has played to its natural end.
   // Kept independent of `phase`/`isCapturing` so the ring always finishes
@@ -61,11 +66,11 @@ export default function CountdownScreen({
   // forever for capturedCount to advance.
   const [captureError, setCaptureError] = useState(null);
 
-  useEffect(() => {
-    if (cameraReady) return;
-    const t = setTimeout(() => setCameraError(true), 15000);
-    return () => clearTimeout(t);
-  }, [cameraReady]);
+  // Camera health is owned by the backend and pushed over SSE (camera_status),
+  // already surfaced app-wide as a banner in App.jsx. Consume that single source
+  // of truth for "is the camera broken" instead of inventing an independent
+  // verdict from a timeout that can disagree with the backend (Rule 5).
+  const cameraError = !!cameraStatus?.error;
   const pendingTimeouts = useRef([]);
   const timerRef = useRef(null);
   const countdownVideoRef = useRef(null);
@@ -249,13 +254,14 @@ export default function CountdownScreen({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 2. Start session only when camera stream actually loads
+  // 2. Start session only when the preview has painted and the backend reports
+  // the camera healthy.
   useEffect(() => {
-    if (cameraReady && !sessionStarted) {
+    if (cameraReady && !sessionStarted && !cameraError) {
       setSessionStarted(true);
       startRound();
     }
-  }, [cameraReady, sessionStarted, startRound]);
+  }, [cameraReady, sessionStarted, startRound, cameraError]);
 
   // 3. Advance to the next round once the backend confirms a shot landed.
   // Whether more shots are needed is the FSM's call (totalShots/capturedCount
@@ -285,12 +291,12 @@ export default function CountdownScreen({
           className="countdown-video"
           alt="Camera Live View"
           onLoad={() => setCameraReady(true)}
-          onError={() => setCameraError(true)}
+          onError={() => logger.warn('countdown', 'preview_load_fail', 'Live-view <img> stream failed to load')}
           style={{ opacity: cameraReady ? 1 : 0, transition: 'opacity 0.3s' }}
         />
 
-        {/* Error State for camera timeout/failure */}
-        {cameraError && !cameraReady && (
+        {/* Error State — driven by the backend camera health signal (cameraStatus). */}
+        {cameraError && (
           <div className="countdown-loading">
             <div className="countdown-loading-glow" aria-hidden="true" />
             <div className="countdown-loading-content">

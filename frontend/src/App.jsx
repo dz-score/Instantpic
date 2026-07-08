@@ -202,6 +202,7 @@ export default function App() {
           resumePreview={camera.resumePreview}
           standbyPreview={camera.standbyPreview}
           cameraJob={sse.cameraJob}
+          cameraStatus={camera.cameraStatus}
           onShotCaptured={handleShotCaptured}
           onCancel={() => api.sendEvent('FINISH')}
           config={config}
