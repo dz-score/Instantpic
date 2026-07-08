@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ScreenShell from '../components/ScreenShell';
 import { t } from '../utils/i18n';
+import useTapGuard from '../hooks/useTapGuard';
 import { Camera } from 'lucide-react';
 import './PrintingScreen.css';
 
@@ -40,6 +41,7 @@ export default function PrintingScreen({
     : 'PRINTING';
 
   const [countdown, setCountdown] = useState(AUTO_RESET_SECONDS);
+  const [guard, armed] = useTapGuard();
   const countdownRef = useRef(null);
   const onFinishRef = useRef(onFinish);
 
@@ -187,7 +189,7 @@ export default function PrintingScreen({
 
           {/* Actions */}
           <div className="print-done__actions">
-            <button className="print-done__btn-another" onClick={handleAnother}>
+            <button className="print-done__btn-another" onClick={guard(handleAnother)} disabled={!armed}>
               <span className="print-done__btn-icon btn-icon"><Camera strokeWidth={1.5} size={34} /></span>
               <span className="print-done__btn-main">{t('printing.takeAnother', language)}</span>
             </button>

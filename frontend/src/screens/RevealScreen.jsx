@@ -4,6 +4,7 @@ import PhotoFrame from '../components/PhotoFrame';
 import ConfettiOverlay from '../components/ConfettiOverlay';
 import { getRandomCompliment } from '../utils/compliments';
 import { t } from '../utils/i18n';
+import useTapGuard from '../hooks/useTapGuard';
 import { RotateCcw, Heart, Home } from 'lucide-react';
 import './RevealScreen.css';
 
@@ -34,6 +35,7 @@ export default function RevealScreen({
 }) {
   const compliment = useMemo(() => getRandomCompliment(language), [finalPhoto, language]);
   const [showPhoto, setShowPhoto] = useState(false);
+  const [guard, armed] = useTapGuard();
   const cacheKey = useRef(Date.now());
   const isLastRetake = retakeCount >= maxRetakes - 1;
   const canRetake = retakeCount < maxRetakes;
@@ -92,14 +94,14 @@ export default function RevealScreen({
           {/* Actions */}
           <div className="reveal-actions">
             {canRetake && (
-              <button className="reveal-btn-retake" onClick={onRetake}>
+              <button className="reveal-btn-retake" onClick={guard(onRetake)} disabled={!armed}>
                 <span className="reveal-btn-retake__icon btn-icon"><RotateCcw strokeWidth={1.5} size={20} /></span>
                 <span className="reveal-btn-retake__main">
                   {isLastRetake ? t('reveal.lastTry', language) : t('reveal.retake', language)}
                 </span>
               </button>
             )}
-            <button className="reveal-btn-print" onClick={onPrint}>
+            <button className="reveal-btn-print" onClick={guard(onPrint)} disabled={!armed}>
               <span className="reveal-btn-print__icon btn-icon"><Heart strokeWidth={1.5} size={36} /></span>
               <span className="reveal-btn-print__main">{t('reveal.loveIt', language)}</span>
             </button>
@@ -117,11 +119,11 @@ export default function RevealScreen({
         <div className="reveal-error">
           <p className="reveal-error__text">{t('reveal.error', language)}</p>
           <div className="reveal-actions" style={{ marginTop: '2rem' }}>
-            <button className="reveal-btn-retake" onClick={onRetake}>
+            <button className="reveal-btn-retake" onClick={guard(onRetake)} disabled={!armed}>
               <span className="reveal-btn-retake__icon btn-icon"><RotateCcw strokeWidth={1.5} size={20} /></span>
               <span className="reveal-btn-retake__main">{t('reveal.retakeMain', language)}</span>
             </button>
-            <button className="reveal-btn-retake" onClick={onCancel} style={{ background: 'var(--bg-card)' }}>
+            <button className="reveal-btn-retake" onClick={guard(onCancel)} disabled={!armed} style={{ background: 'var(--bg-card)' }}>
               <span className="reveal-btn-retake__icon btn-icon"><Home strokeWidth={1.5} size={20} /></span>
               <span className="reveal-btn-retake__main">{t('reveal.home', language)}</span>
             </button>

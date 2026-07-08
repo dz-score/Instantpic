@@ -1,6 +1,7 @@
 import React from 'react';
 import ScreenShell from '../components/ScreenShell';
 import { t } from '../utils/i18n';
+import useTapGuard from '../hooks/useTapGuard';
 import { Home, Image, Columns3 } from 'lucide-react';
 import './ChooseStyleScreen.css';
 
@@ -8,6 +9,7 @@ import './ChooseStyleScreen.css';
  * Mode selection — Single Classic vs 3-Photo Collage.
  */
 export default function ChooseStyleScreen({ onSelect, onBack, language }) {
+  const [guard, armed] = useTapGuard();
   return (
     <ScreenShell className="choose-screen">
 
@@ -30,7 +32,7 @@ export default function ChooseStyleScreen({ onSelect, onBack, language }) {
       <div className="choose-cards">
 
         {/* Single Photo Card */}
-        <button className="choose-card" onClick={() => onSelect('single')}>
+        <button className="choose-card" onClick={guard(() => onSelect('single'))} disabled={!armed}>
           <div className="choose-card__badge">
             <Image strokeWidth={1.5} size={36} />
           </div>
@@ -42,7 +44,7 @@ export default function ChooseStyleScreen({ onSelect, onBack, language }) {
         </button>
 
         {/* Collage Strip Card */}
-        <button className="choose-card" onClick={() => onSelect('collage')}>
+        <button className="choose-card" onClick={guard(() => onSelect('collage'))} disabled={!armed}>
           <div className="choose-card__badge">
             <Columns3 strokeWidth={1.5} size={36} />
           </div>
@@ -56,7 +58,7 @@ export default function ChooseStyleScreen({ onSelect, onBack, language }) {
       </div>
 
       {/* ── Back Button ── */}
-      <button className="choose-back" onClick={onBack}>
+      <button className="choose-back" onClick={guard(onBack)} disabled={!armed}>
         <span className="choose-back__icon btn-icon"><Home strokeWidth={1.5} size={20} /></span>
         <span className="choose-back__text">{t('framePicker.home', language)}</span>
       </button>
