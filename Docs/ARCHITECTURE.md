@@ -434,7 +434,6 @@ Mounts `<App />` into `#root`. Minimal boilerplate.
 | `PhotoFrame` | Image display with frame chrome |
 | `ConfettiOverlay` | CSS confetti burst animation |
 | `Toast` | Ephemeral notification banner |
-| `AdminModal` | PIN entry modal |
 | `admin/AdminPanel` | Full-page operator config panel |
 
 ---

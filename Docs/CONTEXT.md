@@ -107,7 +107,6 @@ Every important file in the project, grouped by layer. Use this as a quick-refer
 | [`PhotoFrame.jsx`](frontend/src/components/PhotoFrame.jsx) | Image display component that wraps a `<img>` in a styled decorative frame chrome. |
 | [`ConfettiOverlay.jsx`](frontend/src/components/ConfettiOverlay.jsx) | Full-screen confetti burst animation triggered on photo reveal. |
 | [`Toast.jsx`](frontend/src/components/Toast.jsx) | Auto-dismissing notification banner for transient feedback messages. |
-| [`AdminModal.jsx`](frontend/src/components/AdminModal.jsx) | PIN entry modal dialog: validates input before granting access to the Admin Panel. |
 
 ### `frontend/src/components/admin/`
 
