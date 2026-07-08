@@ -119,7 +119,6 @@ camera_svc.init()             # connect to gphoto2 camera
 | `POST` | `/api/camera/resume` | Resume preview worker |
 | `GET` | `/api/camera/status` | Camera health |
 | `GET/POST` | `/api/camera/config` | Camera EXIF/gphoto2 settings |
-| `POST` | `/api/print/{filename}` | Trigger a print job |
 | `GET` | `/api/printer/status` | Printer health |
 | `GET` | `/api/diagnostics` | System diagnostics |
 | `POST` | `/api/emergency` | Emergency actions |
@@ -461,7 +460,6 @@ Thin wrapper over camera REST endpoints:
 Centralises all REST interactions:
 - Fetches config on mount; caches in `configRef`
 - `sendEvent(type, payload)` -> `POST /api/events`
-- `printPhoto(filename)` -> `POST /api/print/{filename}`
 - `saveConfig(updates)` -> `POST /api/config`
 - `getQrUrl(downloadUrl)` -> `/api/qrcode?text=...`
 - `getDownloadUrl(filename)` -> `http://{LAN_IP}:{port}/download/{filename}`
@@ -625,13 +623,17 @@ state_machine: isProcessing=true
         |  job_queue.enqueue({type:"PROCESS_FRAME", ...})
         v
 job_queue: re-processes with overlay -> state_machine.job_frame_processed()
-        |  state -> PRINTING, finalPhoto = "photo_xyz456.jpg"
-        |  SSE -> PrintingScreen
+        |  _enter_printing(): state -> PRINTING, printStatus = "printing",
+        |                     finalPhoto = "photo_xyz456.jpg"
+        |  job_queue.enqueue({type:"PRINT_PHOTO", filename:"photo_xyz456.jpg"})
+        |  SSE (state_update) -> PrintingScreen projects printStatus
+        v
+job_queue: print_svc.print(filepath) -> lp -d <printer_name> ...
+        |  success -> state_machine.job_print_done()   -> printStatus = "printed"
+        |  failure -> state_machine.job_print_failed()  -> printStatus = "failed"
+        |  SSE (state_update) -> PrintingScreen
 
-PrintingScreen:
-        |  api.printPhoto("photo_xyz456.jpg")
-        |    -> POST /api/print/photo_xyz456.jpg
-        |    -> print_svc.print(filepath) -> lp -d <printer_name> ...
+PrintingScreen (pure projection of printStatus — never triggers the print):
         |  Displays QR code -> /api/qrcode?text=http://192.168.x.x:8000/download/photo_xyz456.jpg
         v
 Guest scans QR on phone -> hits /download/photo_xyz456.jpg -> FileResponse download

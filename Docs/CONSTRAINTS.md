@@ -349,7 +349,7 @@ In production (frontend served by the same origin), CORS is effectively irreleva
 ---
 
 ### Rule: There is no authentication on any API endpoint
-Any device on the same network can call `POST /api/events`, `POST /api/config`, or `POST /api/print/*`.
+Any device on the same network can call `POST /api/events` or `POST /api/config`.
 
 > **Why:** The booth is on a private event WiFi. Guests are expected to interact with the booth only via the kiosk UI. Adding auth would complicate the QR download flow for guests.
 

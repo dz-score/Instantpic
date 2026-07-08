@@ -125,9 +125,9 @@ Every important file in the project, grouped by layer. Use this as a quick-refer
 
 | File | Responsibility |
 |---|---|
-| [`useSse.js`](frontend/src/hooks/useSse.js) | Opens and maintains the `EventSource` connection to `/api/sse`; parses `state_update`, `camera_status`, and `printer_status` events; auto-reconnects on error. |
+| [`useSse.js`](frontend/src/hooks/useSse.js) | Opens and maintains the `EventSource` connection to `/api/sse`; parses `state_update`, `camera_status`, `config_update`, and `camera_job` events; auto-reconnects on error. |
 | [`useCamera.js`](frontend/src/hooks/useCamera.js) | Provides `previewUrl` (MJPEG stream), `captureFrame()`, `standbyPreview()`, and `resumePreview()` — thin wrappers over the camera REST endpoints. |
-| [`useApi.js`](frontend/src/hooks/useApi.js) | Centralises all REST calls: fetches and caches config on mount, exposes `sendEvent`, `printPhoto`, `saveConfig`, `getQrUrl`, `getDownloadUrl`, `getDiagnostics`, `emergencyAction`, `changePin`, and `getRecentLogs`. |
+| [`useApi.js`](frontend/src/hooks/useApi.js) | Centralises REST writes/reads: exposes `sendEvent`, `saveConfig`, `getQrUrl`, `getDownloadUrl`, `getDiagnostics`, `emergencyAction`, `changePin`, `getRecentLogs`, and `fetchState` (config arrives via SSE, not here). |
 
 ### `frontend/src/utils/`
 

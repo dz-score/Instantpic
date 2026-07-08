@@ -32,12 +32,6 @@ def test_event_capture_flow(client):
     assert state_resp.status_code == 200
     assert state_resp.json()["screen"] == "REVEAL"
 
-def test_print_photo_missing(client):
-    """Test that requesting to print a missing file returns 404."""
-    response = client.post("/api/print/i_do_not_exist.jpg")
-    assert response.status_code == 404
-    assert "not found" in response.json()["detail"].lower()
-
 def test_change_pin_success(client):
     """Test changing the admin PIN with correct current PIN."""
     response = client.post("/api/change-pin", json={
