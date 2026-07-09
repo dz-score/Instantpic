@@ -71,6 +71,26 @@ export default function CountdownScreen({
   // of truth for "is the camera broken" instead of inventing an independent
   // verdict from a timeout that can disagree with the backend (Rule 5).
   const cameraError = !!cameraStatus?.error;
+
+  // View-level failsafe (ephemeral, Rule 5-exempt — same category as
+  // cameraReady). The backend owns the health verdict, but it can't observe
+  // whether our preview <img> ever actually paints a frame in the browser. The
+  // MJPEG stream can stay open with zero frames (camera warming up, or a stall
+  // that never crosses the backend's error threshold), in which case onLoad
+  // never fires and the backend reports no error — leaving the guest stuck on
+  // the loading spinner. If nothing has painted after a grace period (or the
+  // <img> hard-errors), fall through to the escape screen so they can bail.
+  // This is not a second opinion on camera health; it only guarantees an exit.
+  const [previewStalled, setPreviewStalled] = useState(false);
+  useEffect(() => {
+    if (cameraReady || cameraError) {
+      setPreviewStalled(false);
+      return;
+    }
+    const id = setTimeout(() => setPreviewStalled(true), 15000);
+    return () => clearTimeout(id);
+  }, [cameraReady, cameraError]);
+
   const pendingTimeouts = useRef([]);
   const timerRef = useRef(null);
   const countdownVideoRef = useRef(null);
@@ -291,12 +311,16 @@ export default function CountdownScreen({
           className="countdown-video"
           alt="Camera Live View"
           onLoad={() => setCameraReady(true)}
-          onError={() => logger.warn('countdown', 'preview_load_fail', 'Live-view <img> stream failed to load')}
+          onError={() => {
+            logger.warn('countdown', 'preview_load_fail', 'Live-view <img> stream failed to load');
+            setPreviewStalled(true);
+          }}
           style={{ opacity: cameraReady ? 1 : 0, transition: 'opacity 0.3s' }}
         />
 
-        {/* Error State — driven by the backend camera health signal (cameraStatus). */}
-        {cameraError && (
+        {/* Error State — backend camera health (cameraStatus) OR the local
+            preview-never-painted failsafe. Either way the guest gets an exit. */}
+        {(cameraError || previewStalled) && (
           <div className="countdown-loading">
             <div className="countdown-loading-glow" aria-hidden="true" />
             <div className="countdown-loading-content">
@@ -345,7 +369,7 @@ export default function CountdownScreen({
         )}
 
         {/* Loading Spinner for cold start */}
-        {!cameraReady && !cameraError && (
+        {!cameraReady && !cameraError && !previewStalled && (
           <div className="countdown-loading">
             <div className="countdown-loading-glow" aria-hidden="true" />
             <div className="countdown-loading-content">
