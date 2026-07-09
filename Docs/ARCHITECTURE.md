@@ -429,7 +429,6 @@ Mounts `<App />` into `#root`. Minimal boilerplate.
 |---|---|
 | `Button` | Styled button primitive |
 | `ScreenShell` | Full-screen container wrapper |
-| `CountdownRing` | SVG circular countdown animation |
 | `ProgressDots` | Shot progress indicator (1/3, 2/3, 3/3) |
 | `PhotoFrame` | Image display with frame chrome |
 | `ConfettiOverlay` | CSS confetti burst animation |
