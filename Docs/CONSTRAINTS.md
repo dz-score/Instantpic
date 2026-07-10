@@ -118,12 +118,12 @@ The frame buffer (`_latest_frame`) is a **single slot** that the worker thread o
 
 ---
 
-### Rule: Standby/resume must bracket every capture
-The capture sequence is always: `standby()` → `enqueue_capture()` → `(wait for SSE camera_job: completed/failed)` → `resume_preview()`. Skipping standby causes the preview worker to race with the capture command.
+### Rule: The capture is authoritative over live view (and the countdown must be ≤ ~5s)
+`enqueue_capture()` sets `_capture_in_progress` **and** calls `standby()` **before** queuing the CAPTURE job. While that flag is set the worker starts no new preview grabs and `resume_preview()` is a no-op, so nothing can re-arm live-view polling between enqueue and the shutter. Do **not** "simplify" this back to a bare `standby()` — that flag is only advisory: `preview_generator()` calls `resume_preview()` on every preview-stream (re)connect and can un-park the worker, which let it ride a preview grab into the M50's periodic ~3s stall and delay the shutter (the "3rd-collage-shot delay").
 
-> **Why:** gphoto2 cannot simultaneously stream preview and fire the shutter. If preview is running when capture is triggered, gphoto2 returns a `GP_ERROR_IO` error.
+> **Why:** live view and capture share one PTP/USB session; the M50 stalls live view ~3s on a ~6s timer (CAMERA_NOTES §3). A capture that coincides with a stall runs slow or fails; the retry-once policy hides the failure but not the delay.
 
-> **What breaks:** Calling `enqueue_capture()` without first calling `standby()` causes intermittent capture failures on the Canon M50.
+> **What breaks:** Removing the `_capture_in_progress` gate reintroduces the intermittent ~3s pre-shutter delay. Setting the guest `countdown_duration` > ~5s pushes the shutter past the fresh ~6s live-view window (which `resume` opens at countdown start) straight into a stall — **keep the countdown ≤ ~5s** (CAMERA_NOTES §3, §6).
 
 ---
 

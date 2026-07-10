@@ -127,9 +127,11 @@ sequenceDiagram
     rect rgb(230, 255, 230)
     Note over F,M: — capture phase (all on the worker thread) —
     F->>A: POST /api/camera/capture
-    A->>W: enqueue_capture() → CAPTURE job queued (standby again, idempotent)
+    A->>W: enqueue_capture() → set _capture_in_progress + standby, THEN queue CAPTURE
+    Note over W: gate: no new preview grab, and resume_preview() is a no-op,<br/>until the shot completes (nothing can re-arm polling)
     A-->>F: job_id
     S-->>F: camera_job: pending → started
+    Note over W: PREVIEW_RELEASE_SETTLE_S (~15ms) idle — let live view release
     W->>M: flush leftover events (~15ms)
     S-->>F: camera_job: fired
     Note over F: flash + shutter sound<br/>(deferred until the ring video finished —<br/>slightly LEADS the real exposure)
@@ -155,10 +157,12 @@ sequenceDiagram
 - **The FSM never touches the camera.** The frontend calls camera endpoints
   and reports `SHOT_CAPTURED`; the backend owns retries and job state — the
   frontend only ever sees one terminal `completed`/`failed` per shot.
-- **Live view and capture never overlap.** The explicit standby at count 0
-  plus the queue-then-execute design guarantee the USB bus is quiet before
-  the trigger. Captures landing near a live-view stall are the main source
-  of slow (>2s) shots — see CAMERA_NOTES §3.
+- **Live view and capture never overlap.** From `enqueue_capture()` the
+  capture is authoritative — `_capture_in_progress` blocks new preview grabs
+  and makes `resume_preview()` a no-op, so nothing can re-arm polling before
+  the shutter (CAMERA_NOTES §6). Combined with a **≤5s countdown** — so the
+  shutter lands in the fresh ~6s live-view window (§3) — captures no longer
+  ride into the periodic stall.
 - **Failure is handled below the UI**: a failed trigger/download is retried
   once inside `_execute_capture_job()` (new shot, ~1.5s later). The guest
   sees the error screen only if both attempts fail.
