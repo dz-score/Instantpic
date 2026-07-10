@@ -118,12 +118,14 @@ The frame buffer (`_latest_frame`) is a **single slot** that the worker thread o
 
 ---
 
-### Rule: The capture is authoritative over live view (and the countdown must be ≤ ~5s)
+### Rule: The capture is authoritative over live view; chain multi-shot captures tight
 `enqueue_capture()` sets `_capture_in_progress` **and** calls `standby()` **before** queuing the CAPTURE job. While that flag is set the worker starts no new preview grabs and `resume_preview()` is a no-op, so nothing can re-arm live-view polling between enqueue and the shutter. Do **not** "simplify" this back to a bare `standby()` — that flag is only advisory: `preview_generator()` calls `resume_preview()` on every preview-stream (re)connect and can un-park the worker, which let it ride a preview grab into the M50's periodic ~3s stall and delay the shutter (the "3rd-collage-shot delay").
 
-> **Why:** live view and capture share one PTP/USB session; the M50 stalls live view ~3s on a ~6s timer (CAMERA_NOTES §3). A capture that coincides with a stall runs slow or fails; the retry-once policy hides the failure but not the delay.
+The M50's ~3s live-view stall runs on a **free-running ~6s clock that nothing we do to polling resets** — standby, resume, rate, and flush have no effect (CAMERA_NOTES §3). The **only** app-controllable reset is a **real capture**, which opens a ~6s stall-free window. So multi-shot captures are chained tight: `shot_interval_ms` (1s) `+ countdown_duration` must stay **< ~5s** so shot N+1 fires inside the window shot N opened.
 
-> **What breaks:** Removing the `_capture_in_progress` gate reintroduces the intermittent ~3s pre-shutter delay. Setting the guest `countdown_duration` > ~5s pushes the shutter past the fresh ~6s live-view window (which `resume` opens at countdown start) straight into a stall — **keep the countdown ≤ ~5s** (CAMERA_NOTES §3, §6).
+> **Why:** live view and capture share one PTP/USB session; a capture that coincides with a stall runs slow or fails. Tight chaining keeps follow-on shots in the healthy window (~44% → ~10% stalled).
+
+> **What breaks:** Removing the `_capture_in_progress` gate reintroduces the pre-shutter delay. Raising `shot_interval_ms` (or the countdown) so `interval + countdown` > ~6s pushes the next capture past the prior capture's window into a stall. It's a mitigation, not a cure — the residual ~10% (and first/single/retake shots, which have no preceding capture) rely on the retry-once policy; ~100% would require decoupling live view.
 
 ---
 

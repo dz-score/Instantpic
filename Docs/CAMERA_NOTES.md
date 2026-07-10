@@ -33,8 +33,8 @@ the startup and countdown→reveal flows, see
 | **Never set `viewfinder=0`** | Breaks the *next* preview session with persistent `[-1]` until re-init. |
 | **Never do an in-place exit+reconnect inside `init()`** right after a failed warmup | It poisons **every subsequent session** too (commits `7237e7a`/`832ab8e`, reverted in `a4f4d51`). Only the worker-cascade heal works: `connected=False` → worker loop re-enters `init()`, which exits the old handle first. |
 | **Flush events (`wait_for_event`) around every capture** | The post-trigger flush drains `GP_EVENT_FILE_ADDED`; skip it and events pile up and poison the next preview session. (Note: the per-frame flush does **not** prevent the periodic ~6s live-view stall — measured, §3.) |
-| **Keep the guest countdown ≤ ~5s** | `resume` opens a fresh ~6s healthy live-view window; a ≤5s countdown lands the shutter (~5s) inside it, dodging the periodic stall (§3). A 10s countdown guarantees a mid-countdown stall. |
-| **To reset the stall clock, standby ≥1s before the resume** | The ~6s clock restarts on resume only if live view actually dropped; a <1s pause is unreliable (§3). The natural between-shots gap already satisfies this. |
+| **Chain multi-shot captures tight (`shot_interval_ms + countdown` < ~5s)** | A *capture* opens a ~6s stall-free window (§3); the next shot must fire inside it. `shot_interval_ms` is 1s for this. Standby does NOT open a window — only a capture (or a completed stall / re-init) resets the clock. |
+| **Don't rely on countdown/standby timing to dodge the stall** | The ~6s stall clock free-runs on camera time; standby/resume/rate/flush do NOT reset it (§3, disproven the earlier ≤5s idea). |
 | **Stop the booth with `stop.sh`, not a hard kill** | SIGTERM lets `camera.exit()` close the PTP session. A hard kill leaves stale live-view state that wedges the next launch's first session (§2). |
 | **Prefer letting the camera rest (standby/watchdog) over always-on polling** | Sustained polling exposes the periodic stall (§3); resting resets the clock for the next shot. |
 | **Mistrust ear-based localization of noises near the camera** | The famous "camera whine" came from the speaker amplifier (§5). |
@@ -110,27 +110,42 @@ noise of a real session).
   `FILE_ADDED` so it doesn't poison the next session — §6), but it does *not*
   shield this periodic ~6s-timer stall. Correcting the older assumption.
 
-**Resume RESETS the ~6s clock — this is the key lever.** After a
-standby→resume the next stall is again ~6.0s out, **independent of how long
-the pause was, provided the standby is ≥1s.** Measured: pause 1s/3s/6s all
-reset to ~6.0s; **pause 0.5s is unreliable** — it alternates reset ↔
-immediate-stall (6.06 → 0.01 → 6.07 → 0.01…), because a sub-second pause
-doesn't let the camera drop and re-arm live view. A real `capture_image`
-exits live view entirely, so the resume after a shot is an even stronger
-reset (each shot naturally starts a fresh window).
+**The clock FREE-RUNS; standby/resume does NOT reset it.** (Corrects an
+earlier wrong conclusion.) The first `--standby-cycle` probe always paused
+*right after a stall*, so its clean ~6s-after-resume readings were the STALL
+resetting the clock, not the resume. The decisive **mid-window** test
+(`--work-s`: poll a sub-6s window → standby → resume → measure) came back
+**bimodal** — 0.01s or ~6s depending on phase, never a constant ~6s — and
+cycles stalled *during* the supposedly-fresh work window, proving the clock
+carries across standbys. Nothing we do to polling (standby, resume, rate,
+flush) moves it. Only a **completed stall**, a **re-init**, or a **capture**
+resets it.
 
-**What this means for the app (the actual fix):**
+**A real `capture_image` DOES reset it.** The `--capture-cycle` probe (poll →
+real shutter+download → resume → measure) never stalled sooner than **~6s
+after a capture** (5.99–11.76s, never immediate) and every capture succeeded
+— a capture opens a guaranteed ~6s stall-free window.
 
-- **Keep the countdown ≤ ~5s.** `resume` fires at countdown start (opening a
-  fresh 6s window); a ≤5s countdown puts the shutter (~5s) inside it with ~1s
-  margin below the 6.0s cliff, so the capture never coincides with a stall. A
-  10s countdown guarantees a stall lands mid-countdown.
-- The natural between-shots gap (capture + download + interval — several
-  seconds) is far past the 1s reset floor, so every shot starts fresh.
-- Landing a shutter inside a stall runs slow or fails the first attempt
-  (observed capture totals ~1.6s normal vs ~2.1–2.6s post-stall, and outright
-  `[-1]` capture failures); the retry-once policy (`CAPTURE_RETRY_DELAY_S =
-  1.5s`) absorbs failures so guests see nothing, but the ≤5s rule avoids them.
+**What this means for the app (Option A, shipped 2026-07-11):**
+
+- **You cannot dodge the stall by countdown/standby timing** — there is no
+  "fresh window" to steer into; the safe gap arrives on the camera's own
+  schedule, not ours.
+- **You CAN chain shots inside the window a capture opens.** Keep
+  `shot_interval_ms + countdown` < ~5s so shot N+1 fires within ~6s of shot
+  N's capture. `shot_interval_ms` was dropped 3s→1s for this — it took the
+  collage from ~44% of shots stalled (at ~6.3s capture-to-capture) down to
+  ~10%.
+- **It's a mitigation, not a cure.** Even chained ~4.7s apart, ~10% of
+  captures still land in a stall (`--rapid-capture`: 2/20 failed — isolated
+  fast `capture_image` `[-1]`, roughly periodic; the reset isn't perfectly
+  clean). The **retry-once** policy (`CAPTURE_RETRY_DELAY_S = 1.5s` + its
+  re-init, which itself resets the clock) recovers these — the photo is never
+  lost, at the cost of a ~4s "processing" pause on the affected shot.
+- **First shot / single mode / retakes** have no preceding capture to open a
+  window, so they rely on retry-once. Reaching ~100% clean would require
+  **decoupling live view** (unproven feasible for gphoto2/M50 — single PTP
+  session).
 - The first PTP session after an *unclean previous session* is a different
   thing (wedged from boot, §2), not this periodic stall.
 
@@ -215,9 +230,11 @@ the ~6s stall (§3), and the queued shutter waits ~3s behind it — this was the
 
 Once enqueued, nothing can start a grab or re-arm polling until the shot
 completes, so the worker services the capture on its next loop (~0.1s) on a
-quiet bus. Note this does **not** abort an already-in-flight grab — the ≤5s
-countdown (§3) is what guarantees no *stalling* grab is in flight at capture
-time; the two fixes are complementary, neither is sufficient alone.
+quiet bus. Note this does **not** abort an already-in-flight grab: if the
+worker is mid-*stall* when the capture is enqueued, the shutter still waits
+behind it. Chaining shots inside the post-capture window (§3, Option A) is
+what keeps a stalling grab from being in flight; the two are complementary,
+neither is sufficient alone.
 
 **Preview → capture (the shutter sequence):**
 
@@ -253,7 +270,8 @@ time; the two fixes are complementary, neither is sufficient alone.
   `preview_generator()` entry calls `resume_preview()` (and `init()` in a
   thread if disconnected). During the shot itself `resume_preview()` is gated
   to a no-op; it un-gates when the capture completes, so the next screen's
-  resume re-arms a fresh ~6s window (§3) normally.
+  resume restarts polling normally. (Resume does NOT open a stall-free window —
+  only a capture does, §3.)
 - No config writes or session dance are needed to go back — the per-frame
   event flush in the worker loop (step 4 above having done its job) is
   sufficient. At fresh-session countdown entries the first frame arrived
@@ -284,10 +302,11 @@ it's the M50 switching internal modes.
 - Healthy capture timeline (from logs): trigger ~1.5s, post-flush ~30ms,
   download ~5ms from RAM, total ~1.6s. Anything over ~2s usually means the
   trigger landed near a live-view stall (§3), not a fault.
-- `capture_pending` → `capture_started` should be **tens of ms** every shot
-  now (the capture-authoritative gate, §6). A ~3s `pending→started` gap is the
-  pre-fix signature — the worker rode a preview grab into a stall — and should
-  no longer appear with a ≤5s countdown.
+- `capture_pending` → `capture_started` should be **tens of ms** when no
+  stall is in flight (the capture-authoritative gate, §6). A ~3s
+  `pending→started` gap means the worker was mid-stall when the shot was
+  enqueued — reduced (not eliminated) by tight shot chaining (§3); retry-once
+  absorbs the residual.
 - A ~15ms `PREVIEW_RELEASE_SETTLE_S` idle precedes the trigger (§6); invisible
   next to the ~1.6s capture.
 - The retry-once policy lives in the backend (Rule: workflow decisions never
@@ -340,8 +359,11 @@ the camera); it heals a wedged first session before measuring, and always
 releases the camera cleanly (try/finally + SIGTERM handling) so it never
 wedges the next run. Flags: `--fps N` (rate sweep — proves the stall is
 time- not frame-triggered), `--no-flush` (does the flush help — it doesn't),
-`--standby-cycle --pause-s N` (does resume reset the ~6s clock — yes, if
-pause ≥1s). This is how §3 was characterized.
+`--standby-cycle [--work-s N]` (does standby/resume reset the clock — **NO**;
+a mid-window standby leaves it running), `--capture-cycle` (does a real
+capture reset it — **YES**, ~6s window after), `--rapid-capture --gap-s N`
+(do tightly-chained captures stay clean — mostly, ~10% still fail). This is
+how §3 was characterized.
 
 ---
 
@@ -351,7 +373,8 @@ pause ≥1s). This is how §3 was characterized.
 |---|---|---|
 | 2026-07-06 | "~35s whistle after shutter" investigated as a camera issue; camera-side experiments (viewfinder=0, trickle/15fps idle polling, settle pause, init-time session rebuild, `output='TFT'` write) | All reverted — they added latency, capture failures, and in two cases killed previews entirely. Root cause was the speaker amp (§5). Keepers: the sounds.js suspend fix + init-time widget logging. |
 | 2026-07-07 | "First preview after launch always fails" investigated | Root-caused to stale PTP session from hard kills (§2). Fixed with fail-fast heal + watchdog viewer fix (`5c5b9c0`), `stop.sh` for clean stops, event-loop offloading for slow USB calls (`1f75959`). Hardware-verified same night. |
-| 2026-07-09 / 07-10 | "3rd collage shot / intermittent ~3s pre-shutter delay" investigated | Built `preview_stall_probe.py` and characterized the stall precisely (§3): **time-triggered ~6s cycle, ~3s duration, rate- and flush-independent; resume resets the clock if standby ≥1s** — correcting the earlier "~12.3s cycle". Root-caused the residual delay to advisory `standby` being re-armed mid-window by a preview-stream reconnect. Fixed: capture made **authoritative from enqueue** + ~15ms `PREVIEW_RELEASE_SETTLE_S` (§6); app-side **countdown ≤5s** to land the shutter in the fresh window; worker stall instrumentation added. |
+| 2026-07-09 / 07-10 | "3rd collage shot / intermittent ~3s pre-shutter delay" investigated | Built `preview_stall_probe.py` and characterized the stall (§3): **time-triggered ~6s cycle, ~3s duration, rate- and flush-independent**, correcting the earlier "~12.3s cycle". Made the capture **authoritative from enqueue** + ~15ms `PREVIEW_RELEASE_SETTLE_S` (§6) and added worker stall instrumentation. (An intermediate "resume resets the clock → ≤5s countdown dodges it" conclusion was later DISPROVEN — see 07-11.) |
+| 2026-07-11 | Root cause & fix nailed | Mid-window (`--work-s`) and `--capture-cycle` probes proved standby/resume do **NOT** reset the free-running clock — only a **capture** (or a completed stall / re-init) does, opening a ~6s window. `--rapid-capture` showed chaining shots <~6s apart is a strong mitigation (~44%→~10% stalled) but not a cure. **Option A shipped:** `shot_interval_ms` 3s→1s so collage shots chain inside the window; residual ~10% handled by retry-once; first/single/retake shots rely on retry. ~100% would need decoupling live view (unproven for gphoto2/M50). |
 
 Full experimental history is preserved locally in the
 `backup/whine-investigation` branch.

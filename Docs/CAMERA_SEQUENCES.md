@@ -160,9 +160,12 @@ sequenceDiagram
 - **Live view and capture never overlap.** From `enqueue_capture()` the
   capture is authoritative — `_capture_in_progress` blocks new preview grabs
   and makes `resume_preview()` a no-op, so nothing can re-arm polling before
-  the shutter (CAMERA_NOTES §6). Combined with a **≤5s countdown** — so the
-  shutter lands in the fresh ~6s live-view window (§3) — captures no longer
-  ride into the periodic stall.
+  the shutter (CAMERA_NOTES §6). But a *stall* clock free-runs on the camera
+  and only a **capture** resets it (§3): each capture opens a ~6s stall-free
+  window, so multi-shot captures are **chained tight** (`shot_interval_ms +
+  countdown` < ~5s) to keep each shot inside the prior capture's window. This
+  is a mitigation, not a cure — ~10% still land in a stall and are recovered
+  by retry-once.
 - **Failure is handled below the UI**: a failed trigger/download is retried
   once inside `_execute_capture_job()` (new shot, ~1.5s later). The guest
   sees the error screen only if both attempts fail.
