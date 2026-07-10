@@ -28,6 +28,8 @@ export default function AdminPanel({
   emergencyAction,
   changePin,
   getRecentLogs,
+  getCameraConfig,
+  saveCameraConfig,
   cameraStatus,
 }) {
   const [authed, setAuthed] = useState(false);
@@ -165,7 +167,10 @@ export default function AdminPanel({
             <BoothTab form={form} onChange={handleFormChange} />
           )}
           {activeTab === 'camera' && (
-            <CameraTab />
+            <CameraTab
+              getCameraConfig={getCameraConfig}
+              saveCameraConfig={saveCameraConfig}
+            />
           )}
           {activeTab === 'system' && (
             <SystemTab

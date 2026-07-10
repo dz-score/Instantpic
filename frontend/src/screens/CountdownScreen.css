@@ -38,7 +38,7 @@
   z-index: 100;
 }
 .countdown-flash--active {
-  animation: flash-burst 0.4s ease-out forwards;
+  animation: flash-burst var(--duration-normal) ease-out forwards;
 }
 
 /* Centered countdown ring */
@@ -64,7 +64,7 @@
   gap: var(--space-md);
   background: var(--bg-overlay);
   z-index: 10;
-  animation: fade-in 0.3s ease;
+  animation: fade-in var(--duration-normal) ease;
 }
 
 .countdown-between__preview {
@@ -90,7 +90,7 @@
   text-align: center;
   max-width: 500px;
   font-weight: 400;
-  animation: fade-up 0.4s var(--ease-out);
+  animation: fade-up var(--duration-normal) var(--ease-out);
 }
 
 /* Progress dots at bottom */
@@ -151,7 +151,7 @@
   border: 8px solid var(--champagne);
   border-top-color: var(--gold);
   border-radius: 50%;
-  animation: spin 0.9s linear infinite;
+  animation: spin var(--duration-slower) linear infinite;
   margin-bottom: var(--space-sm);
 }
 
@@ -184,8 +184,8 @@
   align-items: center;
   justify-content: center;
   gap: var(--space-sm);
-  min-width: 260px;
-  height: 60px;
+  min-width: var(--cta-min-width-sm);
+  height: var(--cta-height-sm);
   padding: 0 var(--space-md);
   border-radius: var(--radius-full);
   border: 1px solid var(--gold);
@@ -203,8 +203,8 @@
 
 .countdown-btn-home span {
   font-family: var(--font-body);
-  font-size: 0.9rem;
+  font-size: var(--text-label);
   font-weight: 700;
-  letter-spacing: 2px;
+  letter-spacing: var(--tracking-sm);
   text-transform: uppercase;
 }

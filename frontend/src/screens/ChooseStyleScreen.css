@@ -13,12 +13,12 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-2xs);
   margin-bottom: var(--space-sm);
 }
 
 .choose-flourish__hearts {
-  font-size: 1.3rem;
+  font-size: var(--text-body);
   color: var(--dusty-rose);
   opacity: 0.7;
 }
@@ -30,7 +30,7 @@
 }
 
 .choose-flourish__curl {
-  font-size: 1.2rem;
+  font-size: var(--text-body);
   color: var(--gold);
   opacity: 0.6;
 }
@@ -50,10 +50,10 @@
   font-family: var(--font-body);
   font-size: 1.15rem;
   font-weight: 400;
-  letter-spacing: 6px;
+  letter-spacing: var(--tracking-lg);
   text-transform: uppercase;
   color: var(--gold);
-  margin-bottom: 4px;
+  margin-bottom: var(--space-2xs);
 }
 
 .choose-title {
@@ -62,12 +62,12 @@
   font-weight: 400;
   line-height: 1.4;
   margin-bottom: 0;
-  padding: 20px;
+  padding: var(--space-md);
   color: var(--gold);
 }
 
 .choose-title__heart {
-  font-size: 0.9rem;
+  font-size: var(--text-label);
   color: var(--dusty-rose);
   opacity: 0.6;
   margin-bottom: var(--space-xl);
@@ -75,9 +75,9 @@
 
 .choose-subtitle {
   font-family: var(--font-body);
-  font-size: 0.95rem;
+  font-size: var(--text-label);
   font-weight: 400;
-  letter-spacing: 3px;
+  letter-spacing: var(--tracking-md);
   text-transform: uppercase;
   color: var(--text-secondary);
   margin-bottom: var(--space-md);
@@ -87,8 +87,8 @@
 .choose-cards {
   display: flex;
   gap: var(--space-lg);
-  width: 100%;
-  max-width: 880px;
+  width: 90%;
+  max-width: 1150px;
   justify-content: center;
   margin-bottom: var(--space-md);
 }
@@ -97,7 +97,7 @@
 .choose-card {
   position: relative;
   flex: 1;
-  max-width: 400px;
+  max-width: 500px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -124,26 +124,26 @@
 /* ── Icon badge (circle on top of card) ── */
 .choose-card__badge {
   position: absolute;
-  top: -24px;
+  top: calc(-1 * var(--space-md));
   left: 50%;
   transform: translateX(-50%);
-  width: 52px;
-  height: 52px;
+  width: 64px;
+  height: 64px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
 
-  background: linear-gradient(135deg, var(--blush) 0%, var(--dusty-rose) 100%);
-  color: var(--text-on-gold);
-  border: 3px solid rgba(255, 253, 248, 0.9);
+  background: var(--bg-frosted);
+  color: var(--gold);
+  border: 2px solid var(--gold-light);
   box-shadow: var(--shadow-sm);
 }
 
 /* ── Preview image ── */
 .choose-card__preview {
   width: 100%;
-  height: 200px;
+  height: 300px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -155,25 +155,25 @@
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
-  border-radius: 8px;
+  border-radius: var(--radius-xs);
 }
 
 /* ── Card text ── */
 .choose-card__title {
   font-family: var(--font-body);
-  font-size: 1.1rem;
+  font-size: clamp(var(--text-label), 2vw, 1.25rem);
   font-weight: 700;
-  letter-spacing: 4px;
+  letter-spacing: var(--tracking-md);
   text-transform: uppercase;
   color: var(--gold);
-  margin-bottom: 0;
+  margin-bottom: var(--space-xs);
 }
 
 .choose-card__desc {
   font-family: var(--font-body);
-  font-size: 0.85rem;
+  font-size: clamp(var(--text-body), 1.5vw, 1rem);
   font-weight: 400;
-  letter-spacing: 2px;
+  letter-spacing: var(--tracking-sm);
   text-transform: uppercase;
   color: var(--text-secondary);
 }
@@ -184,8 +184,8 @@
   align-items: center;
   justify-content: center;
   gap: var(--space-sm);
-  min-width: 260px;
-  height: 60px;
+  min-width: var(--cta-min-width-sm);
+  height: var(--cta-height-sm);
   padding: 0 var(--space-lg);
   border-radius: var(--radius-full);
   border: none;
@@ -202,7 +202,7 @@
 }
 
 .choose-back__icon {
-  font-size: 1.3rem;
+  font-size: var(--text-body);
   color: var(--gold-dark);
 }
 
@@ -210,7 +210,7 @@
   font-family: var(--font-body);
   font-size: var(--text-caption);
   font-weight: 700;
-  letter-spacing: 3px;
+  letter-spacing: var(--tracking-md);
   text-transform: uppercase;
   color: var(--gold-dark);
 }

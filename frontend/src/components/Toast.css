@@ -31,8 +31,8 @@
 }
 
 .toast__icon {
-  width: 24px;
-  height: 24px;
+  width: var(--icon-sm);
+  height: var(--icon-sm);
   border-radius: 50%;
   display: flex;
   align-items: center;

@@ -6,7 +6,7 @@
   display: flex;
   background: var(--bg-base);
   z-index: 10000;
-  animation: fade-in 0.25s ease;
+  animation: fade-in var(--duration-brisk) ease;
 }
 
 /* ═══ Sidebar ═══ */
@@ -36,7 +36,7 @@
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-2xs);
   padding: var(--space-sm) var(--space-xs);
 }
 
@@ -129,24 +129,24 @@
 }
 
 .admin-status-pill {
-  padding: 6px var(--space-sm);
+  padding: var(--space-2xs) var(--space-sm);
   border-radius: var(--radius-full);
   font-size: var(--text-small);
   font-weight: 600;
 }
 
 .admin-status-pill--dirty {
-  background: rgba(240, 173, 78, 0.12);
+  background: var(--warning-tint);
   color: #9a7b2f;
 }
 
 .admin-status-pill--saving {
-  background: rgba(201, 169, 110, 0.12);
+  background: var(--gold-focus-ring);
   color: var(--text-accent);
 }
 
 .admin-status-pill--saved {
-  background: rgba(123, 163, 123, 0.12);
+  background: var(--success-tint);
   color: var(--success);
 }
 
@@ -203,5 +203,5 @@
   font-weight: 500;
   box-shadow: var(--shadow-lg);
   z-index: 10001;
-  animation: fade-up 0.3s var(--ease-out);
+  animation: fade-up var(--duration-normal) var(--ease-out);
 }

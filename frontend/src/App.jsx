@@ -202,6 +202,7 @@ export default function App() {
           resumePreview={camera.resumePreview}
           standbyPreview={camera.standbyPreview}
           cameraJob={sse.cameraJob}
+          cameraStatus={camera.cameraStatus}
           onShotCaptured={handleShotCaptured}
           onCancel={() => api.sendEvent('FINISH')}
           config={config}
@@ -248,7 +249,7 @@ export default function App() {
       {currentScreen === 'PRINTING' && (
         <PrintingScreen
           finalPhoto={appState?.finalPhoto}
-          printPhoto={api.printPhoto}
+          printStatus={appState?.printStatus}
           getQrUrl={api.getQrUrl}
           getDownloadUrl={api.getDownloadUrl}
           config={config}
@@ -297,6 +298,8 @@ export default function App() {
           emergencyAction={api.emergencyAction}
           changePin={api.changePin}
           getRecentLogs={api.getRecentLogs}
+          getCameraConfig={api.getCameraConfig}
+          saveCameraConfig={api.saveCameraConfig}
           cameraStatus={camera.cameraStatus}
         />
       )}

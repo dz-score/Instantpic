@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import './CameraTab.css';
 
-export default function CameraTab() {
+export default function CameraTab({ getCameraConfig, saveCameraConfig }) {
   const [settings, setSettings] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -18,9 +18,7 @@ export default function CameraTab() {
   const fetchSettings = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/camera/config');
-      if (!res.ok) throw new Error('Failed to fetch camera settings');
-      const data = await res.json();
+      const data = await getCameraConfig();
       if (data.status === 'disconnected') {
         setError('Camera is not connected. Please check USB and power.');
       } else {
@@ -47,12 +45,7 @@ export default function CameraTab() {
     
     setSaving(true);
     try {
-      const res = await fetch('/api/camera/config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ settings: { [key]: value } })
-      });
-      if (!res.ok) throw new Error('Failed to update setting');
+      await saveCameraConfig({ [key]: value });
       // Re-fetch to ensure camera accepted it
       await fetchSettings();
     } catch (err) {

@@ -14,6 +14,10 @@ class BoothState(BaseModel):
     retakeCount: int = 0
     allSessionPhotos: List[Dict[str, Any]] = []
     isProcessing: bool = False
+    # Printing is backend-owned workflow, not a frontend guess. The FSM kicks
+    # off the print on entering PRINTING and reports the real outcome here; the
+    # UI only projects it. Values: "idle" | "printing" | "printed" | "failed".
+    printStatus: str = "idle"
 
 # How many shots each layout requires. This is a workflow rule and must live
 # in the backend FSM, never in the UI.
@@ -123,7 +127,7 @@ class StateMachine:
                 if len(self._state.allSessionPhotos) > 1:
                     self._state.screen = "PICK_FAVORITE"
                 else:
-                    self._proceed_to_print_flow(settings)
+                    await self._proceed_to_print_flow(settings)
 
             elif event_type == "FAVORITE_SELECT":
                 filename = payload.get("filename")
@@ -132,7 +136,7 @@ class StateMachine:
                     if p["filename"] == filename:
                         self._state.capturedImages = p.get("rawImages", [])
                         break
-                self._proceed_to_print_flow(settings)
+                await self._proceed_to_print_flow(settings)
 
             elif event_type == "FRAME_SELECT":
                 # overlay_id is genuine user input (which frame they tapped);
@@ -153,7 +157,7 @@ class StateMachine:
                     })
                     
             elif event_type == "FRAME_SKIP":
-                self._state.screen = "PRINTING"
+                await self._enter_printing()
                 
             elif event_type == "FINISH":
                 self._state = BoothState(screen="ATTRACT")
@@ -179,7 +183,7 @@ class StateMachine:
         parts = [p for p in (settings.couple_names, settings.event_date) if p]
         return " · ".join(parts) if parts else (settings.default_text or "")
 
-    def _proceed_to_print_flow(self, settings: AppSettings):
+    async def _proceed_to_print_flow(self, settings: AppSettings):
         """Decide whether the guest should pick a frame or go straight to
         printing. The available overlays are passed in from config so the
         routing decision stays inside the FSM."""
@@ -188,7 +192,23 @@ class StateMachine:
         if has_frame_options and len(overlays) > 1:
             self._state.screen = "FRAME_PICKER"
         else:
-            self._state.screen = "PRINTING"
+            await self._enter_printing()
+
+    async def _enter_printing(self):
+        """Transition into PRINTING and kick off the actual print. The print is
+        backend-owned workflow (Rule 1): the FSM enqueues the job and reports
+        the real outcome via printStatus — the UI never guesses success from a
+        timeout. Callers must set finalPhoto before invoking. Runs under the
+        handler lock; enqueue is non-blocking."""
+        self._state.screen = "PRINTING"
+        self._state.printStatus = "printing"
+        if self._job_queue and self._state.finalPhoto:
+            await self._job_queue.enqueue({
+                "type": "PRINT_PHOTO",
+                "filename": self._state.finalPhoto,
+                "on_success": self.job_print_done,
+                "on_failure": self.job_print_failed,
+            })
 
     # Job Completion Callbacks
     async def job_photo_processed(self, filename: str, images: list):
@@ -205,13 +225,27 @@ class StateMachine:
         async with self._get_lock():
             self._state.isProcessing = False
             self._state.finalPhoto = filename
-            self._state.screen = "PRINTING"
+            await self._enter_printing()
         await self.broadcast_state()
 
     async def job_failed(self, error: str):
         async with self._get_lock():
             self._state.isProcessing = False
             log.error("state_machine", "job_failed", f"Background job failed: {error}")
+        await self.broadcast_state()
+
+    # Print job callbacks — the FSM records the real printer outcome so the UI
+    # can project it instead of racing a timeout.
+    async def job_print_done(self, filename: str):
+        async with self._get_lock():
+            self._state.printStatus = "printed"
+            log.info("state_machine", "print_done", f"Print completed: {filename}")
+        await self.broadcast_state()
+
+    async def job_print_failed(self, error: str):
+        async with self._get_lock():
+            self._state.printStatus = "failed"
+            log.error("state_machine", "print_failed", f"Print failed: {error}")
         await self.broadcast_state()
 
 # Global Singleton

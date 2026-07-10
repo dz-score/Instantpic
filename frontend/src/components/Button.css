@@ -7,7 +7,7 @@
   gap: var(--space-xs);
   font-family: var(--font-body);
   font-weight: 600;
-  letter-spacing: 0.3px;
+  letter-spacing: var(--tracking-hairline);
   border: none;
   border-radius: var(--radius-full);
   transition:
@@ -26,7 +26,7 @@
   color: var(--text-on-gold);
   border: 2px solid transparent;
   border-radius: var(--radius-button);
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+  text-shadow: var(--text-shadow-cta);
   box-shadow: var(--shadow-button);
 }
 .btn--primary:active {
@@ -55,7 +55,7 @@
 
 /* ── Size: large ── */
 .btn--large {
-  height: 80px;
+  height: var(--cta-height-lg);
   padding: 0 var(--space-xl);
   font-size: 1.375rem;
 }

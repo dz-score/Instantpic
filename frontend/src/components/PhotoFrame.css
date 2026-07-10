@@ -8,7 +8,7 @@
   overflow: hidden;
   box-shadow: var(--shadow-photo);
   background: var(--bg-elevated);
-  border: 4px solid rgba(201, 169, 110, 0.12);
+  border: 4px solid var(--gold-focus-ring);
 }
 
 .photo-frame__img {

@@ -89,13 +89,15 @@ The simplest end-to-end guest journey.
 
   Guest taps "Print"
     → POST /api/events {type: "PRINT_FROM_REVEAL", overlays: [...]}
-    → FSM: no overlays with id≠"none" → PRINTING
+    → FSM: no overlays with id≠"none" → PRINTING (printStatus="printing"),
+           enqueues PRINT_PHOTO job
     → SSE state_update → frontend renders PrintingScreen
 
 [PRINTING screen]
-  PrintingScreen auto-calls api.printPhoto(filename)
-    → POST /api/print/{filename}
-    → print_svc.print() → lp -d <printer_name> <file>
+  FSM owns the print — PrintingScreen only projects printStatus:
+    → job_queue runs print_svc.print() → lp -d <printer_name> <file>
+    → job_print_done/job_print_failed → printStatus "printed"/"failed"
+    → SSE state_update → PrintingScreen shows success or error
   QR code displays: /api/qrcode?text=http://<LAN_IP>/download/<filename>
   Guest scans QR with phone → photo downloads to their camera roll
 
@@ -646,7 +648,8 @@ job_queue._worker() receives PROCESS_FRAME:
   state_machine.job_frame_processed(new_filename):
   5. state.isProcessing = false
   6. state.finalPhoto = new_filename
-  7. state.screen = "PRINTING"
+  7. _enter_printing(): state.screen = "PRINTING", printStatus = "printing",
+     enqueues PRINT_PHOTO job
   8. SSE → PrintingScreen renders with new photo and QR code
 ```
 
@@ -654,35 +657,40 @@ job_queue._worker() receives PROCESS_FRAME:
 
 ### 20. Print Job
 
-```
-PrintingScreen mounts:
-  1. Calls api.printPhoto(state.finalPhoto)
-       → POST /api/print/photo_abc.jpg
+Printing is backend-owned workflow. The FSM starts it on entering PRINTING and
+reports the outcome via `printStatus`; the UI never triggers the print or
+guesses the result.
 
-  main.py trigger_print():
-  2. filepath = PHOTOS_DIR / filename
-  3. Checks file exists (404 if not)
-  4. print_svc.print(filepath)
+```
+FSM enters PRINTING (_enter_printing):
+  1. state.screen = "PRINTING", printStatus = "printing"
+  2. job_queue.enqueue({type: "PRINT_PHOTO", filename: "photo_abc.jpg"})
+       → SSE state_update → PrintingScreen shows "printing"
+
+  job_queue worker (PRINT_PHOTO):
+  3. filepath = PHOTOS_DIR / filename
+  4. print_svc.print(filepath)  (run in thread pool — it blocks)
 
   PrintService.print():
   5. load_settings() → printer_name
   6. Select driver:
        printer_name == "mock" → MockPrinterDriver (returns immediate success)
        else → CupsPrinterDriver
+  7. Validates file exists (returns failure PrintResult if not)
 
   CupsPrinterDriver.print_file():
-  7. subprocess.run(["lp", "-d", printer_name, *options_flags, filepath])
-  8. Captures stdout for job_id (e.g. "request id is Canon-123")
-  9. Returns PrintResult {success: true, job_id: "Canon-123", duration_ms: ...}
+  8. subprocess.run(["lp", "-d", printer_name, *options_flags, filepath])
+  9. Captures stdout for job_id (e.g. "request id is Canon-123")
+  10. Returns PrintResult {success: true, job_id: "Canon-123", duration_ms: ...}
 
   On failure:
-  10. Retry up to N times with backoff
-  11. Returns PrintResult {success: false, error: "..."}
-      → HTTP 500 → frontend shows error toast
+  11. Retry once with backoff, then returns PrintResult {success: false, error}
+      → job_print_failed() → printStatus = "failed"
+      → SSE state_update → PrintingScreen shows error + QR fallback
 
   On success:
-  12. Returns {status: "success", job_id, duration_ms}
-  13. PrintingScreen shows "Sent to printer ✓"
+  12. job_print_done() → printStatus = "printed"
+      → SSE state_update → PrintingScreen shows success + QR code
 ```
 
 ---

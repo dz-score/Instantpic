@@ -17,6 +17,7 @@
   --champagne-light:    #FAF6F0;
   --ivory:              #FDFBF7;
   --ivory-gradient:     linear-gradient(135deg, #FEFCF9 0%, #F6EFE5 100%);
+  --ivory-glass:        rgba(255, 253, 248, 0.85);
   --blush:              #F3D9D4;
   --blush-primary:      #D68B81;
   --blush-gradient:     linear-gradient(180deg, #ECA89F 0%, #D68B81 100%);
@@ -26,6 +27,10 @@
   --gold-dark:          #B98B3D;
   --gold-gradient:      linear-gradient(135deg, #E3C792 0%, #D4AF6A 50%, #B98B3D 100%);
   --border-gold-gradient: linear-gradient(135deg, #E3C792 0%, #D4AF6A 50%, #B98B3D 100%);
+  --gold-glow-sm:       rgba(212, 175, 106, 0.15);
+  --gold-glow-md:       rgba(212, 175, 106, 0.35);
+  --gold-glow-lg:       rgba(212, 175, 106, 0.65);
+  --gold-focus-ring:    rgba(201, 169, 110, 0.12);
   --sage:               #8B9E8B;
   --dusty-rose:         #D9B4AD;
 
@@ -38,8 +43,19 @@
 
   /* ── Semantic ── */
   --success:            #7BA37B;
+  --success-tint:       rgba(123, 163, 123, 0.08);
   --error:              #C27070;
+  --error-tint:         rgba(194, 112, 112, 0.08);
+  --warning-tint:       rgba(240, 173, 78, 0.08);
   --surface-border:     rgba(212, 175, 106, 0.20);
+
+  /* ── Status Indicators (Admin) ── */
+  --status-success:      #5cb85c;
+  --status-warning:      #f0ad4e;
+  --status-error:        #d9534f;
+  --status-success-glow: rgba(92, 184, 92, 0.4);
+  --status-warning-glow: rgba(240, 173, 78, 0.4);
+  --status-error-glow:   rgba(217, 83, 79, 0.4);
 
   /* ── Typography ── */
   --font-display:       'Cormorant Garamond', 'Georgia', serif;
@@ -52,9 +68,17 @@
   --text-h3:            1.5rem;     /* 24px */
   --text-body:          1.25rem;    /* 20px */
   --text-caption:       1rem;       /* 16px */
+  --text-label:         0.9rem;     /* 14.4px */
   --text-small:         0.875rem;   /* 14px */
 
+  /* ── Letter Spacing ── */
+  --tracking-hairline:  0.5px;
+  --tracking-sm:        2px;
+  --tracking-md:        4px;
+  --tracking-lg:        8px;
+
   /* ── Spacing (8px grid) ── */
+  --space-2xs:          4px;
   --space-xs:           8px;
   --space-sm:           16px;
   --space-md:           24px;
@@ -66,12 +90,27 @@
   --touch-min:          56px;
   --touch-comfortable:  72px;
 
+  /* ── Icon Sizes ── */
+  --icon-xs:            20px;
+  --icon-sm:            24px;
+  --icon-md:            36px;
+  --icon-lg:            44px;
+
   /* ── Border Radius ── */
+  --radius-xs:          8px;
   --radius-sm:          12px;
   --radius-md:          20px;
   --radius-lg:          36px;
   --radius-full:        9999px;
   --radius-button:      20px;
+
+  /* ── CTA Button Sizes ── */
+  --cta-height-sm:      60px;
+  --cta-height-md:      70px;
+  --cta-height-lg:      80px;
+  --cta-min-width-sm:   260px;
+  --cta-min-width-md:   320px;
+  --cta-min-width-lg:   380px;
 
   /* ── Shadows (Soft Luxury) ── */
   --shadow-sm:          0 8px 30px rgba(0, 0, 0, 0.08);
@@ -85,13 +124,16 @@
   --shadow-button-hover:0 15px 40px rgba(214, 139, 129, 0.45), 0 6px 15px rgba(0, 0, 0, 0.1), inset 0 1.5px 0 rgba(255, 255, 255, 0.5), inset 0 -1px 0 rgba(0, 0, 0, 0.1);
   --shadow-secondary:   0 8px 25px rgba(0, 0, 0, 0.05), inset 1.5px 1.5px 2px rgba(255, 255, 255, 0.9), inset -1px -1px 2px rgba(0,0,0,0.02);
   --shadow-secondary-hover: 0 4px 15px rgba(0, 0, 0, 0.03), inset 1.5px 1.5px 2px rgba(255, 255, 255, 0.9), inset -1px -1px 2px rgba(0,0,0,0.02);
+  --text-shadow-cta:    0 1px 2px rgba(0, 0, 0, 0.15);
 
   /* ── Transitions ── */
   --ease-out:           cubic-bezier(0.4, 0, 0.2, 1);
   --ease-spring:        cubic-bezier(0.34, 1.56, 0.64, 1);
   --ease-dramatic:      cubic-bezier(0.16, 1, 0.3, 1);
   --duration-fast:      120ms;
+  --duration-brisk:     200ms;
   --duration-normal:    300ms;
   --duration-slow:      500ms;
+  --duration-slower:    800ms;
   --duration-dramatic:  1200ms;
 }

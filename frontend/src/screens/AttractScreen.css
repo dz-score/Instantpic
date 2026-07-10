@@ -28,14 +28,14 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-2xs);
   margin-bottom: var(--space-sm);
 }
 
 .attract-flourish__hearts {
-  font-size: 1.3rem;
+  font-size: var(--text-body);
   color: var(--dusty-rose);
-  letter-spacing: 6px;
+  letter-spacing: var(--tracking-lg);
   opacity: 0.7;
 }
 
@@ -46,7 +46,7 @@
 }
 
 .attract-flourish__curl {
-  font-size: 1.2rem;
+  font-size: var(--text-body);
   color: var(--gold);
   opacity: 0.6;
 }
@@ -64,7 +64,7 @@
 /* ═══ Heading Block ═══ */
 .attract-kicker {
   font-family: var(--font-script);
-  font-size: clamp(3rem, 5vw, 4.5rem);
+  font-size: clamp(var(--text-h1), 5vw, var(--text-hero));
   font-weight: 400;
   color: var(--gold);
   margin-bottom: var(--space-xs);
@@ -77,19 +77,19 @@
   font-weight: 400;
   color: var(--gold);
   line-height: 1.4;
-  margin-bottom: 4px;
-  padding: 20px;
-  text-shadow: 0 2px 12px rgba(212, 175, 106, 0.2);
+  margin-bottom: var(--space-2xs);
+  padding: var(--space-md);
+  text-shadow: 0 2px 12px var(--surface-border);
 }
 
 .attract-label {
   font-family: var(--font-body);
-  font-size: 1.1rem;
+  font-size: var(--text-caption);
   font-weight: 500;
-  letter-spacing: 8px;
+  letter-spacing: var(--tracking-lg);
   text-transform: uppercase;
   color: var(--gold);
-  margin-top: 4px;
+  margin-top: var(--space-2xs);
   margin-bottom: var(--space-sm);
 }
 
@@ -104,9 +104,9 @@
 /* ═══ Subtitle / Welcome Message ═══ */
 .attract-subtitle {
   font-family: var(--font-body);
-  font-size: 1.05rem;
+  font-size: var(--text-caption);
   font-weight: 400;
-  letter-spacing: 3px;
+  letter-spacing: var(--tracking-md);
   text-transform: uppercase;
   color: var(--text-secondary);
   line-height: 1.8;
@@ -117,19 +117,19 @@
 /* ═══ CTA Button ═══ */
 .attract-cta {
   border: 2px solid transparent;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+  text-shadow: var(--text-shadow-cta);
   position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: var(--space-sm);
-  min-width: 380px;
-  height: 80px;
+  min-width: var(--cta-min-width-lg);
+  height: var(--cta-height-lg);
   padding: 0 var(--space-xl);
   border-radius: var(--radius-button);
 
   background: var(--blush-gradient) padding-box, var(--border-gold-gradient) border-box;
-  box-shadow: var(--shadow-button), 0 0 14px 2px rgba(212, 175, 106, 0.35);
+  box-shadow: var(--shadow-button), 0 0 14px 2px var(--gold-glow-md);
 
   /* Breathing pulse + glow animation */
   animation: cta-breathe 3s ease-in-out infinite;
@@ -164,7 +164,7 @@
   font-family: var(--font-body);
   font-size: var(--text-body);
   font-weight: 700;
-  letter-spacing: 3px;
+  letter-spacing: var(--tracking-md);
   text-transform: uppercase;
   color: var(--text-on-gold);
 }
@@ -173,7 +173,7 @@
   font-family: var(--font-body);
   font-size: var(--text-small);
   font-weight: 600;
-  letter-spacing: 2px;
+  letter-spacing: var(--tracking-sm);
   text-transform: uppercase;
   color: var(--text-on-gold);
 }
@@ -198,11 +198,11 @@
 @keyframes cta-breathe {
   0%, 100% {
     transform: scale(1);
-    box-shadow: var(--shadow-button), 0 0 14px 2px rgba(212, 175, 106, 0.35);
+    box-shadow: var(--shadow-button), 0 0 14px 2px var(--gold-glow-md);
   }
   50% {
     transform: scale(1.02);
-    box-shadow: var(--shadow-button), 0 0 28px 6px rgba(212, 175, 106, 0.65);
+    box-shadow: var(--shadow-button), 0 0 28px 6px var(--gold-glow-lg);
   }
 }
 
@@ -219,9 +219,9 @@
   right: var(--space-xl);
   display: flex;
   align-items: center;
-  gap: var(--space-xs);
-  padding: var(--space-xs) 12px;
-  border-radius: 30px;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-sm);
+  border-radius: var(--radius-full);
   background: var(--bg-frosted);
   border: 1px solid var(--gold);
   backdrop-filter: blur(8px);

@@ -1,13 +1,15 @@
 import React from 'react';
 import ScreenShell from '../components/ScreenShell';
 import { t } from '../utils/i18n';
-import { Home } from 'lucide-react';
+import useTapGuard from '../hooks/useTapGuard';
+import { Home, Image, Columns3 } from 'lucide-react';
 import './ChooseStyleScreen.css';
 
 /**
  * Mode selection — Single Classic vs 3-Photo Collage.
  */
 export default function ChooseStyleScreen({ onSelect, onBack, language }) {
+  const [guard, armed] = useTapGuard();
   return (
     <ScreenShell className="choose-screen">
 
@@ -30,39 +32,33 @@ export default function ChooseStyleScreen({ onSelect, onBack, language }) {
       <div className="choose-cards">
 
         {/* Single Photo Card */}
-        <button className="choose-card" onClick={() => onSelect('single')}>
+        <button className="choose-card" onClick={guard(() => onSelect('single'))} disabled={!armed}>
           <div className="choose-card__badge">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="3" y="3" width="18" height="18" rx="2" />
-              <circle cx="12" cy="12" r="3" />
-              <path d="M3 16l5-5 4 4 3-3 6 6" />
-            </svg>
+            <Image strokeWidth={1.5} size={36} />
           </div>
           <div className="choose-card__preview">
             <img src="/preview-single.png" alt="Single photo" className="choose-card__img" />
           </div>
           <h2 className="choose-card__title">{t('chooseStyle.singleTitle', language)}</h2>
+          <p className="choose-card__desc">{t('chooseStyle.singleDesc', language)}</p>
         </button>
 
         {/* Collage Strip Card */}
-        <button className="choose-card" onClick={() => onSelect('collage')}>
+        <button className="choose-card" onClick={guard(() => onSelect('collage'))} disabled={!armed}>
           <div className="choose-card__badge">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="4" y="2" width="16" height="6" rx="1" />
-              <rect x="4" y="9" width="16" height="6" rx="1" />
-              <rect x="4" y="16" width="16" height="6" rx="1" />
-            </svg>
+            <Columns3 strokeWidth={1.5} size={36} />
           </div>
           <div className="choose-card__preview">
             <img src="/preview-collage.png" alt="Photo strip" className="choose-card__img" />
           </div>
           <h2 className="choose-card__title">{t('chooseStyle.collageTitle', language)}</h2>
+          <p className="choose-card__desc">{t('chooseStyle.collageDesc', language)}</p>
         </button>
 
       </div>
 
       {/* ── Back Button ── */}
-      <button className="choose-back" onClick={onBack}>
+      <button className="choose-back" onClick={guard(onBack)} disabled={!armed}>
         <span className="choose-back__icon btn-icon"><Home strokeWidth={1.5} size={20} /></span>
         <span className="choose-back__text">{t('framePicker.home', language)}</span>
       </button>

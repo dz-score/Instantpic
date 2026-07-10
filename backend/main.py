@@ -184,20 +184,6 @@ async def handle_event(req: EventRequest):
     await state_machine.handle_event(req.type, req.payload, settings)
     return {"status": "ok"}
 
-@app.post("/api/print/{filename}")
-async def trigger_print(filename: str):
-    """Trigger a print job for a specific saved photo."""
-    filepath = os.path.join(PHOTOS_DIR, filename)
-    if not os.path.exists(filepath):
-        log.warn("printer", "printer_file_missing", f"Print requested for missing file: {filename}")
-        raise HTTPException(status_code=404, detail="Photo not found")
-
-    result = print_svc.print(filepath)
-    if result.success:
-        return {"status": "success", "detail": f"Printed {filename}", **result.to_dict()}
-    else:
-        raise HTTPException(status_code=500, detail=result.error or "Printing failed")
-
 @app.get("/api/printer/status")
 async def printer_status():
     """Get current printer status (connected, ready, errors)."""

@@ -8,12 +8,6 @@ export default function useSse() {
     is_capturing: false,
     error: null,
   });
-  const [printerStatus, setPrinterStatus] = useState({
-    printer_name: null,
-    total_jobs_sent: 0,
-    failed_jobs: 0,
-    is_online: false,
-  });
   const [backendState, setBackendState] = useState(null);
   const [config, setConfig] = useState(null);
   const [cameraJob, setCameraJob] = useState(null);
@@ -41,15 +35,6 @@ export default function useSse() {
           setCameraStatus(data);
         } catch (err) {
           console.error('Failed to parse camera_status SSE:', err);
-        }
-      });
-
-      eventSource.addEventListener('printer_status', (e) => {
-        try {
-          const data = JSON.parse(e.data);
-          setPrinterStatus(data);
-        } catch (err) {
-          console.error('Failed to parse printer_status SSE:', err);
         }
       });
 
@@ -109,5 +94,5 @@ export default function useSse() {
     };
   }, []);
 
-  return { cameraStatus, printerStatus, isOnline, backendState, config, cameraJob, cameraMetrics };
+  return { cameraStatus, isOnline, backendState, config, cameraJob, cameraMetrics };
 }

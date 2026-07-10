@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import ScreenShell from '../components/ScreenShell';
 import { t } from '../utils/i18n';
+import useTapGuard from '../hooks/useTapGuard';
 import { Home, Printer } from 'lucide-react';
 import './FramePickerScreen.css';
 
@@ -29,6 +30,7 @@ export default function FramePickerScreen({
   language,
 }) {
   const [selected, setSelected] = useState(currentOverlay || 'none');
+  const [guard, armed] = useTapGuard();
   const cacheKey = useRef(Date.now());
   const selectedOverlay = overlays.find((o) => o.id === selected) || null;
 
@@ -126,8 +128,8 @@ export default function FramePickerScreen({
       <div className="frame__actions">
         <button
           className="frame__btn-print"
-          onClick={handleConfirm}
-          disabled={isProcessing}
+          onClick={guard(handleConfirm)}
+          disabled={!armed || isProcessing}
         >
           <span className="btn-icon"><Printer strokeWidth={1.5} size={36} /></span>
           <span className="frame__btn-print-main">

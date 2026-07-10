@@ -33,7 +33,7 @@
 .sys-diag-card {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-2xs);
   padding: var(--space-sm);
   border-radius: var(--radius-sm);
   background: var(--bg-base);
@@ -43,7 +43,7 @@
 .sys-diag-card__header {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-xs);
 }
 
 .sys-dot {
@@ -53,16 +53,16 @@
   flex-shrink: 0;
 }
 
-.sys-dot--green  { background: #5cb85c; box-shadow: 0 0 8px rgba(92, 184, 92, 0.4); }
-.sys-dot--yellow { background: #f0ad4e; box-shadow: 0 0 8px rgba(240, 173, 78, 0.4); }
-.sys-dot--red    { background: #d9534f; box-shadow: 0 0 8px rgba(217, 83, 79, 0.4); }
+.sys-dot--green  { background: var(--status-success); box-shadow: 0 0 8px var(--status-success-glow); }
+.sys-dot--yellow { background: var(--status-warning); box-shadow: 0 0 8px var(--status-warning-glow); }
+.sys-dot--red    { background: var(--status-error); box-shadow: 0 0 8px var(--status-error-glow); }
 
 .sys-diag-card__label {
   font-size: var(--text-small);
   font-weight: 600;
   color: var(--text-secondary);
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: var(--tracking-hairline);
 }
 
 .sys-diag-card__value {
@@ -80,14 +80,14 @@
 .sys-storage-bar {
   width: 100%;
   height: 8px;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   background: var(--champagne-light);
   overflow: hidden;
 }
 
 .sys-storage-bar__fill {
   height: 100%;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   background: var(--gold);
   transition: width var(--duration-normal) var(--ease-out);
 }
@@ -103,7 +103,7 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 4px;
+  gap: var(--space-2xs);
   padding: var(--space-sm);
   border-radius: var(--radius-sm);
   border: 2px solid var(--surface-border);
@@ -120,7 +120,7 @@
 
 .sys-emergency-btn--confirm {
   border-color: var(--error);
-  background: rgba(194, 112, 112, 0.06);
+  background: var(--error-tint);
 }
 
 .sys-emergency-btn:disabled {
@@ -150,17 +150,17 @@
   border-radius: var(--radius-sm);
   font-size: var(--text-small);
   font-weight: 500;
-  animation: fade-in 0.2s ease;
+  animation: fade-in var(--duration-brisk) ease;
 }
 
 .sys-action-result--ok {
-  background: rgba(123, 163, 123, 0.1);
+  background: var(--success-tint);
   color: var(--success);
   border-left: 3px solid var(--success);
 }
 
 .sys-action-result--err {
-  background: rgba(194, 112, 112, 0.1);
+  background: var(--error-tint);
   color: var(--error);
   border-left: 3px solid var(--error);
 }
@@ -205,7 +205,7 @@
 
 .sys-pin-input {
   text-align: center;
-  letter-spacing: 4px;
+  letter-spacing: var(--tracking-md);
   font-size: var(--text-h3) !important;
 }
 
@@ -291,7 +291,7 @@
 .sys-log-auto {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2xs);
   font-size: var(--text-small);
   color: var(--text-secondary);
   cursor: pointer;
@@ -358,19 +358,19 @@
 
 .sys-log-table th {
   background: var(--bg-elevated);
-  padding: 6px 10px;
+  padding: var(--space-2xs) var(--space-xs);
   text-align: left;
   font-weight: 600;
   font-size: 10px;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: var(--tracking-hairline);
   color: var(--text-secondary);
   border-bottom: 2px solid var(--surface-border);
   white-space: nowrap;
 }
 
 .sys-log-table td {
-  padding: 4px 10px;
+  padding: var(--space-2xs) var(--space-xs);
   border-bottom: 1px solid var(--surface-border);
   white-space: nowrap;
   color: var(--text-primary);
@@ -384,7 +384,7 @@
 
 /* ── Row colors by level ── */
 .sys-log-row--error {
-  background: rgba(194, 112, 112, 0.08);
+  background: var(--error-tint);
 }
 
 .sys-log-row--error .sys-log-level {
@@ -393,7 +393,7 @@
 }
 
 .sys-log-row--warn {
-  background: rgba(240, 173, 78, 0.08);
+  background: var(--warning-tint);
 }
 
 .sys-log-row--warn .sys-log-level {

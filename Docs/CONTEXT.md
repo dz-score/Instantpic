@@ -102,12 +102,10 @@ Every important file in the project, grouped by layer. Use this as a quick-refer
 |---|---|
 | [`Button.jsx`](frontend/src/components/Button.jsx) | Reusable styled button primitive with variant and size props. |
 | [`ScreenShell.jsx`](frontend/src/components/ScreenShell.jsx) | Full-viewport container wrapper providing consistent padding, background, and entry animation for every screen. |
-| [`CountdownRing.jsx`](frontend/src/components/CountdownRing.jsx) | SVG animated circular ring that visually counts down seconds for each shot. |
 | [`ProgressDots.jsx`](frontend/src/components/ProgressDots.jsx) | Row of dots indicating how many shots have been taken out of the total (e.g. 2/3). |
 | [`PhotoFrame.jsx`](frontend/src/components/PhotoFrame.jsx) | Image display component that wraps a `<img>` in a styled decorative frame chrome. |
 | [`ConfettiOverlay.jsx`](frontend/src/components/ConfettiOverlay.jsx) | Full-screen confetti burst animation triggered on photo reveal. |
 | [`Toast.jsx`](frontend/src/components/Toast.jsx) | Auto-dismissing notification banner for transient feedback messages. |
-| [`AdminModal.jsx`](frontend/src/components/AdminModal.jsx) | PIN entry modal dialog: validates input before granting access to the Admin Panel. |
 
 ### `frontend/src/components/admin/`
 
@@ -125,9 +123,9 @@ Every important file in the project, grouped by layer. Use this as a quick-refer
 
 | File | Responsibility |
 |---|---|
-| [`useSse.js`](frontend/src/hooks/useSse.js) | Opens and maintains the `EventSource` connection to `/api/sse`; parses `state_update`, `camera_status`, and `printer_status` events; auto-reconnects on error. |
+| [`useSse.js`](frontend/src/hooks/useSse.js) | Opens and maintains the `EventSource` connection to `/api/sse`; parses `state_update`, `camera_status`, `config_update`, and `camera_job` events; auto-reconnects on error. |
 | [`useCamera.js`](frontend/src/hooks/useCamera.js) | Provides `previewUrl` (MJPEG stream), `captureFrame()`, `standbyPreview()`, and `resumePreview()` — thin wrappers over the camera REST endpoints. |
-| [`useApi.js`](frontend/src/hooks/useApi.js) | Centralises all REST calls: fetches and caches config on mount, exposes `sendEvent`, `printPhoto`, `saveConfig`, `getQrUrl`, `getDownloadUrl`, `getDiagnostics`, `emergencyAction`, `changePin`, and `getRecentLogs`. |
+| [`useApi.js`](frontend/src/hooks/useApi.js) | Centralises REST writes/reads: exposes `sendEvent`, `saveConfig`, `getQrUrl`, `getDownloadUrl`, `getDiagnostics`, `emergencyAction`, `changePin`, `getRecentLogs`, and `fetchState` (config arrives via SSE, not here). |
 
 ### `frontend/src/utils/`
 

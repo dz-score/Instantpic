@@ -16,7 +16,7 @@
   display: flex;
   align-items: center;
   gap: var(--space-xs);
-  padding: 10px 20px;
+  padding: var(--space-xs) var(--space-sm);
   border-radius: var(--radius-full);
   border: 1px solid var(--gold);
   background: var(--ivory-gradient);
@@ -32,15 +32,15 @@
 }
 
 .frame__home-icon {
-  font-size: 1.1rem;
+  font-size: var(--text-caption);
   color: var(--gold-dark);
 }
 
 .frame__home-text {
   font-family: var(--font-body);
-  font-size: 0.85rem;
+  font-size: var(--text-label);
   font-weight: 600;
-  letter-spacing: 2px;
+  letter-spacing: var(--tracking-sm);
   text-transform: uppercase;
   color: var(--gold-dark);
 }
@@ -50,14 +50,14 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
-  margin-bottom: 6px;
+  gap: var(--space-2xs);
+  margin-bottom: var(--space-2xs);
 }
 
 .frame__flourish-hearts {
-  font-size: 1.3rem;
+  font-size: var(--text-body);
   color: var(--dusty-rose);
-  letter-spacing: 6px;
+  letter-spacing: var(--tracking-lg);
   opacity: 0.7;
 }
 
@@ -68,7 +68,7 @@
 }
 
 .frame__flourish-curl {
-  font-size: 1.2rem;
+  font-size: var(--text-body);
   color: var(--gold);
   opacity: 0.6;
 }
@@ -86,9 +86,9 @@
 /* ═══ Heading ═══ */
 .frame__kicker {
   font-family: var(--font-body);
-  font-size: 0.9rem;
+  font-size: var(--text-label);
   font-weight: 500;
-  letter-spacing: 4px;
+  letter-spacing: var(--tracking-md);
   text-transform: uppercase;
   color: var(--gold);
   margin-bottom: 2px;
@@ -96,11 +96,11 @@
 
 .frame__title {
   font-family: var(--font-script);
-  font-size: clamp(3rem, 6vw, 4.5rem);
+  font-size: clamp(var(--text-h1), 6vw, var(--text-hero));
   font-weight: 400;
   line-height: 1.4;
   margin-bottom: var(--space-md);
-  padding: 20px;
+  padding: var(--space-md);
   color: var(--gold);
 }
 
@@ -145,7 +145,7 @@
   height: 100%;
   object-fit: fill;
   pointer-events: none;
-  animation: overlay-fade 0.35s ease;
+  animation: overlay-fade var(--duration-normal) ease;
 }
 
 @keyframes overlay-fade {
@@ -177,9 +177,9 @@
 
 .frame__options-label {
   font-family: var(--font-body);
-  font-size: 0.85rem;
+  font-size: var(--text-label);
   font-weight: 600;
-  letter-spacing: 4px;
+  letter-spacing: var(--tracking-md);
   text-transform: uppercase;
   color: var(--text-secondary);
   white-space: nowrap;
@@ -202,8 +202,8 @@
   gap: var(--space-xs);
   padding: var(--space-xs);
   border-radius: var(--radius-md);
-  border: 2px solid rgba(212, 175, 106, 0.15);
-  background: rgba(255, 253, 248, 0.85);
+  border: 2px solid var(--gold-glow-sm);
+  background: var(--ivory-glass);
   cursor: pointer;
   transition: all var(--duration-normal) var(--ease-out);
 }
@@ -214,13 +214,13 @@
 
 .frame__card--selected {
   border-color: var(--gold);
-  box-shadow: 0 0 0 3px rgba(212, 175, 106, 0.15), var(--shadow-sm);
+  box-shadow: 0 0 0 3px var(--gold-glow-sm), var(--shadow-sm);
 }
 
 .frame__card-preview {
   width: 100%;
   aspect-ratio: 3 / 4;
-  border-radius: 8px;
+  border-radius: var(--radius-xs);
   overflow: hidden;
   background: var(--champagne-light);
   display: flex;
@@ -241,14 +241,14 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 12px;
+  padding: var(--space-xs);
 }
 
 .frame__card-empty-inner {
   width: 100%;
   height: 100%;
   border: 2px dashed var(--gold-light);
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
 }
 
 /* Checkmark */
@@ -256,8 +256,8 @@
   position: absolute;
   top: -6px;
   right: -6px;
-  width: 24px;
-  height: 24px;
+  width: var(--icon-sm);
+  height: var(--icon-sm);
   border-radius: 50%;
   background: var(--gold);
   color: var(--text-on-gold);
@@ -266,16 +266,16 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 2px solid rgba(255, 253, 248, 0.9);
+  border: 2px solid var(--ivory-glass);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
-  animation: pop-in 0.25s var(--ease-spring);
+  animation: pop-in var(--duration-brisk) var(--ease-spring);
 }
 
 .frame__card-name {
   font-family: var(--font-body);
   font-size: 0.7rem;
   font-weight: 600;
-  letter-spacing: 1px;
+  letter-spacing: var(--tracking-hairline);
   text-transform: uppercase;
   color: var(--text-secondary);
   text-align: center;
@@ -294,13 +294,13 @@
   align-items: center;
   justify-content: center;
   gap: var(--space-sm);
-  min-width: 260px;
-  height: 60px;
+  min-width: var(--cta-min-width-sm);
+  height: var(--cta-height-sm);
   padding: 0 var(--space-lg);
   border-radius: var(--radius-button);
   border: 2px solid transparent;
   cursor: pointer;
-  background: var(--blush-gradient) padding-box, var(--border-gold-gradient) border-box; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+  background: var(--blush-gradient) padding-box, var(--border-gold-gradient) border-box; text-shadow: var(--text-shadow-cta);
   box-shadow: var(--shadow-button);
   color: var(--text-on-gold);
   transition: all var(--duration-normal) var(--ease-out);
@@ -320,7 +320,7 @@
   font-family: var(--font-body);
   font-size: var(--text-caption);
   font-weight: 700;
-  letter-spacing: 3px;
+  letter-spacing: var(--tracking-md);
   text-transform: uppercase;
 }
 
@@ -329,7 +329,7 @@
   font-family: var(--font-body);
   font-size: 0.75rem;
   font-weight: 400;
-  letter-spacing: 3px;
+  letter-spacing: var(--tracking-md);
   text-transform: uppercase;
   color: var(--text-secondary);
   opacity: 0.7;

@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import ScreenShell from '../components/ScreenShell';
 import { t } from '../utils/i18n';
+import useTapGuard from '../hooks/useTapGuard';
 import { Home } from 'lucide-react';
 import './PickFavoriteScreen.css';
 
@@ -25,6 +26,7 @@ export default function PickFavoriteScreen({
   language,
 }) {
   const [selected, setSelected] = useState(allPhotos.length - 1);
+  const [guard, armed] = useTapGuard();
   const cacheKey = useRef(Date.now());
 
   return (
@@ -32,7 +34,7 @@ export default function PickFavoriteScreen({
 
       {/* ── Back to Home (top-left) ── */}
       {onBack && (
-        <button className="pick-fav__home" onClick={onBack}>
+        <button className="pick-fav__home" onClick={guard(onBack)} disabled={!armed}>
           <span className="pick-fav__home-icon btn-icon"><Home strokeWidth={1.5} size={20} /></span>
           <span className="pick-fav__home-text">{t('framePicker.home', language)}</span>
         </button>
@@ -78,8 +80,8 @@ export default function PickFavoriteScreen({
       <div className="pick-fav__actions">
         <button
           className="pick-fav__confirm"
-          onClick={() => onSelect(allPhotos[selected])}
-          disabled={isProcessing}
+          onClick={guard(() => onSelect(allPhotos[selected]))}
+          disabled={!armed || isProcessing}
         >
           <span className="pick-fav__confirm-icon">✓</span>
           <span className="pick-fav__confirm-text">
