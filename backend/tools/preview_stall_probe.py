@@ -178,6 +178,12 @@ def main():
                     help="poll --work-s → fire a REAL capture_image+download (exits live view) "
                          "→ resume → measure secs-to-first-stall. Tests whether a real capture "
                          "resets the ~6s clock. FIRES THE SHUTTER for real.")
+    ap.add_argument("--rapid-capture", action="store_true",
+                    help="fire repeated real captures spaced --gap-s of live view apart, and "
+                         "report ok/FAIL per shot. Confirms the fix: captures spaced <~6s apart "
+                         "(inside the window each capture opens) should all succeed. SHUTTER.")
+    ap.add_argument("--gap-s", type=float, default=4.0,
+                    help="[rapid-capture] seconds of live view between consecutive captures")
     args = ap.parse_args()
 
     interval = 1.0 / args.fps if args.fps > 0 else 0.0
@@ -189,7 +195,8 @@ def main():
 
     state = {"frames": 0, "frames_since_stall": 0, "t_prev_stall": time.monotonic()}
     stalls = []      # continuous: (seq, frames_since_prev, secs_since_prev, dur_s, raised)
-    cycles = []      # standby-cycle: (cyc, pause_before_s, frames_to_stall, secs_to_stall, dur_s, hit)
+    cycles = []      # standby/capture-cycle rows
+    rapid = []       # rapid-capture: (n, spacing_s|None, capture_s, ok)
     t_start = time.monotonic()
     csvf = open(args.out, "a", newline="")
     w = csv.writer(csvf)
@@ -401,10 +408,54 @@ def main():
                 print(f"cycle {cyc}: work {work:.1f}s → capture({capname} {cap_dur:.2f}s) "
                       f"→ resume → first stall in {s1:.2f}s")
 
+    def rapid_capture_loop():
+        """Fire real captures spaced --gap-s of live view apart. If each capture
+        opens a ~6s healthy window, captures spaced < ~6s apart (capture-to-
+        capture = gap + capture_dur) should ALL succeed — that's the proposed
+        app fix. Reports ok/FAIL per shot and the capture-to-capture spacing."""
+        n = 0
+        last_done = None
+        while time.monotonic() - t_start < args.duration:
+            t_a = time.monotonic()
+            while (time.monotonic() - t_a < args.gap_s
+                   and time.monotonic() - t_start < args.duration):
+                raised, dur_s, g0 = grab()
+                is_stall = raised or dur_s >= stall_s
+                w.writerow([state["frames"], g0 - t_start, dur_s * 1000,
+                            "err" if is_stall else "ok"])
+                if not is_stall:
+                    state["frames"] += 1
+                pace(g0)
+            if time.monotonic() - t_start >= args.duration:
+                break
+            n += 1
+            t_cap = time.monotonic()
+            spacing = (t_cap - last_done) if last_done is not None else None
+            ok, cd = do_capture()
+            last_done = time.monotonic()
+            rapid.append((n, spacing, cd, ok))
+            sp = f"{spacing:.1f}s" if spacing is not None else "  -  "
+            print(f"capture {n}: spacing-since-prev {sp} → {'ok' if ok else 'FAIL'} ({cd:.2f}s)")
+
     def print_summary():
         dur = time.monotonic() - t_start
         print("\n===== SUMMARY =====")
-        if args.capture_cycle:
+        if args.rapid_capture:
+            fails = sum(1 for (_, _, _, ok) in rapid if not ok)
+            spacings = [s for (_, s, _, _) in rapid if s is not None]
+            avg_sp = sum(spacings) / len(spacings) if spacings else 0.0
+            print(f"ran {dur:.1f}s, rapid-capture (gap {args.gap_s:.1f}s), "
+                  f"{len(rapid)} captures, {fails} FAILED, "
+                  f"avg capture-to-capture {avg_sp:.1f}s")
+            for (nn, sp, cd, ok) in rapid:
+                sp_s = f"{sp:.1f}" if sp is not None else "-"
+                print(f"  capture {nn:>3}: spacing {sp_s:>5}s  {cd:.2f}s  "
+                      f"{'ok' if ok else 'FAIL'}")
+            if len(rapid) > 1:
+                print(f"\n{fails}/{len(rapid)} failed at ~{avg_sp:.1f}s capture-to-capture spacing.")
+                print("  0 fails at <6s spacing => confirms: chain shots inside the ~6s "
+                      "post-capture window and they stay clean.")
+        elif args.capture_cycle:
             work = args.work_s if args.work_s > 0 else 3.0
             print(f"ran {dur:.1f}s, capture-cycle (work {work:.1f}s), "
                   f"{state['frames']} good frames, {len(cycles)} cycles")
@@ -472,7 +523,9 @@ def main():
     signal.signal(signal.SIGTERM, _sigterm)
 
     try:
-        if args.capture_cycle:
+        if args.rapid_capture:
+            rapid_capture_loop()
+        elif args.capture_cycle:
             capture_cycle_loop()
         elif args.standby_cycle and args.work_s > 0:
             midwindow_cycle_loop()
