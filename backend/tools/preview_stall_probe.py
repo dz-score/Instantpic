@@ -28,6 +28,13 @@ EXPERIMENT MATRIX (run each ~2-3 min):
   python3 backend/tools/preview_stall_probe.py --fps 10 --duration 180 --no-flush
       -> tests whether the wait_for_event flush actually reduces stalls
          (camera_service.py claims it prevents the freeze).
+  python3 backend/tools/preview_stall_probe.py --standby-cycle --pause-s 3 --duration 120
+  python3 backend/tools/preview_stall_probe.py --standby-cycle --pause-s 6 --duration 120
+      -> does standby->resume reset the ~6s stall clock? Measures
+         seconds-from-resume-to-first-stall per cycle. If it stays ~constant
+         (~6s) across cycles and across --pause-s values, resume RESETS the
+         clock and a short-live-view-session-before-capture dodge is viable.
+         If it drifts with the pause, the clock is absolute -> decouple.
 
 Each run appends a per-frame CSV (--out) and prints a summary at the end
 (also on Ctrl+C).
@@ -143,6 +150,13 @@ def main():
                     help="drain camera events before each grab (default, matches app)")
     ap.add_argument("--no-flush", dest="flush", action="store_false")
     ap.add_argument("--out", default="preview_stall_probe.csv", help="per-frame CSV path")
+    ap.add_argument("--standby-cycle", action="store_true",
+                    help="resume->poll-until-first-stall->standby(pause) repeatedly, to test "
+                         "whether resume resets the ~6s stall clock")
+    ap.add_argument("--poll-s", type=float, default=12.0,
+                    help="[standby-cycle] max seconds to poll each burst before giving up on a stall")
+    ap.add_argument("--pause-s", type=float, default=3.0,
+                    help="[standby-cycle] seconds to stop polling (simulated standby) between bursts")
     args = ap.parse_args()
 
     interval = 1.0 / args.fps if args.fps > 0 else 0.0
@@ -152,36 +166,125 @@ def main():
     cam = get_healthy_camera()
     print("camera ready (healthy warmup frame). polling. Ctrl+C to stop early.\n")
 
-    frames = 0
-    stalls = []                       # (seq, frames_since_prev, secs_since_prev, dur_s, raised)
-    frames_since_stall = 0
-    t_prev_stall = time.monotonic()
+    state = {"frames": 0, "frames_since_stall": 0, "t_prev_stall": time.monotonic()}
+    stalls = []      # continuous: (seq, frames_since_prev, secs_since_prev, dur_s, raised)
+    cycles = []      # standby-cycle: (cyc, pause_before_s, frames_to_stall, secs_to_stall, dur_s, hit)
     t_start = time.monotonic()
     csvf = open(args.out, "a", newline="")
     w = csv.writer(csvf)
     if csvf.tell() == 0:
         w.writerow(["seq", "t_rel_s", "preview_ms", "status"])
 
+    def grab():
+        """One preview grab (with optional flush). Returns (raised, dur_s, g0)."""
+        if args.flush:
+            drain_events(cam)
+        g0 = time.monotonic()
+        raised = False
+        try:
+            cf = cam.capture_preview()
+            _ = cf.get_data_and_size()
+        except Exception:
+            raised = True
+        return raised, time.monotonic() - g0, g0
+
+    def pace(g0):
+        s = interval - (time.monotonic() - g0)
+        if s > 0:
+            time.sleep(s)
+
+    def continuous_loop():
+        while time.monotonic() - t_start < args.duration:
+            raised, dur_s, g0 = grab()
+            if raised or dur_s >= stall_s:
+                secs_since = g0 - state["t_prev_stall"]
+                stalls.append((state["frames"], state["frames_since_stall"], secs_since, dur_s, raised))
+                print(f"STALL @frame {state['frames']}: {state['frames_since_stall']} frames / "
+                      f"{secs_since:.1f}s since last stall, took {dur_s:.2f}s, raised={raised}")
+                state["frames_since_stall"] = 0
+                state["t_prev_stall"] = g0
+                w.writerow([state["frames"], g0 - t_start, dur_s * 1000, "err" if raised else "slow"])
+            else:
+                state["frames"] += 1
+                state["frames_since_stall"] += 1
+                w.writerow([state["frames"], g0 - t_start, dur_s * 1000, "ok"])
+            pace(g0)
+
+    def standby_cycle_loop():
+        """Resume (poll) until the first stall, then standby (stop polling) for
+        --pause-s, and repeat. Measures seconds-from-resume-to-first-stall each
+        cycle. If it stays ~constant (~6s) regardless of the pause, resume RESETS
+        the camera's stall clock (a timing/dodge fix is viable). If it drifts,
+        the clock is absolute and dodging won't work. The app's standby is
+        exactly this: stop calling capture_preview — no camera command is sent."""
+        cyc = 0
+        while time.monotonic() - t_start < args.duration:
+            cyc += 1
+            pause_before = 0.0 if cyc == 1 else args.pause_s
+            t_resume = time.monotonic()
+            fcount = 0
+            hit = None
+            while (time.monotonic() - t_resume < args.poll_s
+                   and time.monotonic() - t_start < args.duration):
+                raised, dur_s, g0 = grab()
+                if raised or dur_s >= stall_s:
+                    hit = (fcount, g0 - t_resume, dur_s)
+                    w.writerow([state["frames"], g0 - t_start, dur_s * 1000,
+                                "err" if raised else "slow"])
+                    break
+                state["frames"] += 1
+                fcount += 1
+                w.writerow([state["frames"], g0 - t_start, dur_s * 1000, "ok"])
+                pace(g0)
+            if hit is None:
+                cycles.append((cyc, pause_before, fcount, None, None, False))
+                print(f"cycle {cyc}: NO stall in {args.poll_s:.0f}s ({fcount} frames) "
+                      f"[pause before: {pause_before:.1f}s]")
+            else:
+                f1, s1, d1 = hit
+                cycles.append((cyc, pause_before, f1, s1, d1, True))
+                print(f"cycle {cyc}: resume -> first stall in {s1:.2f}s / {f1} frames "
+                      f"[pause before: {pause_before:.1f}s]")
+            pend = time.monotonic() + args.pause_s
+            while time.monotonic() < pend and time.monotonic() - t_start < args.duration:
+                time.sleep(0.05)
+
     def print_summary():
         dur = time.monotonic() - t_start
         print("\n===== SUMMARY =====")
-        print(f"ran {dur:.1f}s, {frames} good frames "
-              f"({frames / dur if dur else 0:.1f} fps), {len(stalls)} stalls")
-        if stalls:
-            print(f"{'stall#':>6} {'frames_since_prev':>18} {'secs_since_prev':>16} "
-                  f"{'stall_dur_s':>12} {'raised':>7}")
-            for i, (seq, fsp, ssp, dur_s, raised) in enumerate(stalls, 1):
-                print(f"{i:>6} {fsp:>18} {ssp:>16.2f} {dur_s:>12.2f} {str(raised):>7}")
-            fsps = [s[1] for s in stalls[1:]]  # skip first (warmup-biased)
-            ssps = [s[2] for s in stalls[1:]]
-            durs = [s[3] for s in stalls]
-            if fsps:
-                print(f"\nframes-between-stalls: min={min(fsps)} max={max(fsps)} "
-                      f"mean={sum(fsps)/len(fsps):.0f}")
-                print(f"secs-between-stalls:   min={min(ssps):.1f} max={max(ssps):.1f} "
-                      f"mean={sum(ssps)/len(ssps):.1f}")
-            print(f"stall duration:        min={min(durs):.2f} max={max(durs):.2f} "
-                  f"mean={sum(durs)/len(durs):.2f}")
+        if args.standby_cycle:
+            print(f"ran {dur:.1f}s, standby-cycle (poll<={args.poll_s:.0f}s / pause "
+                  f"{args.pause_s:.0f}s), {state['frames']} good frames, {len(cycles)} cycles")
+            print(f"{'cycle':>5} {'pause_before':>13} {'frames->stall':>14} "
+                  f"{'secs_resume->stall':>19} {'stall_dur':>10} {'stalled':>8}")
+            for (c, pb, fts, sts, dd, hit) in cycles:
+                sts_s = f"{sts:.2f}" if sts is not None else "-"
+                dd_s = f"{dd:.2f}" if dd is not None else "-"
+                print(f"{c:>5} {pb:>13.1f} {fts:>14} {sts_s:>19} {dd_s:>10} {str(hit):>8}")
+            got = [c[3] for c in cycles[1:] if c[5]]  # skip cycle 1 (no pause before it)
+            if got:
+                print(f"\nsecs resume->first-stall (cycles 2+): min={min(got):.2f} "
+                      f"max={max(got):.2f} mean={sum(got)/len(got):.2f}")
+                print("  ~constant ~6s => resume RESETS the stall clock (timing dodge viable)")
+                print("  drifts/varies => clock is absolute (dodge won't work; decouple live view)")
+        else:
+            print(f"ran {dur:.1f}s, {state['frames']} good frames "
+                  f"({state['frames'] / dur if dur else 0:.1f} fps), {len(stalls)} stalls")
+            if stalls:
+                print(f"{'stall#':>6} {'frames_since_prev':>18} {'secs_since_prev':>16} "
+                      f"{'stall_dur_s':>12} {'raised':>7}")
+                for i, (seq, fsp, ssp, dur_s, raised) in enumerate(stalls, 1):
+                    print(f"{i:>6} {fsp:>18} {ssp:>16.2f} {dur_s:>12.2f} {str(raised):>7}")
+                fsps = [s[1] for s in stalls[1:]]  # skip first (warmup-biased)
+                ssps = [s[2] for s in stalls[1:]]
+                durs = [s[3] for s in stalls]
+                if fsps:
+                    print(f"\nframes-between-stalls: min={min(fsps)} max={max(fsps)} "
+                          f"mean={sum(fsps)/len(fsps):.0f}")
+                    print(f"secs-between-stalls:   min={min(ssps):.1f} max={max(ssps):.1f} "
+                          f"mean={sum(ssps)/len(ssps):.1f}")
+                print(f"stall duration:        min={min(durs):.2f} max={max(durs):.2f} "
+                      f"mean={sum(durs)/len(durs):.2f}")
 
     # Plain `kill` (SIGTERM) must shut down as cleanly as Ctrl+C — a hard exit
     # that skips cam.exit() is exactly what leaves the PTP session wedged for
@@ -192,34 +295,10 @@ def main():
     signal.signal(signal.SIGTERM, _sigterm)
 
     try:
-        while time.monotonic() - t_start < args.duration:
-            if args.flush:
-                drain_events(cam)
-            raised = False
-            g0 = time.monotonic()
-            try:
-                cf = cam.capture_preview()
-                _ = cf.get_data_and_size()
-            except Exception:
-                raised = True
-            dur_s = time.monotonic() - g0
-
-            if raised or dur_s >= stall_s:
-                secs_since = g0 - t_prev_stall
-                stalls.append((frames, frames_since_stall, secs_since, dur_s, raised))
-                print(f"STALL @frame {frames}: {frames_since_stall} frames / "
-                      f"{secs_since:.1f}s since last stall, took {dur_s:.2f}s, raised={raised}")
-                frames_since_stall = 0
-                t_prev_stall = g0
-                w.writerow([frames, g0 - t_start, dur_s * 1000, "err" if raised else "slow"])
-            else:
-                frames += 1
-                frames_since_stall += 1
-                w.writerow([frames, g0 - t_start, dur_s * 1000, "ok"])
-
-            sleep = interval - (time.monotonic() - g0)
-            if sleep > 0:
-                time.sleep(sleep)
+        if args.standby_cycle:
+            standby_cycle_loop()
+        else:
+            continuous_loop()
     except KeyboardInterrupt:
         print("\ninterrupted.")
     finally:
