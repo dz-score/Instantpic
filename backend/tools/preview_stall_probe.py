@@ -41,6 +41,12 @@ EXPERIMENT MATRIX (run each ~2-3 min):
          mid-window standby resets the clock (the app dodge is viable);
          ~(6-work_s) => it does NOT reset, the clock runs continuously and the
          dodge is dead (decouple live view). This is the one that matters.
+  python3 backend/tools/preview_stall_probe.py --capture-cycle --work-s 3 --duration 120
+      -> does a REAL capture (which exits live view) reset the clock? Polls,
+         fires a real shutter+download, resumes, measures secs-to-first-stall.
+         Consistently ~6s => capture resets it (a timing fix path exists);
+         immediate/phase-dependent => it doesn't (only decouple/accept).
+         NOTE: fires the physical shutter each cycle.
 
 Each run appends a per-frame CSV (--out) and prints a summary at the end
 (also on Ctrl+C).
@@ -166,7 +172,12 @@ def main():
     ap.add_argument("--work-s", type=float, default=0.0,
                     help="[standby-cycle] if >0, MID-WINDOW mode: poll this long (a sub-6s "
                          "healthy window, like the app's countdown) BEFORE the standby, to test "
-                         "whether a standby placed before the stall resets the clock")
+                         "whether a standby placed before the stall resets the clock. "
+                         "[capture-cycle] seconds to poll before each real capture (default 3)")
+    ap.add_argument("--capture-cycle", action="store_true",
+                    help="poll --work-s → fire a REAL capture_image+download (exits live view) "
+                         "→ resume → measure secs-to-first-stall. Tests whether a real capture "
+                         "resets the ~6s clock. FIRES THE SHUTTER for real.")
     args = ap.parse_args()
 
     interval = 1.0 / args.fps if args.fps > 0 else 0.0
@@ -323,10 +334,93 @@ def main():
                 print(f"cycle {cyc}: work {args.work_s:.1f}s → standby "
                       f"{args.pause_s:.1f}s → resume → first stall in {s1:.2f}s{flag}")
 
+    def do_capture():
+        """Fire a real shutter + download — the operation that exits live view
+        (mirrors _attempt_capture minus saving to disk). Returns (ok, seconds)."""
+        t0 = time.monotonic()
+        try:
+            drain_events(cam)                       # pre-capture flush (like the app)
+            fp = cam.capture(gp.GP_CAPTURE_IMAGE)
+            drain_events(cam)                       # post-trigger flush
+            cf = cam.file_get(fp.folder, fp.name, gp.GP_FILE_TYPE_NORMAL)
+            cf.get_data_and_size()                  # download from RAM, discard
+            return True, time.monotonic() - t0
+        except Exception as e:
+            print(f"    capture failed: {e}")
+            return False, time.monotonic() - t0
+
+    def capture_cycle_loop():
+        """Does a REAL capture (which exits live view) reset the ~6s stall clock?
+        Per cycle: poll --work-s to establish live view → fire a real capture →
+        resume → measure secs-to-first-stall. Consistently ~6s => a capture
+        RESETS the clock (a timing fix path exists); immediate/phase-dependent
+        => it does not (only decouple/accept)."""
+        work = args.work_s if args.work_s > 0 else 3.0
+        cyc = 0
+        while time.monotonic() - t_start < args.duration:
+            cyc += 1
+            # Phase A: poll to establish a live-view session.
+            t_a = time.monotonic()
+            while (time.monotonic() - t_a < work
+                   and time.monotonic() - t_start < args.duration):
+                raised, dur_s, g0 = grab()
+                is_stall = raised or dur_s >= stall_s
+                w.writerow([state["frames"], g0 - t_start, dur_s * 1000,
+                            "err" if is_stall else "ok"])
+                if not is_stall:
+                    state["frames"] += 1
+                pace(g0)
+            if time.monotonic() - t_start >= args.duration:
+                break
+            # Phase B: real capture (exits live view).
+            cap_ok, cap_dur = do_capture()
+            # Phase C: resume, measure time to first stall.
+            t_c = time.monotonic()
+            fcount = 0
+            hit = None
+            while (time.monotonic() - t_c < args.poll_s
+                   and time.monotonic() - t_start < args.duration):
+                raised, dur_s, g0 = grab()
+                if raised or dur_s >= stall_s:
+                    hit = (fcount, g0 - t_c, dur_s)
+                    w.writerow([state["frames"], g0 - t_start, dur_s * 1000,
+                                "err" if raised else "slow"])
+                    break
+                state["frames"] += 1
+                fcount += 1
+                w.writerow([state["frames"], g0 - t_start, dur_s * 1000, "ok"])
+                pace(g0)
+            capname = "ok" if cap_ok else "FAIL"
+            if hit is None:
+                cycles.append((cyc, cap_dur, fcount, None, None, False))
+                print(f"cycle {cyc}: work {work:.1f}s → capture({capname} {cap_dur:.2f}s) "
+                      f"→ resume → NO stall in {args.poll_s:.0f}s")
+            else:
+                f1, s1, d1 = hit
+                cycles.append((cyc, cap_dur, f1, s1, d1, True))
+                print(f"cycle {cyc}: work {work:.1f}s → capture({capname} {cap_dur:.2f}s) "
+                      f"→ resume → first stall in {s1:.2f}s")
+
     def print_summary():
         dur = time.monotonic() - t_start
         print("\n===== SUMMARY =====")
-        if args.standby_cycle:
+        if args.capture_cycle:
+            work = args.work_s if args.work_s > 0 else 3.0
+            print(f"ran {dur:.1f}s, capture-cycle (work {work:.1f}s), "
+                  f"{state['frames']} good frames, {len(cycles)} cycles")
+            print(f"{'cycle':>5} {'capture_s':>10} {'frames->stall':>14} "
+                  f"{'secs_capture->stall':>20} {'stall_dur':>10} {'stalled':>8}")
+            for (c, cd, fts, sts, dd, hit) in cycles:
+                sts_s = f"{sts:.2f}" if sts is not None else "-"
+                dd_s = f"{dd:.2f}" if dd is not None else "-"
+                print(f"{c:>5} {cd:>10.2f} {fts:>14} {sts_s:>20} {dd_s:>10} {str(hit):>8}")
+            got = [c[3] for c in cycles[1:] if c[5]]  # skip cycle 1 (warmup-biased)
+            if got:
+                print(f"\nsecs capture->first-stall (cycles 2+): min={min(got):.2f} "
+                      f"max={max(got):.2f} mean={sum(got)/len(got):.2f}")
+                print("  ~6s consistently => a real capture RESETS the clock (timing fix path exists)")
+                print("  immediate/varies => capture does NOT reset it (only decouple/accept)")
+        elif args.standby_cycle:
             mode = (f"mid-window (work {args.work_s:.1f}s / pause {args.pause_s:.0f}s)"
                     if args.work_s > 0
                     else f"poll<={args.poll_s:.0f}s / pause {args.pause_s:.0f}s")
@@ -378,7 +472,9 @@ def main():
     signal.signal(signal.SIGTERM, _sigterm)
 
     try:
-        if args.standby_cycle and args.work_s > 0:
+        if args.capture_cycle:
+            capture_cycle_loop()
+        elif args.standby_cycle and args.work_s > 0:
             midwindow_cycle_loop()
         elif args.standby_cycle:
             standby_cycle_loop()
