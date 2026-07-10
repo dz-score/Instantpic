@@ -30,11 +30,17 @@ EXPERIMENT MATRIX (run each ~2-3 min):
          (camera_service.py claims it prevents the freeze).
   python3 backend/tools/preview_stall_probe.py --standby-cycle --pause-s 3 --duration 120
   python3 backend/tools/preview_stall_probe.py --standby-cycle --pause-s 6 --duration 120
-      -> does standby->resume reset the ~6s stall clock? Measures
-         seconds-from-resume-to-first-stall per cycle. If it stays ~constant
-         (~6s) across cycles and across --pause-s values, resume RESETS the
-         clock and a short-live-view-session-before-capture dodge is viable.
-         If it drifts with the pause, the clock is absolute -> decouple.
+      -> does standby->resume reset the ~6s stall clock? NOTE: this variant
+         always pauses AFTER a stall (clock already at 0), so it can't tell a
+         real reset from "the stall reset it + the pause held". Use --work-s
+         for the decisive test.
+  python3 backend/tools/preview_stall_probe.py --standby-cycle --work-s 3 --pause-s 3 --duration 120
+      -> MID-WINDOW test (mimics the app's pose-standby at ~3s into a 3s
+         countdown): poll --work-s (a sub-6s window, before any stall), THEN
+         standby, resume, and measure seconds-to-first-stall. ~6s => a
+         mid-window standby resets the clock (the app dodge is viable);
+         ~(6-work_s) => it does NOT reset, the clock runs continuously and the
+         dodge is dead (decouple live view). This is the one that matters.
 
 Each run appends a per-frame CSV (--out) and prints a summary at the end
 (also on Ctrl+C).
@@ -157,6 +163,10 @@ def main():
                     help="[standby-cycle] max seconds to poll each burst before giving up on a stall")
     ap.add_argument("--pause-s", type=float, default=3.0,
                     help="[standby-cycle] seconds to stop polling (simulated standby) between bursts")
+    ap.add_argument("--work-s", type=float, default=0.0,
+                    help="[standby-cycle] if >0, MID-WINDOW mode: poll this long (a sub-6s "
+                         "healthy window, like the app's countdown) BEFORE the standby, to test "
+                         "whether a standby placed before the stall resets the clock")
     args = ap.parse_args()
 
     interval = 1.0 / args.fps if args.fps > 0 else 0.0
@@ -249,24 +259,97 @@ def main():
             while time.monotonic() < pend and time.monotonic() - t_start < args.duration:
                 time.sleep(0.05)
 
+    def midwindow_cycle_loop():
+        """Does a standby placed BEFORE the stall (mid healthy window, like the
+        app's pose-standby at ~3s into a 3s countdown) reset the ~6s clock?
+
+        Per cycle: [fresh window] poll --work-s (a sub-6s window, no stall yet)
+        → standby --pause-s → resume → poll until first stall, record
+        secs-to-stall. Each cycle's fresh window starts right after the previous
+        cycle's stall (a known reset), so the only variable under test is the
+        mid-window standby.
+
+        Read the aggregate:
+          secs-to-stall ~= 6s      → the mid-window standby DID reset the clock
+                                       → the app's pose-standby dodge is viable
+          secs-to-stall ~= 6-work_s → it did NOT reset (clock runs continuously)
+                                       → dodge is dead; decouple live view
+        """
+        cyc = 0
+        while time.monotonic() - t_start < args.duration:
+            cyc += 1
+            # Phase A — fresh window: poll work_s (should be stall-free).
+            t_a = time.monotonic()
+            stalled_in_work = False
+            while (time.monotonic() - t_a < args.work_s
+                   and time.monotonic() - t_start < args.duration):
+                raised, dur_s, g0 = grab()
+                if raised or dur_s >= stall_s:
+                    stalled_in_work = True
+                    w.writerow([state["frames"], g0 - t_start, dur_s * 1000,
+                                "err" if raised else "slow"])
+                    break
+                state["frames"] += 1
+                w.writerow([state["frames"], g0 - t_start, dur_s * 1000, "ok"])
+                pace(g0)
+            # Phase B — mid-window standby (stop polling before any stall).
+            pend = time.monotonic() + args.pause_s
+            while time.monotonic() < pend and time.monotonic() - t_start < args.duration:
+                time.sleep(0.05)
+            # Phase C — resume, measure time to first stall.
+            t_c = time.monotonic()
+            fcount = 0
+            hit = None
+            while (time.monotonic() - t_c < args.poll_s
+                   and time.monotonic() - t_start < args.duration):
+                raised, dur_s, g0 = grab()
+                if raised or dur_s >= stall_s:
+                    hit = (fcount, g0 - t_c, dur_s)
+                    w.writerow([state["frames"], g0 - t_start, dur_s * 1000,
+                                "err" if raised else "slow"])
+                    break
+                state["frames"] += 1
+                fcount += 1
+                w.writerow([state["frames"], g0 - t_start, dur_s * 1000, "ok"])
+                pace(g0)
+            flag = "  [!! stalled during the work phase]" if stalled_in_work else ""
+            if hit is None:
+                cycles.append((cyc, args.pause_s, fcount, None, None, False))
+                print(f"cycle {cyc}: work {args.work_s:.1f}s → standby "
+                      f"{args.pause_s:.1f}s → resume → NO stall in {args.poll_s:.0f}s{flag}")
+            else:
+                f1, s1, d1 = hit
+                cycles.append((cyc, args.pause_s, f1, s1, d1, True))
+                print(f"cycle {cyc}: work {args.work_s:.1f}s → standby "
+                      f"{args.pause_s:.1f}s → resume → first stall in {s1:.2f}s{flag}")
+
     def print_summary():
         dur = time.monotonic() - t_start
         print("\n===== SUMMARY =====")
         if args.standby_cycle:
-            print(f"ran {dur:.1f}s, standby-cycle (poll<={args.poll_s:.0f}s / pause "
-                  f"{args.pause_s:.0f}s), {state['frames']} good frames, {len(cycles)} cycles")
+            mode = (f"mid-window (work {args.work_s:.1f}s / pause {args.pause_s:.0f}s)"
+                    if args.work_s > 0
+                    else f"poll<={args.poll_s:.0f}s / pause {args.pause_s:.0f}s")
+            print(f"ran {dur:.1f}s, standby-cycle [{mode}], {state['frames']} good "
+                  f"frames, {len(cycles)} cycles")
             print(f"{'cycle':>5} {'pause_before':>13} {'frames->stall':>14} "
                   f"{'secs_resume->stall':>19} {'stall_dur':>10} {'stalled':>8}")
             for (c, pb, fts, sts, dd, hit) in cycles:
                 sts_s = f"{sts:.2f}" if sts is not None else "-"
                 dd_s = f"{dd:.2f}" if dd is not None else "-"
                 print(f"{c:>5} {pb:>13.1f} {fts:>14} {sts_s:>19} {dd_s:>10} {str(hit):>8}")
-            got = [c[3] for c in cycles[1:] if c[5]]  # skip cycle 1 (no pause before it)
+            got = [c[3] for c in cycles[1:] if c[5]]  # skip cycle 1 (warmup-biased)
             if got:
                 print(f"\nsecs resume->first-stall (cycles 2+): min={min(got):.2f} "
                       f"max={max(got):.2f} mean={sum(got)/len(got):.2f}")
-                print("  ~constant ~6s => resume RESETS the stall clock (timing dodge viable)")
-                print("  drifts/varies => clock is absolute (dodge won't work; decouple live view)")
+                if args.work_s > 0:
+                    print(f"  ~6s          => the mid-window standby RESETS the clock "
+                          f"(app pose-standby dodge viable)")
+                    print(f"  ~{max(6 - args.work_s, 0):.0f}s (6-work) => it did NOT reset; the clock "
+                          f"runs continuously (dodge dead → decouple live view)")
+                else:
+                    print("  ~constant ~6s => resume RESETS the stall clock (timing dodge viable)")
+                    print("  drifts/varies => clock is absolute (dodge won't work; decouple live view)")
         else:
             print(f"ran {dur:.1f}s, {state['frames']} good frames "
                   f"({state['frames'] / dur if dur else 0:.1f} fps), {len(stalls)} stalls")
@@ -295,7 +378,9 @@ def main():
     signal.signal(signal.SIGTERM, _sigterm)
 
     try:
-        if args.standby_cycle:
+        if args.standby_cycle and args.work_s > 0:
+            midwindow_cycle_loop()
+        elif args.standby_cycle:
             standby_cycle_loop()
         else:
             continuous_loop()
