@@ -248,6 +248,12 @@ class CameraService:
         """
         consecutive_errors = 0
         frame_count = 0
+        # Instrumentation for the periodic Canon [-1] preview stall: track how
+        # long the healthy run lasted (good frames + seconds) before each stall,
+        # logged on the error below so live sessions are self-describing. See
+        # backend/tools/preview_stall_probe.py for isolated, controlled runs.
+        frames_since_stall = 0
+        t_last_stall = time.monotonic()
 
         while not self._shutdown_event.is_set():
             # 1. Process command queue
@@ -334,6 +340,7 @@ class CameraService:
                     self._frame_condition.notify_all()
                     
                 self._frames_produced += 1
+                frames_since_stall += 1
                 self._last_frame_time = time.perf_counter()
                 self._last_cap_time = cap_time
 
@@ -346,7 +353,14 @@ class CameraService:
 
             except Exception as e:
                 consecutive_errors += 1
-                log.debug("camera_timing", "worker_preview_err", f"Preview error #{consecutive_errors}: {e}")    
+                stall_ms = (time.perf_counter() - loop_start) * 1000
+                now = time.monotonic()
+                log.debug("camera_timing", "worker_preview_err",
+                          f"Preview error #{consecutive_errors}: {e} "
+                          f"(healthy run before stall: {frames_since_stall} frames / "
+                          f"{now - t_last_stall:.1f}s; stalled cycle {stall_ms:.0f}ms)")
+                frames_since_stall = 0
+                t_last_stall = now
 
                 warming_up = (time.monotonic() - self._last_init_time) < self._preview_warmup_grace
                 # A session whose warmup preview already failed is almost
