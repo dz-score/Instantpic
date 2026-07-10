@@ -77,6 +77,13 @@ class CameraService:
         # must live here, not in the frontend (Rule 14).
         self.CAPTURE_RETRY_DELAY_S = 1.5
 
+        # Tiny idle gap between the last preview grab and the capture trigger, so
+        # the camera's live view has actually released the USB/PTP path before we
+        # fire (gphoto docs: "preview may not be fully stopped when capture is
+        # triggered" — usually just milliseconds). This is NOT the old ~1s
+        # stall-dodge settle; it only covers the preview-release race.
+        self.PREVIEW_RELEASE_SETTLE_S = 0.015
+
         # --- Diagnostics ---
         self._frames_produced = 0
         self._last_frame_time = time.perf_counter()
@@ -271,6 +278,14 @@ class CameraService:
 
             if self._shutdown_event.is_set():
                 break
+
+            # A capture is queued or running — do not start a preview grab. The
+            # CAPTURE job is serviced at the top of the loop; skipping the grab
+            # keeps the worker from riding a preview into the M50 stall and
+            # delaying the shutter (belt-and-suspenders with resume_preview()'s
+            # guard, in case _preview_allowed was re-armed by a race).
+            if self._capture_in_progress:
+                continue
 
             # Watchdog check — runs every iteration regardless of whether the
             # camera is connected or the previous capture attempt errored, so
@@ -480,12 +495,17 @@ class CameraService:
     def enqueue_capture(self) -> str:
         """Enqueues a high-res capture job and returns its ID immediately."""
         job_id = uuid.uuid4().hex[:8]
-        self._cmd_queue.put({"type": "CAPTURE", "job_id": job_id})
-        
-        # We manually put the camera into standby so live view stops and 
-        # the USB bus begins to drain even before the worker thread starts the capture
+
+        # Make the capture authoritative over live view BEFORE the job is even
+        # queued: set the in-progress gate and standby first, so the worker can
+        # neither start a new preview grab nor be re-armed by resume_preview()
+        # (e.g. a preview-stream reconnect) in the window before it services the
+        # capture. Without this the worker can ride a preview grab into the M50
+        # ~3s stall and drag the shutter out with it.
+        self._capture_in_progress = True
         self.standby()
-        
+        self._cmd_queue.put({"type": "CAPTURE", "job_id": job_id})
+
         # Emit initial pending state
         self._emit_job_state(job_id, "pending")
         return job_id
@@ -506,6 +526,12 @@ class CameraService:
         """
         self._capture_in_progress = True
         self._emit_job_state(job_id, "started")
+
+        # Preview-release settle: a few ms of idle after live view stopped and
+        # before we touch the capture path, so the camera has released the
+        # live-view USB/PTP state (gphoto: "preview may not be fully stopped when
+        # capture is triggered"). Distinct from the ~1s stall dodge.
+        time.sleep(self.PREVIEW_RELEASE_SETTLE_S)
 
         if not self.connected:
             self.init()
@@ -624,6 +650,11 @@ class CameraService:
 
     def resume_preview(self):
         """Wakes up the background worker to resume the preview stream."""
+        if self._capture_in_progress:
+            # Never re-arm live view while a capture is pending/running — a
+            # preview-stream reconnect (preview_generator calls this) must not
+            # un-park the worker mid-capture and let it ride into the M50 stall.
+            return
         if not self._preview_allowed.is_set():
             log.info("camera", "camera_resume", "Resuming live view (waking worker)")
             self._preview_allowed.set()
