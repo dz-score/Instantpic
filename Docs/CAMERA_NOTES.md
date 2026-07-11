@@ -31,11 +31,11 @@ the startup and countdown→reveal flows, see
 |---|---|
 | **Never write the `output` widget** (house rule) | Writing `'TFT'` kills every preview for the session — proven here. Upstream does sanction writing `PC`/`MOBILE`/`MOBILE2` to select a preview size, but that's untested on this body and we don't need it. `MOBILE2` as its value is **benign** — see §4. |
 | **Never set `viewfinder=0`** | Breaks the *next* preview session with persistent `[-1]` until re-init. |
-| **Don't add re-init retries to `init()` to "heal faster"** | The wedged first session (§2) is a self-clearing camera state; re-init does NOT cure or shorten it — it only adds latency. An in-place session rebuild also poisons every subsequent session (commits `7237e7a`/`832ab8e`, reverted `a4f4d51`); a bounded inline exit+init loop just made boot slower (`e3035c4`, reverted `ddab7f5`). Only the worker-cascade heal (ride it out: `connected=False` → worker re-enters `init()`, old handle exited first) is correct. |
+| **Don't re-init to "heal faster" *before* the session has polled ~2 stalls** | The wedged first session (§2) clears only after ~2 stalls of polling followed by an `exit()+init()` — a re-init *before* that priming doesn't heal, and polling alone never does. Re-initting after every single stall (`e3035c4`, reverted `ddab7f5`) never accumulates the priming → never heals, just adds latency. An in-place session rebuild is worse — it poisons every subsequent session (`7237e7a`/`832ab8e`, reverted `a4f4d51`). Correct = the worker-cascade heal: warmup stall (#1) → 1 worker stall (#2) → `connected=False` → re-enter `init()` (old handle exited first). |
 | **Flush events (`wait_for_event`) around every capture** | The post-trigger flush drains `GP_EVENT_FILE_ADDED`; skip it and events pile up and poison the next preview session. (Note: the per-frame flush does **not** prevent the periodic ~6s live-view stall — measured, §3.) |
 | **Chain multi-shot captures tight (`shot_interval_ms + countdown` < ~5s)** | A *capture* opens a ~6s stall-free window (§3); the next shot must fire inside it. `shot_interval_ms` is 1s for this. Standby does NOT open a window — only a capture (or a completed stall / re-init) resets the clock. |
 | **Don't rely on countdown/standby timing to dodge the stall** | The ~6s stall clock free-runs on camera time; standby/resume/rate/flush do NOT reset it (§3, disproven the earlier ≤5s idea). |
-| **Stop the booth with `stop.sh`, not a hard kill** | SIGTERM lets `camera.exit()` close the PTP session cleanly (verified: `camera_exit` logs on every stop). Good hygiene — but it does **not** prevent the wedged first session after a run that took photos; that wedge survives a clean exit and self-clears in ~13–20s (§2). |
+| **Stop the booth with `stop.sh`, not a hard kill** | SIGTERM lets `camera.exit()` close the PTP session cleanly (verified: `camera_exit` logs on every stop). Good hygiene — but it does **not** prevent the wedged first session after a run that took photos; that wedge survives a clean exit; the worker heals it in ~9s (§2). |
 | **Prefer letting the camera rest (standby/watchdog) over always-on polling** | Sustained polling exposes the periodic stall (§3); resting resets the clock for the next shot. |
 | **Mistrust ear-based localization of noises near the camera** | The famous "camera whine" came from the speaker amplifier (§5). |
 
@@ -49,7 +49,8 @@ reliability outweigh idle-time niceties.**
 **Symptom:** on app launch, the first PTP session has broken live view —
 `camera.init()` succeeds, config reads work fine (widget dump prints), but
 **every** `capture_preview()` blocks ~3.0s and returns `[-1] Unspecified
-error`. It clears on its own ~13–20s after boot and the booth runs normally.
+error`. The worker heals it in ~9s (see below), before any guest taps, and
+the booth runs normally.
 
 **What actually triggers it (corrected 2026-07-11 — supersedes the earlier
 "stale session from a hard kill" root cause):** the differentiator is
@@ -67,31 +68,41 @@ process death**. (This is why the old "hard kill left no `exit()`" story
 looked right — early on the booth was always hard-killed *and* always took
 photos before the kill; the photo was the real cause, not the kill.)
 
-**Re-init does NOT heal or shorten it (proven 2026-07-11,
-`logs/backend_20260711_024725.log`).** Three back-to-back `exit()+init()`
-cycles at boot each stalled ~3.0s. The wedge cleared only after ~15–20s /
-~5 completed ~3s stall cycles — and the *successful* warmup was **instant
-(~30ms: `camera_ready` 47.968 → `camera_warmup` 47.998)**, proving the camera
-had already recovered on its own timescale, not because of the re-init that
-happened to precede it. The wedge is a **self-clearing camera state**; nothing
-we can do from software (clean exit, `output='Off'`, re-init) speeds it up.
+**How the wedge clears (proven 2026-07-11 with `preview_stall_probe.py
+--heal-probe`, multiple runs).** It does **not** self-clear — neither idle time
+(a 5-min gap between `stop.sh` and relaunch still boots wedged) nor polling
+alone (`--heal-strategy poll`: 27s / 9 back-to-back ~3.0s stalls, never healed)
+clears it. There are exactly **two** ways out:
 
-**How it's handled (worker heal, commit `5c5b9c0`; still the right approach).**
-The heal doesn't *cure* the wedge — it **keeps the session alive until the
-camera self-recovers** and guarantees the first real capture works (its
-original purpose: before it, the first shot failed every launch and only the
-2nd worked).
+1. **A `capture_image` — clears it instantly.** (`--heal-strategy capture`: one
+   real shutter, then preview is healthy in ~5ms.) We do **not** use this at
+   startup — it fires an audible shutter with no guest around.
+2. **~2 stalls (~6s) of live-view polling, THEN an `exit()+init()`.**
+   (`--heal-strategy reinit`: 2 stalls → re-init → healed ~8s, reliable across
+   runs.) **Both parts are required** — polling alone never heals (route 1's
+   `poll` result), and a re-init *before* ~2 stalls of priming doesn't heal
+   either (the inline heal below re-init'd after a single stall and never
+   recovered). The priming does **not** carry across a re-init: each fresh
+   session needs its own ~2 stalls before the exit+init.
+
+**How it's handled (worker heal, commit `5c5b9c0`, tightened `a34da82`).**
+The heal takes route 2: poll ~2 stalls, then `exit()+init()`.
 
 - `init()`'s warmup preview failing is the reliable wedge signature → sets
-  `_warmup_failed` and logs `camera_warmup_fail` (WARN).
-- While `_warmup_failed`: the worker trips the disconnect cascade after
-  **2** consecutive errors instead of 6, and the idle watchdog **defers
-  standby** so the heal isn't stranded waiting for a viewer.
+  `_warmup_failed` and logs `camera_warmup_fail` (WARN). That failed warmup
+  grab is **stall #1** of the priming.
+- While `_warmup_failed`: the worker trips the disconnect cascade after **1**
+  more stall (`error_limit = 1`; that's stall #2 → the 2 stalls the re-init
+  needs), and the idle watchdog **defers standby** so the heal isn't stranded
+  waiting for a viewer.
 - The worker cycles `connected=False` → re-enters `init()` (old handle exited
-  → fresh session) → retries warmup, riding out the stall cycles until one
-  succeeds.
-- Result: the camera is ready ~13–20s after boot, on the attract screen,
-  before a guest ever taps.
+  → fresh session) → warmup now succeeds. Self-correcting: if it doesn't, the
+  worker just runs another 2-stall cycle.
+- Result: the camera is ready **~9s after boot** (was ~12s at `error_limit=2`
+  / 3 stalls), on the attract screen, before a guest ever taps — which is the
+  whole point: it makes the guest's **first** capture work. (Before the heal
+  existed, the first shot failed every launch and only the 2nd worked, because
+  a `capture_image` is route 1 and the guest's first shot paid for it.)
 - `preview_generator()` refreshes `_last_preview_request` on **every poll
   slice**, so a viewer staring at a black stream counts as present —
   previously the watchdog judged them absent after 10s and paused the worker
@@ -102,9 +113,11 @@ original purpose: before it, the first shot failed every launch and only the
 **Tried and reverted (2026-07-11):**
 
 - An inline warmup-heal loop in `init()` (re-init up to 3× immediately on
-  warmup fail, commit `e3035c4`) — made boot **slower** (~22s vs ~13s) by
-  adding ~1.5s of open overhead per useless re-init, and healed nothing the
-  worker wasn't going to heal anyway. Reverted (`ddab7f5`).
+  warmup fail, commit `e3035c4`) — it re-init'd after **every single stall**,
+  so no session ever got the ~2 stalls of priming the exit+init needs; it never
+  healed inline and just burned ~1.5s of open overhead per cycle (~22s boot).
+  The fix is the opposite: let the session poll ~2 stalls *before* the re-init
+  (which is what `error_limit=1` does — see above). Reverted (`ddab7f5`).
 - Setting `output='Off'` before `exit()` on shutdown (commit `63eb680`) — a
   no-op; `output` reads back `MOBILE2` on every boot init (§4), so the write
   doesn't persist. Reverted (`970eeb2`).
@@ -360,8 +373,8 @@ later.
 **A wedged launch (after a run that took photos) looks like:**
 `camera_ready` → `camera_warmup_fail` (WARN) → `worker_preview_err` ×N →
 `camera_preview_fail` → another `camera_init` → eventually `camera_warmup` OK.
-The camera self-clears ~13–20s after boot (it rides out several ~3s stall
-cycles; re-init does not speed it — §2). **This is normal self-healing**, not
+The worker heals it in ~9s: warmup stall (#1) → 1 worker stall (#2) →
+`connected=False` → re-init → `camera_warmup` OK (§2). **This is normal self-healing**, not
 a fault.
 
 **Worrying signatures:**
@@ -407,7 +420,7 @@ how §3 was characterized.
 | 2026-07-07 | "First preview after launch always fails" investigated | Root-caused to stale PTP session from hard kills (§2). Fixed with fail-fast heal + watchdog viewer fix (`5c5b9c0`), `stop.sh` for clean stops, event-loop offloading for slow USB calls (`1f75959`). Hardware-verified same night. |
 | 2026-07-09 / 07-10 | "3rd collage shot / intermittent ~3s pre-shutter delay" investigated | Built `preview_stall_probe.py` and characterized the stall (§3): **time-triggered ~6s cycle, ~3s duration, rate- and flush-independent**, correcting the earlier "~12.3s cycle". Made the capture **authoritative from enqueue** + ~15ms `PREVIEW_RELEASE_SETTLE_S` (§6) and added worker stall instrumentation. (An intermediate "resume resets the clock → ≤5s countdown dodges it" conclusion was later DISPROVEN — see 07-11.) |
 | 2026-07-11 | Root cause & fix nailed | Mid-window (`--work-s`) and `--capture-cycle` probes proved standby/resume do **NOT** reset the free-running clock — only a **capture** (or a completed stall / re-init) does, opening a ~6s window. `--rapid-capture` showed chaining shots <~6s apart is a strong mitigation (~44%→~10% stalled) but not a cure. **Option A shipped:** `shot_interval_ms` 3s→1s so collage shots chain inside the window; residual ~10% handled by retry-once; first/single/retake shots rely on retry. ~100% would need decoupling live view (unproven for gphoto2/M50). |
-| 2026-07-11 | Startup heal investigated (can the ~13–20s boot wedge be sped up?) | **No.** DEBUG log (`backend_20260711_024725.log`) proved the wedged first session (§2) is a **self-clearing camera state** (~15–20s / ~5 stall cycles); re-init does not heal or accelerate it (3 consecutive re-inits stalled; the successful warmup was instant ~30ms). Also corrected §2's root cause: the wedge is caused by a real `capture_image` and **survives a clean `exit()`** (not the old "hard-kill" story). Tried & reverted: inline warmup-heal loop (`e3035c4`→`ddab7f5`, slower boot) and shutdown `output='Off'` (`63eb680`→`970eeb2`, no-op). Kept: the worker heal, which keeps the session alive until self-recovery. |
+| 2026-07-11 | Startup heal characterized & sped up | `preview_stall_probe.py --heal-probe` (3 strategies, multiple runs) proved the wedge clears **only** via (1) a `capture_image` — instant, but audible shutter, so not used at startup — or (2) ~2 stalls of polling **then** an `exit()+init()`. Polling alone never heals (27s/9 stalls); a re-init before ~2 stalls of priming never heals (why the inline heal `e3035c4` failed → reverted `ddab7f5`). Root cause also corrected: the wedge is caused by a real `capture_image` and **survives a clean `exit()`** (not the old "hard-kill" story). **Optimization shipped (`a34da82`):** `error_limit` 2→1 when `_warmup_failed` (warmup grab = stall #1, so 1 worker stall = the 2 needed) → heal ~12s→~9s. Also reverted the no-op shutdown `output='Off'` (`63eb680`→`970eeb2`). |
 
 Full experimental history is preserved locally in the
 `backup/whine-investigation` branch.
