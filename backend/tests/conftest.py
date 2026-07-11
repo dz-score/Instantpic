@@ -99,9 +99,13 @@ def mock_gphoto2(monkeypatch):
     mock_context = MagicMock()
     mock_camera = MagicMock()
     
-    # Helper to simulate capturing a preview returning valid mock file
+    # Helper to simulate capturing a preview returning a valid mock file.
+    # get_data_and_size() must return a real buffer (not a tuple): the warmup
+    # does bytes(memoryview(...)) on it, so a healthy mock camera warms up
+    # successfully — otherwise init()'s inline warmup-heal loop would re-open
+    # the camera repeatedly and throw off init() call counts.
     mock_preview_file = MagicMock()
-    mock_preview_file.get_data_and_size.return_value = (b'fake_jpeg_data', 14)
+    mock_preview_file.get_data_and_size.return_value = b'fake_jpeg_data'
     mock_camera.capture_preview.return_value = mock_preview_file
     
     mock_gp.Context = MagicMock(return_value=mock_context)

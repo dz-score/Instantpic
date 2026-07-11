@@ -84,6 +84,16 @@ class CameraService:
         # stall-dodge settle; it only covers the preview-release race.
         self.PREVIEW_RELEASE_SETTLE_S = 0.015
 
+        # How many times init() re-opens the camera inline when the warmup
+        # preview fails before handing off to the worker's runtime heal. A
+        # failed warmup is the wedged live-view signature, and the proven cure
+        # is exit()+init() — so we do it immediately instead of letting the
+        # worker rediscover it over ~2 doomed ~3s probes plus the 5s backoff.
+        # Heals on the 2nd attempt in practice (see CAMERA_NOTES); 3 caps boot
+        # latency on a genuinely unhealable camera, after which the worker
+        # fallback takes over.
+        self.WARMUP_HEAL_MAX_ATTEMPTS = 3
+
         # --- Diagnostics ---
         self._frames_produced = 0
         self._last_frame_time = time.perf_counter()
@@ -132,91 +142,23 @@ class CameraService:
                 return
 
             try:
-                if self.camera:
-                    try:
-                        self.camera.exit()
-                    except Exception:
-                        pass
-
-                if self._init_fail_count == 0:
-                    log.info("camera", "camera_init", "Initializing gphoto2 camera...")
-                else:
-                    log.debug("camera", "camera_init",
-                              f"Re-attempting camera init (attempt #{self._init_fail_count + 1}, backoff={self._init_backoff}s)")
-
-                self.camera = gp.Camera()
-                self.camera.init()
-
-                # Try to set capturetarget to internal RAM
-                try:
-                    config = self.camera.get_config()
-                    ok, capture_target = gp.gp_widget_get_child_by_name(config, 'capturetarget')
-                    if ok >= gp.GP_OK:
-                        choices = [capture_target.get_choice(i) for i in range(capture_target.count_choices())]
-                        for choice in choices:
-                            if 'RAM' in choice or 'Internal' in choice:
-                                capture_target.set_value(choice)
-                                break
-                        self.camera.set_config(config)
-                except Exception as e:
-                    log.warn("camera", "camera_config_warn", f"Could not set capture target: {e}")
-
-                self.connected = True
-                self._last_error = None
-                self._init_backoff = 5
-                self._init_fail_count = 0
-                self._last_init_time = time.monotonic()
-                sse_svc.dispatch_event("camera_status", self.get_status())
-                log.info("camera", "camera_ready", "Camera initialized successfully")
-
-                # Configure basic settings for stability
-                try:
-                    config = self.camera.get_config()
-                    
-                    # Prevent camera from hunting for focus during Live View
-                    ok, af_widget = gp.gp_widget_get_child_by_name(config, 'autofocusdrive')
-                    if ok >= gp.GP_OK:
-                        af_widget.set_value(0)
-                        
-                    # Set capture target to SD card (or RAM) if needed, but for now just apply config
-                    self.camera.set_config(config)
-                except Exception as cfg_err:
-                    log.debug("camera", "camera_config_warn", f"Could not set initial config: {cfg_err}")
-
-                # Log display/live-view related widgets once per init — no
-                # runtime cost, and invaluable when diagnosing camera
-                # behavior on-site (kept from the 2026-07 whine investigation).
-                try:
-                    config = self.camera.get_config()
-                    for key in ['output', 'movierecordtarget', 'liveviewsize', 'eosmovieswitch', 'capturetarget']:
-                        ok, widget = gp.gp_widget_get_child_by_name(config, key)
-                        if ok >= gp.GP_OK:
-                            choices = []
-                            try:
-                                choices = [widget.get_choice(i) for i in range(widget.count_choices())]
-                            except Exception:
-                                pass
-                            log.debug("camera", "camera_widget_info",
-                                      f"Widget '{key}': value={widget.get_value()!r} choices={choices}")
-                        else:
-                            log.debug("camera", "camera_widget_info", f"Widget '{key}': not exposed")
-                except Exception as e:
-                    log.debug("camera", "camera_widget_info_fail", f"Could not enumerate widgets: {e}")
-
-                # Pre-warm the viewfinder so the first preview frame is instant
-                try:
-                    camera_file = self.camera.capture_preview()
-                    file_data = camera_file.get_data_and_size()
-                    with self._frame_condition:
-                        self._latest_frame = bytes(memoryview(file_data))
-                        self._frame_condition.notify_all()
-                    self._warmup_failed = False
-                    log.debug("camera", "camera_warmup", "Viewfinder pre-warmed")
-                except Exception as e:
-                    self._warmup_failed = True
-                    log.warn("camera", "camera_warmup_fail",
-                             f"Warmup preview failed ({e}) — live-view session likely "
-                             "stale from an unclean shutdown; worker will fail fast to re-init")
+                # Open + warm the viewfinder. A failed warmup is the wedged
+                # live-view signature (config reads work but every
+                # capture_preview stalls ~3s then errors [-1]). That state
+                # survives a clean exit() when the previous session took a photo
+                # (Docs/CAMERA_NOTES.md), so it shows up even after a clean
+                # stop.sh — the next boot's first warmup lands in it. The proven
+                # cure is exit()+init(), so heal it INLINE here rather than
+                # letting the worker rediscover it over ~2 doomed ~3s probes plus
+                # the 5s init backoff (~12s). The worker's runtime heal stays as
+                # the fallback if we exhaust these attempts.
+                for attempt in range(1, self.WARMUP_HEAL_MAX_ATTEMPTS + 1):
+                    if self._open_and_warmup():
+                        break
+                    if attempt < self.WARMUP_HEAL_MAX_ATTEMPTS:
+                        log.info("camera", "camera_warmup_heal",
+                                 f"Warmup failed — re-initializing to clear wedged live-view "
+                                 f"session (attempt {attempt + 1}/{self.WARMUP_HEAL_MAX_ATTEMPTS})")
 
                 # Start the background worker if not already running
                 self._start_worker()
@@ -234,6 +176,103 @@ class CameraService:
                     log.debug("camera", "camera_init_fail",
                               f"Camera init retry #{self._init_fail_count} failed: {e}")
                 self._init_backoff = min(self._init_backoff * 2, 30)
+
+    def _open_and_warmup(self) -> bool:
+        """Open (or re-open) the camera, apply config, and warm the viewfinder.
+
+        Caller must hold self.lock. Raises gp.GPhoto2Error if the camera can't
+        be opened (init() turns that into its existing backoff). Returns True if
+        the warmup preview produced a frame, False if it stalled/failed — the
+        wedged live-view signature that init() re-invokes this to clear.
+        """
+        if self.camera:
+            try:
+                self.camera.exit()
+            except Exception:
+                pass
+
+        if self._init_fail_count == 0:
+            log.info("camera", "camera_init", "Initializing gphoto2 camera...")
+        else:
+            log.debug("camera", "camera_init",
+                      f"Re-attempting camera init (attempt #{self._init_fail_count + 1}, backoff={self._init_backoff}s)")
+
+        self.camera = gp.Camera()
+        self.camera.init()
+
+        # Try to set capturetarget to internal RAM
+        try:
+            config = self.camera.get_config()
+            ok, capture_target = gp.gp_widget_get_child_by_name(config, 'capturetarget')
+            if ok >= gp.GP_OK:
+                choices = [capture_target.get_choice(i) for i in range(capture_target.count_choices())]
+                for choice in choices:
+                    if 'RAM' in choice or 'Internal' in choice:
+                        capture_target.set_value(choice)
+                        break
+                self.camera.set_config(config)
+        except Exception as e:
+            log.warn("camera", "camera_config_warn", f"Could not set capture target: {e}")
+
+        self.connected = True
+        self._last_error = None
+        self._init_backoff = 5
+        self._init_fail_count = 0
+        self._last_init_time = time.monotonic()
+        sse_svc.dispatch_event("camera_status", self.get_status())
+        log.info("camera", "camera_ready", "Camera initialized successfully")
+
+        # Configure basic settings for stability
+        try:
+            config = self.camera.get_config()
+
+            # Prevent camera from hunting for focus during Live View
+            ok, af_widget = gp.gp_widget_get_child_by_name(config, 'autofocusdrive')
+            if ok >= gp.GP_OK:
+                af_widget.set_value(0)
+
+            # Set capture target to SD card (or RAM) if needed, but for now just apply config
+            self.camera.set_config(config)
+        except Exception as cfg_err:
+            log.debug("camera", "camera_config_warn", f"Could not set initial config: {cfg_err}")
+
+        # Log display/live-view related widgets once per init — no
+        # runtime cost, and invaluable when diagnosing camera
+        # behavior on-site (kept from the 2026-07 whine investigation).
+        try:
+            config = self.camera.get_config()
+            for key in ['output', 'movierecordtarget', 'liveviewsize', 'eosmovieswitch', 'capturetarget']:
+                ok, widget = gp.gp_widget_get_child_by_name(config, key)
+                if ok >= gp.GP_OK:
+                    choices = []
+                    try:
+                        choices = [widget.get_choice(i) for i in range(widget.count_choices())]
+                    except Exception:
+                        pass
+                    log.debug("camera", "camera_widget_info",
+                              f"Widget '{key}': value={widget.get_value()!r} choices={choices}")
+                else:
+                    log.debug("camera", "camera_widget_info", f"Widget '{key}': not exposed")
+        except Exception as e:
+            log.debug("camera", "camera_widget_info_fail", f"Could not enumerate widgets: {e}")
+
+        # Pre-warm the viewfinder so the first preview frame is instant
+        try:
+            camera_file = self.camera.capture_preview()
+            file_data = camera_file.get_data_and_size()
+            with self._frame_condition:
+                self._latest_frame = bytes(memoryview(file_data))
+                self._frame_condition.notify_all()
+            self._warmup_failed = False
+            log.debug("camera", "camera_warmup", "Viewfinder pre-warmed")
+        except Exception as e:
+            self._warmup_failed = True
+            log.warn("camera", "camera_warmup_fail",
+                     f"Warmup preview failed ({e}) — live-view session likely "
+                     "stale from a wedged live-view state; init() heals it inline "
+                     "(or the worker will fail fast to re-init)")
+
+        return not self._warmup_failed
 
     # ─── Background Worker ────────────────────────────────────────
 
