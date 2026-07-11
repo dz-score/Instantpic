@@ -378,11 +378,17 @@ class CameraService:
                 t_last_stall = now
 
                 warming_up = (time.monotonic() - self._last_init_time) < self._preview_warmup_grace
-                # A session whose warmup preview already failed is almost
-                # certainly wedged — every further attempt just burns a ~3s
-                # stall — so give up after 2 errors instead of 6 to reach the
-                # exit+re-init heal fast.
-                error_limit = 2 if self._warmup_failed else 6
+                # A wedged live-view session (warmup already failed) clears ONLY
+                # after ~2 stalls of polling followed by an exit()+init() — polling
+                # alone never heals it, and a re-init BEFORE ~2 stalls of priming
+                # doesn't either (both proven on the M50: preview_stall_probe
+                # --heal-probe, CAMERA_NOTES §2). The init-time warmup grab is
+                # stall #1, so ONE worker stall (error_limit=1) supplies the 2
+                # stalls the re-init needs — reaching the heal ~3s sooner than
+                # waiting for 2 worker errors. Self-correcting: if the re-init's
+                # own warmup still fails, _warmup_failed stays set and the worker
+                # just runs another 2-stall cycle.
+                error_limit = 1 if self._warmup_failed else 6
                 if consecutive_errors >= error_limit and not self._capture_in_progress and not warming_up:
                     log.error("camera", "camera_preview_fail", f"Preview worker failed: {e}")
                     self.connected = False
