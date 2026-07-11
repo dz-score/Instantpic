@@ -722,33 +722,6 @@ class CameraService:
             self._worker_thread.join(timeout=3)
         with self.lock:
             if self.camera:
-                # EXPERIMENT (2026-07-11): a clean stop.sh calls exit() and the
-                # PTP session closes fine ("closed cleanly" is logged), yet the
-                # NEXT boot's warmup still lands in the M50's ~3s stall and pays
-                # the ~12s fail-fast → re-init heal. Cause: gp_camera_exit()
-                # closes the driver session but leaves the camera in live view
-                # with its periodic-stall clock running, so a clean stop looks
-                # identical to a hard kill on the following boot. Try to drop
-                # live view first by setting the Canon 'output' widget to an
-                # Off-like choice. UNVERIFIED on the M50 — if the every-boot heal
-                # persists in the logs, this doesn't work and should be reverted.
-                try:
-                    config = self.camera.get_config()
-                    ok, output = gp.gp_widget_get_child_by_name(config, 'output')
-                    if ok >= gp.GP_OK:
-                        choices = [output.get_choice(i) for i in range(output.count_choices())]
-                        off_choice = next((c for c in choices if 'off' in c.lower()), None)
-                        if off_choice is not None:
-                            output.set_value(off_choice)
-                            self.camera.set_config(config)
-                            log.info("camera", "camera_liveview_off",
-                                     f"Set output={off_choice!r} to drop live view before exit")
-                        else:
-                            log.warn("camera", "camera_liveview_off",
-                                     f"No Off-like choice on 'output' widget; choices={choices}")
-                except Exception as e:
-                    log.warn("camera", "camera_liveview_off_fail",
-                             f"Could not disable live view before exit: {e}")
                 try:
                     self.camera.exit()
                     log.info("camera", "camera_exit", "Camera connection closed cleanly")
