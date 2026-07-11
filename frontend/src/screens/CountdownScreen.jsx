@@ -46,7 +46,7 @@ export default function CountdownScreen({
 }) {
   const COUNTDOWN_FROM = config?.countdown_duration || 3;
   const flashEnabled = config?.flash_enabled !== false;
-  const shotIntervalMs = config?.shot_interval_ms || 3000;
+  const shotIntervalMs = config?.shot_interval_ms || 1000;
   const [phase, setPhase] = useState('COUNTDOWN'); // COUNTDOWN | POSING | BETWEEN
   const [count, setCount] = useState(COUNTDOWN_FROM);
   const [flashActive, setFlashActive] = useState(false);
