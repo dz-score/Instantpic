@@ -215,3 +215,46 @@ async def test_job_failure_recovery():
     assert state.isProcessing is False
     # Still on reveal so they can retake or something
     assert state.screen == "REVEAL"
+
+
+@pytest.mark.anyio
+async def test_broadcast_payload_is_transition_snapshot(monkeypatch):
+    """Each broadcast must carry the state snapshot taken under the handler
+    lock. If a job callback mutates state between a transition and its
+    broadcast (simulated here by delaying broadcasts one loop tick), the
+    earlier broadcast must NOT leak the later mutation."""
+    from backend import state_machine as sm_mod
+
+    sm = StateMachine()
+    sm.set_job_queue(MockQueue())
+
+    payloads = []
+    monkeypatch.setattr(sm_mod.sse_svc, "dispatch_event",
+                        lambda event, data: payloads.append(data))
+
+    orig_broadcast = sm.broadcast_state
+    async def delayed_broadcast(state_dict):
+        await asyncio.sleep(0)  # yield so a concurrent callback can interleave
+        await orig_broadcast(state_dict)
+    monkeypatch.setattr(sm, "broadcast_state", delayed_broadcast)
+
+    await sm.handle_event("START_SESSION", {}, NO_FRAME_SETTINGS)
+    await sm.handle_event("SELECT_LAYOUT", {"mode": "single"}, NO_FRAME_SETTINGS)
+    payloads.clear()
+
+    # The capture transition (-> REVEAL, isProcessing=True) and the job
+    # callback (isProcessing=False, finalPhoto set) run concurrently; the
+    # callback mutates state before the transition's delayed broadcast fires.
+    await asyncio.gather(
+        sm.handle_event("SHOT_CAPTURED", {"filename": "raw1.jpg"}, NO_FRAME_SETTINGS),
+        sm.job_photo_processed("final.jpg", ["raw1.jpg"]),
+    )
+
+    assert len(payloads) == 2
+    # First broadcast: the REVEAL transition as it was at transition time.
+    assert payloads[0]["screen"] == "REVEAL"
+    assert payloads[0]["isProcessing"] is True
+    assert payloads[0]["finalPhoto"] is None
+    # Second broadcast: the callback's completed state.
+    assert payloads[1]["isProcessing"] is False
+    assert payloads[1]["finalPhoto"] == "final.jpg"

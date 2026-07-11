@@ -57,10 +57,16 @@ class StateMachine:
         async with self._get_lock():
             return self._state.model_copy()
 
-    async def broadcast_state(self):
-        state_dict = self._state.model_dump()
+    async def broadcast_state(self, state_dict: dict):
+        """Broadcast a state snapshot taken under the handler lock.
+
+        The snapshot is passed in rather than read from self._state here:
+        this runs outside the lock, and a job callback can mutate the state
+        in the gap — reading live state would let clients observe broadcasts
+        out of transition order.
+        """
         sse_svc.dispatch_event("state_update", state_dict)
-        log.info("state_machine", "state_update", f"State transitioned to {self._state.screen}", data=state_dict)
+        log.info("state_machine", "state_update", f"State transitioned to {state_dict['screen']}", data=state_dict)
 
     async def handle_event(self, event_type: str, payload: dict, settings: AppSettings):
         async with self._get_lock():
@@ -172,8 +178,10 @@ class StateMachine:
                 log.warn("state_machine", "unknown_event", f"Unknown event type: {event_type}")
                 return
 
+            state_dict = self._state.model_dump()
+
         # Broadcast outside the lock to avoid blocking
-        await self.broadcast_state()
+        await self.broadcast_state(state_dict)
 
     def _compose_banner_text(self, settings) -> str:
         """Assemble the branding text printed on the photo. This is a business
@@ -219,20 +227,23 @@ class StateMachine:
                 "filename": filename,
                 "rawImages": images
             })
-        await self.broadcast_state()
+            state_dict = self._state.model_dump()
+        await self.broadcast_state(state_dict)
 
     async def job_frame_processed(self, filename: str):
         async with self._get_lock():
             self._state.isProcessing = False
             self._state.finalPhoto = filename
             await self._enter_printing()
-        await self.broadcast_state()
+            state_dict = self._state.model_dump()
+        await self.broadcast_state(state_dict)
 
     async def job_failed(self, error: str):
         async with self._get_lock():
             self._state.isProcessing = False
             log.error("state_machine", "job_failed", f"Background job failed: {error}")
-        await self.broadcast_state()
+            state_dict = self._state.model_dump()
+        await self.broadcast_state(state_dict)
 
     # Print job callbacks — the FSM records the real printer outcome so the UI
     # can project it instead of racing a timeout.
@@ -240,13 +251,15 @@ class StateMachine:
         async with self._get_lock():
             self._state.printStatus = "printed"
             log.info("state_machine", "print_done", f"Print completed: {filename}")
-        await self.broadcast_state()
+            state_dict = self._state.model_dump()
+        await self.broadcast_state(state_dict)
 
     async def job_print_failed(self, error: str):
         async with self._get_lock():
             self._state.printStatus = "failed"
             log.error("state_machine", "print_failed", f"Print failed: {error}")
-        await self.broadcast_state()
+            state_dict = self._state.model_dump()
+        await self.broadcast_state(state_dict)
 
 # Global Singleton
 state_machine = StateMachine()
