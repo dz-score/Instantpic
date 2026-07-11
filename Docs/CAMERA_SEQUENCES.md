@@ -15,11 +15,11 @@ Component-level architecture is in [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## 1. App Startup
 
-Covers both boot variants: after a **clean stop** (`stop.sh` ran
-`camera.exit()`) the first session is healthy; after a **hard kill / power
-cut** the first session is wedged and self-heals in ~12s (see
-CAMERA_NOTES §2). Either way the camera ends up resting in standby until a
-guest reaches a screen that needs live view.
+Covers both boot variants: after a run that **took no photos** the first
+session is healthy; after a run that **took a photo** the first session is
+wedged and self-heals in ~13–20s (see CAMERA_NOTES §2 — the wedge is caused by
+the capture and happens even after a clean `stop.sh`). Either way the camera
+ends up resting in standby until a guest reaches a screen that needs live view.
 
 ```mermaid
 sequenceDiagram
@@ -41,25 +41,22 @@ sequenceDiagram
     Note over C: camera_widget_info ×5 (DEBUG)
     C->>M: warmup capture_preview()
 
-    alt previous stop was clean (stop.sh)
+    alt previous run took no photos
         M-->>C: JPEG frame (~10ms)
         Note over C: camera_warmup ("Viewfinder pre-warmed")
         C->>W: start worker
-    else previous stop was a hard kill → session wedged
+    else previous run took a photo → session wedged (even after clean stop.sh)
         M-->>C: ~3s stall, then [-1] error
         Note over C: camera_warmup_fail (WARN)<br/>_warmup_failed = True
         C->>W: start worker
-        loop 2 preview attempts (fail-fast threshold)
+        loop until the camera self-clears (~5 × ~3s stall cycles)
             W->>M: flush events + capture_preview()
-            M-->>W: ~3.1s stall, [-1]
-            Note over W: worker_preview_err #1, #2
+            M-->>W: ~3s stall, [-1]
+            Note over W: worker_preview_err; after 2 → connected=False<br/>→ worker re-enters init() (rides it out; re-init is NOT the cure)
         end
-        Note over W: camera_preview_fail → connected=False<br/>(watchdog standby is DEFERRED while _warmup_failed)
-        W->>C: init()  [the heal]
-        C->>M: exit() old handle  ← this resets the camera
-        C->>M: fresh gp.Camera().init() + config + warmup
-        M-->>C: JPEG frame
-        Note over C: camera_warmup OK, _warmup_failed=False<br/>~12s after boot, guest hasn't tapped yet
+        Note over W: (watchdog standby is DEFERRED while _warmup_failed)
+        M-->>C: camera self-recovers → JPEG frame (instant)
+        Note over C: camera_warmup OK, _warmup_failed=False<br/>~13–20s after boot, guest hasn't tapped yet
     end
 
     W->>M: preview polling (~15fps, nobody watching)
@@ -73,9 +70,11 @@ sequenceDiagram
 
 - `init()` runs in the FastAPI lifespan **before** the server accepts
   requests — the kiosk may retry for a couple of seconds on a slow boot.
-- A failing warmup preview is **expected** after a power cut. Don't "fix"
-  it: the fail-fast + re-init heal is deliberate, and shortcuts (in-place
-  session rebuilds) are proven to poison the camera (CAMERA_NOTES §1).
+- A failing warmup preview is **expected** after a run that took photos.
+  Don't "fix" it: the wedge is a self-clearing camera state (~13–20s) and
+  re-init does **not** cure or shorten it — the fail-fast heal just keeps the
+  session alive until the camera recovers. Shortcuts (in-place rebuilds or
+  inline re-init loops) are proven not to help (CAMERA_NOTES §1, §2).
 - The worker thread owns **all** camera USB I/O from here on. Nothing else
   talks to the M50 directly.
 - Idle rest is the steady state: on the ATTRACT screen the camera is in
