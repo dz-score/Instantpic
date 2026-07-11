@@ -18,7 +18,13 @@ class AppSettings(BaseModel):
     welcome_message: str = "Create a Beautiful Memory"
     thank_you_message: str = "Thank you for celebrating with us!"
     countdown_duration: int = 3
-    shot_interval_ms: int = 3000  # Pacing between shots in a multi-shot layout; owned by backend per Rule 14
+    # Pacing between shots in a multi-shot layout; owned by backend per Rule 14.
+    # Kept SHORT on purpose: a capture opens a ~6s stall-free live-view window
+    # (Docs/CAMERA_NOTES.md §3), so the next shot must fire inside it —
+    # shot_interval_ms + countdown_duration must stay under ~5s or the next
+    # capture lands in the M50's periodic ~3s stall. Do not raise without
+    # reading CAMERA_NOTES.
+    shot_interval_ms: int = 1000
     flash_enabled: bool = True
     max_photos_per_session: int = 3
     session_timeout: int = 120

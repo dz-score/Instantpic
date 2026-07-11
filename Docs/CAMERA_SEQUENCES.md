@@ -15,11 +15,12 @@ Component-level architecture is in [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## 1. App Startup
 
-Covers both boot variants: after a **clean stop** (`stop.sh` ran
-`camera.exit()`) the first session is healthy; after a **hard kill / power
-cut** the first session is wedged and self-heals in ~12s (see
-CAMERA_NOTES §2). Either way the camera ends up resting in standby until a
-guest reaches a screen that needs live view.
+Covers both boot variants: after a run that **took no photos** the first
+session is healthy; after a run that **took a photo** the first session is
+wedged and the worker heals it in ~9s (see CAMERA_NOTES §2 — the wedge is
+caused by the capture and happens even after a clean `stop.sh`). Either way the
+camera ends up resting in standby until a guest reaches a screen that needs
+live view.
 
 ```mermaid
 sequenceDiagram
@@ -41,25 +42,25 @@ sequenceDiagram
     Note over C: camera_widget_info ×5 (DEBUG)
     C->>M: warmup capture_preview()
 
-    alt previous stop was clean (stop.sh)
+    alt previous run took no photos
         M-->>C: JPEG frame (~10ms)
         Note over C: camera_warmup ("Viewfinder pre-warmed")
         C->>W: start worker
-    else previous stop was a hard kill → session wedged
+    else previous run took a photo → session wedged (even after clean stop.sh)
         M-->>C: ~3s stall, then [-1] error
         Note over C: camera_warmup_fail (WARN)<br/>_warmup_failed = True
         C->>W: start worker
-        loop 2 preview attempts (fail-fast threshold)
+        Note over W: prime with ~2 stalls, THEN re-init (the cure)
+        loop 1 more stall (warmup grab was stall #1; error_limit=1)
             W->>M: flush events + capture_preview()
-            M-->>W: ~3.1s stall, [-1]
-            Note over W: worker_preview_err #1, #2
+            M-->>W: ~3s stall, [-1]
+            Note over W: worker_preview_err → connected=False
         end
-        Note over W: camera_preview_fail → connected=False<br/>(watchdog standby is DEFERRED while _warmup_failed)
-        W->>C: init()  [the heal]
-        C->>M: exit() old handle  ← this resets the camera
-        C->>M: fresh gp.Camera().init() + config + warmup
-        M-->>C: JPEG frame
-        Note over C: camera_warmup OK, _warmup_failed=False<br/>~12s after boot, guest hasn't tapped yet
+        Note over W: (watchdog standby is DEFERRED while _warmup_failed)
+        W->>C: init()  [exit old handle + fresh init]
+        C->>M: capture_preview()
+        M-->>C: JPEG frame (instant) — wedge cleared
+        Note over C: camera_warmup OK, _warmup_failed=False<br/>~9s after boot, guest hasn't tapped yet
     end
 
     W->>M: preview polling (~15fps, nobody watching)
@@ -73,9 +74,12 @@ sequenceDiagram
 
 - `init()` runs in the FastAPI lifespan **before** the server accepts
   requests — the kiosk may retry for a couple of seconds on a slow boot.
-- A failing warmup preview is **expected** after a power cut. Don't "fix"
-  it: the fail-fast + re-init heal is deliberate, and shortcuts (in-place
-  session rebuilds) are proven to poison the camera (CAMERA_NOTES §1).
+- A failing warmup preview is **expected** after a run that took photos.
+  Don't "fix" it by re-initting sooner: the wedge clears only after ~2 stalls
+  of polling **then** an `exit()+init()` (the warmup grab is stall #1, so the
+  worker re-inits after 1 more). Re-initting *before* that priming never heals
+  (proven — the inline-loop shortcut, CAMERA_NOTES §1, §2); polling alone never
+  heals either.
 - The worker thread owns **all** camera USB I/O from here on. Nothing else
   talks to the M50 directly.
 - Idle rest is the steady state: on the ATTRACT screen the camera is in
@@ -127,9 +131,11 @@ sequenceDiagram
     rect rgb(230, 255, 230)
     Note over F,M: — capture phase (all on the worker thread) —
     F->>A: POST /api/camera/capture
-    A->>W: enqueue_capture() → CAPTURE job queued (standby again, idempotent)
+    A->>W: enqueue_capture() → set _capture_in_progress + standby, THEN queue CAPTURE
+    Note over W: gate: no new preview grab, and resume_preview() is a no-op,<br/>until the shot completes (nothing can re-arm polling)
     A-->>F: job_id
     S-->>F: camera_job: pending → started
+    Note over W: PREVIEW_RELEASE_SETTLE_S (~15ms) idle — let live view release
     W->>M: flush leftover events (~15ms)
     S-->>F: camera_job: fired
     Note over F: flash + shutter sound<br/>(deferred until the ring video finished —<br/>slightly LEADS the real exposure)
@@ -155,10 +161,15 @@ sequenceDiagram
 - **The FSM never touches the camera.** The frontend calls camera endpoints
   and reports `SHOT_CAPTURED`; the backend owns retries and job state — the
   frontend only ever sees one terminal `completed`/`failed` per shot.
-- **Live view and capture never overlap.** The explicit standby at count 0
-  plus the queue-then-execute design guarantee the USB bus is quiet before
-  the trigger. Captures landing near a live-view stall are the main source
-  of slow (>2s) shots — see CAMERA_NOTES §3.
+- **Live view and capture never overlap.** From `enqueue_capture()` the
+  capture is authoritative — `_capture_in_progress` blocks new preview grabs
+  and makes `resume_preview()` a no-op, so nothing can re-arm polling before
+  the shutter (CAMERA_NOTES §6). But a *stall* clock free-runs on the camera
+  and only a **capture** resets it (§3): each capture opens a ~6s stall-free
+  window, so multi-shot captures are **chained tight** (`shot_interval_ms +
+  countdown` < ~5s) to keep each shot inside the prior capture's window. This
+  is a mitigation, not a cure — ~10% still land in a stall and are recovered
+  by retry-once.
 - **Failure is handled below the UI**: a failed trigger/download is retried
   once inside `_execute_capture_job()` (new shot, ~1.5s later). The guest
   sees the error screen only if both attempts fail.
