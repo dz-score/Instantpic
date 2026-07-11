@@ -57,6 +57,10 @@ async def lifespan(app: FastAPI):
     # Log startup
     log.info("system", "system_boot", f"Backend started", data={"version": "1.0.0"})
 
+    # Bind the event loop so camera threads can dispatch SSE events safely.
+    # Must happen before camera_svc.init() starts emitting from its threads.
+    sse_svc.bind_loop()
+
     # Initialize State Machine and Job Queue
     state_machine.set_job_queue(job_queue)
     job_queue.start()

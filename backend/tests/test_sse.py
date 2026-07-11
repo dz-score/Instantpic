@@ -1,5 +1,6 @@
 import pytest
 import asyncio
+import threading
 from unittest.mock import MagicMock, AsyncMock, patch
 from backend.sse_service import SseClient, SseService
 
@@ -60,6 +61,58 @@ async def test_dispatch_event_queue_full(sse_service, mock_request):
     # Second dispatch should hit asyncio.QueueFull but be caught silently
     sse_service.dispatch_event("test_event", {"num": 2})
     assert client.queue.qsize() == 1  # Still 1, didn't crash
+
+@pytest.mark.anyio
+async def test_dispatch_event_from_thread_reaches_client(sse_service, mock_request):
+    """Dispatches from camera worker/monitor threads must be marshalled onto
+    the event loop — client queues are asyncio.Queues (not thread-safe)."""
+    client = SseClient(mock_request)
+    sse_service.setup_client(client)
+    sse_service.bind_loop()
+
+    t = threading.Thread(target=sse_service.dispatch_event, args=("thread_event", {"n": 1}))
+    t.start()
+    t.join()
+
+    # The enqueue lands via call_soon_threadsafe — give the loop a few ticks.
+    for _ in range(50):
+        if client.queue.qsize():
+            break
+        await asyncio.sleep(0.01)
+
+    assert client.queue.qsize() == 1
+    payload = client.queue.get_nowait()
+    assert payload["event"] == "thread_event"
+
+@pytest.mark.anyio
+async def test_send_to_client_from_thread_reaches_client(sse_service, mock_request):
+    client = SseClient(mock_request)
+    sse_service.setup_client(client)
+    sse_service.bind_loop()
+
+    t = threading.Thread(target=sse_service.send_to_client, args=(client, "seed_event", {"k": "v"}))
+    t.start()
+    t.join()
+
+    for _ in range(50):
+        if client.queue.qsize():
+            break
+        await asyncio.sleep(0.01)
+
+    assert client.queue.get_nowait()["event"] == "seed_event"
+
+def test_dispatch_from_thread_before_bind_is_dropped(mock_request):
+    """The camera monitor thread starts at import time and can dispatch before
+    startup binds a loop — that must be a silent drop, never a crash."""
+    svc = SseService()
+    client = SseClient(mock_request)
+    svc.setup_client(client)
+
+    t = threading.Thread(target=svc.dispatch_event, args=("early_event", {}))
+    t.start()
+    t.join()
+
+    assert client.queue.qsize() == 0
 
 @pytest.mark.anyio
 async def test_event_iterator_yields_events(sse_service, mock_request):
