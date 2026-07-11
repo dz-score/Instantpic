@@ -48,6 +48,26 @@ EXPERIMENT MATRIX (run each ~2-3 min):
          immediate/phase-dependent => it doesn't (only decouple/accept).
          NOTE: fires the physical shutter each cycle.
 
+HEAL-PROBE — how does the wedged FIRST session recover? (2026-07-11)
+  Unlike every mode above, this does NOT heal first — it opens the wedged
+  session and measures the recovery itself. To CREATE the wedge each run:
+    1. start the booth (run.sh), 2. TAKE ONE PHOTO via the UI,
+    3. stop.sh (clean),        4. run one command below.
+  Re-create the wedge (steps 1-3) before EACH run — a heal or a capture clears
+  it, so back-to-back runs won't be wedged.
+
+  python3 backend/tools/preview_stall_probe.py --heal-probe --heal-strategy poll --duration 60
+      -> init once, poll capture_preview back-to-back (NO re-init) until the
+         first healthy frame. If it heals in ~6-9s, continuous polling is the
+         driver and re-init is unnecessary.
+  python3 backend/tools/preview_stall_probe.py --heal-probe --heal-strategy reinit --duration 60
+      -> same, but exit()+init() every --heal-reinit-every (2) stalls. If this
+         is SLOWER than poll, re-init RESETS the recovery accumulation.
+  python3 backend/tools/preview_stall_probe.py --heal-probe --heal-strategy capture --duration 60
+      -> confirm wedged, fire ONE real capture_image, then poll preview. If
+         preview heals right after the capture, a capture attempt clears the
+         wedge (Route 2: "first capture fails, second succeeds"). SHUTTER.
+
 Each run appends a per-frame CSV (--out) and prints a summary at the end
 (also on Ctrl+C).
 """
@@ -142,6 +162,20 @@ def get_healthy_camera(max_heals=8, settle_s=1.5):
              "Unplug/replug the camera (or pull the battery) and retry.")
 
 
+def open_wedged():
+    """Open a fresh PTP session WITHOUT healing (unlike get_healthy_camera).
+
+    Mirrors camera_service.init() up to but NOT including the warmup — so the
+    caller can measure how the wedged first session recovers on its own.
+    Precondition: the previous booth run took a photo then ran stop.sh, which
+    leaves this session wedged (every capture_preview stalls ~3s [-1]).
+    """
+    cam = gp.Camera()
+    cam.init()
+    _configure(cam)
+    return cam
+
+
 def drain_events(cam):
     """Same flush the worker does before each preview grab (camera_service.py)."""
     try:
@@ -184,14 +218,41 @@ def main():
                          "(inside the window each capture opens) should all succeed. SHUTTER.")
     ap.add_argument("--gap-s", type=float, default=4.0,
                     help="[rapid-capture] seconds of live view between consecutive captures")
+    ap.add_argument("--heal-probe", action="store_true",
+                    help="open a FRESH, still-WEDGED session (do NOT heal first) and measure how "
+                         "it recovers. Precondition: the previous booth run TOOK A PHOTO then ran "
+                         "stop.sh (that's what leaves the next session wedged). Pick --heal-strategy.")
+    ap.add_argument("--heal-strategy", choices=["poll", "reinit", "capture"], default="poll",
+                    help="[heal-probe] poll: init once, poll capture_preview back-to-back (NO "
+                         "re-init) until the first healthy frame — does continuous polling alone "
+                         "heal, and how fast? | reinit: same but exit()+init() every "
+                         "--heal-reinit-every stalls — if SLOWER than poll, re-init resets the "
+                         "recovery. | capture: confirm wedged, fire a real capture_image, then poll "
+                         "preview — if it heals right after the capture, a capture attempt clears "
+                         "the wedge (Route 2: 'first capture fails, second succeeds').")
+    ap.add_argument("--heal-reinit-every", type=int, default=2,
+                    help="[heal-probe reinit] exit()+init() after this many consecutive stalls")
     args = ap.parse_args()
 
     interval = 1.0 / args.fps if args.fps > 0 else 0.0
     stall_s = args.stall_ms / 1000.0
 
-    print(f"init camera... (flush={args.flush}, fps={args.fps}, {args.duration}s)")
-    cam = get_healthy_camera()
-    print("camera ready (healthy warmup frame). polling. Ctrl+C to stop early.\n")
+    cam = None
+    if args.heal_probe:
+        print("HEAL-PROBE: opening a FRESH session WITHOUT healing first.")
+        print("  Precondition: the previous booth run TOOK A PHOTO, then ran stop.sh")
+        print("  (that is what leaves this session wedged). If the first grab is")
+        print("  healthy, the camera was NOT wedged and the run is invalid.")
+        print(f"  strategy = {args.heal_strategy}\n")
+        try:
+            cam = open_wedged()
+        except Exception as e:
+            sys.exit(f"could not open camera (is the booth stopped / camera plugged in?): {e}")
+        print("session open — measuring recovery. Ctrl+C to stop.\n")
+    else:
+        print(f"init camera... (flush={args.flush}, fps={args.fps}, {args.duration}s)")
+        cam = get_healthy_camera()
+        print("camera ready (healthy warmup frame). polling. Ctrl+C to stop early.\n")
 
     state = {"frames": 0, "frames_since_stall": 0, "t_prev_stall": time.monotonic()}
     stalls = []      # continuous: (seq, frames_since_prev, secs_since_prev, dur_s, raised)
@@ -437,10 +498,96 @@ def main():
             sp = f"{spacing:.1f}s" if spacing is not None else "  -  "
             print(f"capture {n}: spacing-since-prev {sp} → {'ok' if ok else 'FAIL'} ({cd:.2f}s)")
 
+    def heal_probe_loop():
+        """Measure how the wedged first session RECOVERS (does NOT heal first).
+
+        Precondition: the previous booth run TOOK A PHOTO then ran stop.sh, so
+        this fresh session is wedged (every capture_preview stalls ~3s [-1]).
+        Stops at the first healthy frame and reports time / attempts / stalls.
+
+        Strategies (see --heal-strategy):
+          poll    - poll capture_preview back-to-back, NO re-init.
+          reinit  - same, but exit()+init() every --heal-reinit-every stalls.
+          capture - confirm wedged, fire one real capture_image, then poll.
+        """
+        nonlocal cam
+        strat = args.heal_strategy
+        t0 = time.monotonic()
+        attempts = stalls = stalls_since_reinit = reinits = 0
+        first_dur = None
+        healed = False
+
+        if strat == "capture":
+            raised, dur_s, _ = grab()
+            wedged = raised or dur_s >= stall_s
+            print(f"pre-capture preview: {'STALL' if wedged else 'healthy'} ({dur_s:.2f}s)")
+            if not wedged:
+                print("  [!] camera was NOT wedged at open — INVALID run "
+                      "(previous run must take a photo, then stop.sh).")
+            cok, cdur = do_capture()
+            print(f"capture_image #1: {'ok' if cok else 'FAIL'} ({cdur:.2f}s)  "
+                  "(a wedged camera usually FAILS this — that is expected)")
+            t0 = time.monotonic()  # measure preview recovery from AFTER the capture
+
+        while time.monotonic() - t_start < args.duration:
+            raised, dur_s, g0 = grab()
+            attempts += 1
+            is_stall = raised or dur_s >= stall_s
+            if first_dur is None:
+                first_dur = dur_s
+                if strat != "capture" and not is_stall:
+                    print("  [!] first grab was healthy — camera was NOT wedged at open. "
+                          "INVALID run: previous run must take a photo, then stop.sh.")
+            w.writerow([attempts, g0 - t_start, dur_s * 1000,
+                        "err" if raised else ("slow" if is_stall else "ok")])
+            if not is_stall:
+                healed = True
+                heal_s = g0 - t0
+                print(f"HEALED: first healthy frame after {heal_s:.2f}s "
+                      f"({attempts} attempts, {stalls} stalls, {reinits} re-inits, "
+                      f"{dur_s * 1000:.0f}ms grab)")
+                cycles.append((strat, heal_s, attempts, stalls, reinits))
+                break
+            stalls += 1
+            stalls_since_reinit += 1
+            print(f"  stall {stalls} @ {g0 - t0:.1f}s ({dur_s:.2f}s)")
+            if strat == "reinit" and stalls_since_reinit >= args.heal_reinit_every:
+                try:
+                    cam.exit()
+                except Exception:
+                    pass
+                time.sleep(0.2)
+                try:
+                    cam = gp.Camera()
+                    cam.init()
+                    _configure(cam)
+                    reinits += 1
+                    stalls_since_reinit = 0
+                    print(f"  -> re-init #{reinits} (exit+init)")
+                except Exception as e:
+                    print(f"  re-init failed: {e}")
+            pace(g0)
+
+        if not healed:
+            print(f"NOT healed within {args.duration:.0f}s "
+                  f"({attempts} attempts, {stalls} stalls, {reinits} re-inits).")
+            cycles.append((strat, None, attempts, stalls, reinits))
+
     def print_summary():
         dur = time.monotonic() - t_start
         print("\n===== SUMMARY =====")
-        if args.rapid_capture:
+        if args.heal_probe:
+            print(f"ran {dur:.1f}s, heal-probe [{args.heal_strategy}]")
+            for (strat, heal_s, att, st, ri) in cycles:
+                hs = f"{heal_s:.2f}s" if heal_s is not None else "NOT healed"
+                print(f"  strategy={strat}: healed {hs}  (attempts={att}, stalls={st}, re-inits={ri})")
+            print("\nInterpretation:")
+            print("  poll heals in ~6-9s with 0 re-inits => continuous polling is the driver;")
+            print("    re-init is unnecessary. Compare against the 'reinit' run:")
+            print("  reinit SLOWER than poll             => re-init RESETS the recovery accumulation.")
+            print("  capture: preview heals ~instantly after the capture => a capture attempt")
+            print("    clears the wedge (Route 2; matches 'first capture fails, second succeeds').")
+        elif args.rapid_capture:
             fails = sum(1 for (_, _, _, ok) in rapid if not ok)
             spacings = [s for (_, s, _, _) in rapid if s is not None]
             avg_sp = sum(spacings) / len(spacings) if spacings else 0.0
@@ -523,7 +670,9 @@ def main():
     signal.signal(signal.SIGTERM, _sigterm)
 
     try:
-        if args.rapid_capture:
+        if args.heal_probe:
+            heal_probe_loop()
+        elif args.rapid_capture:
             rapid_capture_loop()
         elif args.capture_cycle:
             capture_cycle_loop()
