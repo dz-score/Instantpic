@@ -79,14 +79,16 @@ def test_capture_job_flushes_and_avoids_preview(mock_gphoto2):
         mock_camera.capture_preview.assert_not_called()
 
 
-def test_wedged_session_fails_fast_after_two_errors(mock_gphoto2):
+def test_wedged_session_fails_fast_after_one_error(mock_gphoto2):
     """
-    Regression test: a session whose init-time warmup preview failed is
-    almost certainly wedged (stale live-view state from an unclean process
-    kill) — every further attempt just burns a ~3s hardware stall. The
-    worker must give up after 2 errors instead of 6 so the exit+re-init
-    heal completes while the booth still sits on the attract screen, not
-    halfway through a guest's countdown.
+    Regression test: a session whose init-time warmup preview failed is almost
+    certainly wedged (live-view state the M50 is left in after the previous
+    run's capture; see CAMERA_NOTES §2). The wedge clears only after ~2 stalls
+    of polling followed by an exit()+init() — and the warmup grab is stall #1,
+    so the worker needs just ONE more stall before tripping the disconnect that
+    drives the re-init heal (error_limit=1 when _warmup_failed). Failing fast
+    keeps the heal on the attract screen, not halfway through a guest's
+    countdown.
     """
     with patch('backend.camera_service.gp', mock_gphoto2):
         mock_gphoto2.GP_EVENT_TIMEOUT = 2
@@ -103,13 +105,14 @@ def test_wedged_session_fails_fast_after_two_errors(mock_gphoto2):
         camera._last_preview_request = time.monotonic()      # viewer just asked
         camera._last_init_time = time.monotonic() - 10       # warmup grace elapsed
 
-        # Run exactly two iterations of the worker loop.
-        camera._shutdown_event.is_set = MagicMock(side_effect=[False, False, False, False, True])
+        # Run exactly one preview attempt: one worker stall (stall #2, after the
+        # init warmup's stall #1) trips the disconnect -> re-init heal.
+        camera._shutdown_event.is_set = MagicMock(side_effect=[False, False, True])
 
         with patch('time.sleep'):
             camera._camera_worker()
 
-        assert mock_camera.capture_preview.call_count == 2
+        assert mock_camera.capture_preview.call_count == 1
         assert camera.connected is False
 
 

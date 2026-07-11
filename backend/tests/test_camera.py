@@ -162,7 +162,9 @@ def test_execute_capture_job_retries_once_then_succeeds(mock_gphoto2):
 
             camera._execute_capture_job(job_id)
 
-            mock_sleep.assert_called_once_with(camera.CAPTURE_RETRY_DELAY_S)
+            # One pre-capture preview-release settle + one retry delay.
+            mock_sleep.assert_any_call(camera.PREVIEW_RELEASE_SETTLE_S)
+            mock_sleep.assert_any_call(camera.CAPTURE_RETRY_DELAY_S)
             assert mock_camera.capture.call_count == 2
 
             statuses = [call.args[1] for call in mock_emit.call_args_list]
@@ -199,7 +201,9 @@ def test_execute_capture_job_fails_after_retry(mock_gphoto2):
 
             camera._execute_capture_job(job_id)
 
-            mock_sleep.assert_called_once_with(camera.CAPTURE_RETRY_DELAY_S)
+            # One pre-capture preview-release settle + one retry delay.
+            mock_sleep.assert_any_call(camera.PREVIEW_RELEASE_SETTLE_S)
+            mock_sleep.assert_any_call(camera.CAPTURE_RETRY_DELAY_S)
             assert mock_camera.capture.call_count == 2
 
             statuses = [call.args[1] for call in mock_emit.call_args_list]
