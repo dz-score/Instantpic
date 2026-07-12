@@ -620,8 +620,8 @@ state_machine: capturedImages.append(filename)
         |       (backend config), then fires the next shot
         |  len(capturedImages) >= totalShots?
         |    -> state -> REVEAL, isProcessing=true
-        |    -> job_queue.enqueue({type:"PROCESS_PHOTO", images, layout,
-        |         text: _compose_banner_text(settings), overlay_id})
+        |    -> job_queue.enqueue(jobs.process_photo_job(images, layout,
+        |         settings, ...))   # text: jobs.compose_banner_text(settings)
         |    -> SSE state_update -> RevealScreen renders with spinner
         v
 job_queue._worker() [thread pool]
@@ -928,7 +928,9 @@ main.py
   +-- storage.py         <- config.py
   +-- logger.py          (no backend imports)
   +-- sse_service.py     <- logger.py
-  +-- state_machine.py   <- logger.py, sse_service.py, config.py
+  +-- state_machine.py   <- logger.py, sse_service.py, config.py, jobs.py
+  +-- jobs.py            <- config.py   (job payload builders — the
+  |                         FSM<->job_queue payload schema in one place)
   +-- job_queue.py       <- logger.py, photo_processor.py,
   |                         storage.py, print_service.py
   +-- camera_service.py  <- logger.py, storage.py, sse_service.py

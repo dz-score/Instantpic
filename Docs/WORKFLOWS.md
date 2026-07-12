@@ -350,7 +350,7 @@ Operator taps "Close" or presses outside
 
   Effect on photos:
     Next time a shot sequence completes (SHOT_CAPTURED reaches totalShots),
-    state_machine._compose_banner_text(settings) reads the fresh
+    jobs.compose_banner_text(settings) reads the fresh
     couple_names + event_date as the banner text composited onto the canvas
 ```
 
@@ -592,7 +592,7 @@ state_machine.handle_event("SHOT_CAPTURED", {filename}):
          type: "PROCESS_PHOTO",
          images: capturedImages,                 # filenames, FSM-owned list
          layout: state.layoutMode,                # "single" | "collage"
-         text: _compose_banner_text(settings),    # FSM composes this itself
+         text: compose_banner_text(settings),     # composed in backend/jobs.py
          overlay_id: settings.selected_overlay or "none",
        })
   4. sse_svc broadcasts state_update → RevealScreen shows spinner

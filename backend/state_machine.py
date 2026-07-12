@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from backend.logger import log
 from backend.sse_service import sse_svc
 from backend.config import AppSettings
+from backend import jobs
 
 class BoothState(BaseModel):
     screen: str = "ATTRACT"
@@ -114,15 +115,11 @@ class StateMachine:
 
                     if self._job_queue:
                         images = list(self._state.capturedImages)
-                        await self._job_queue.enqueue({
-                            "type": "PROCESS_PHOTO",
-                            "images": images,
-                            "layout": self._state.layoutMode,
-                            "text": self._compose_banner_text(settings),
-                            "overlay_id": settings.selected_overlay or "none",
-                            "on_success": lambda filename: self.job_photo_processed(filename, images),
-                            "on_failure": self.job_failed,
-                        })
+                        await self._job_queue.enqueue(jobs.process_photo_job(
+                            images, self._state.layoutMode, settings,
+                            on_success=lambda filename: self.job_photo_processed(filename, images),
+                            on_failure=self.job_failed,
+                        ))
                 # Otherwise stay in COUNTDOWN; broadcasting the new state lets the
                 # UI advance its shot-progress presentation.
 
@@ -155,15 +152,12 @@ class StateMachine:
 
                 # Push job to queue
                 if self._job_queue:
-                    await self._job_queue.enqueue({
-                        "type": "PROCESS_FRAME",
-                        "images": self._state.capturedImages,
-                        "layout": self._state.layoutMode,
-                        "text": self._compose_banner_text(settings),
-                        "overlay_id": overlay_id,
-                        "on_success": self.job_frame_processed,
-                        "on_failure": self.job_failed,
-                    })
+                    await self._job_queue.enqueue(jobs.process_frame_job(
+                        self._state.capturedImages, self._state.layoutMode,
+                        overlay_id, settings,
+                        on_success=self.job_frame_processed,
+                        on_failure=self.job_failed,
+                    ))
                     
             elif event_type == "FRAME_SKIP":
                 await self._enter_printing()
@@ -229,14 +223,6 @@ class StateMachine:
             state_dict = self._state.model_dump()
         await self.broadcast_state(state_dict)
 
-    def _compose_banner_text(self, settings) -> str:
-        """Assemble the branding text printed on the photo. This is a business
-        rule and must be owned by the backend, not derived in the UI."""
-        if not settings.show_names_on_photo:
-            return ""
-        parts = [p for p in (settings.couple_names, settings.event_date) if p]
-        return " · ".join(parts) if parts else (settings.default_text or "")
-
     async def _proceed_to_print_flow(self, settings: AppSettings):
         """Decide whether the guest should pick a frame or go straight to
         printing. The available overlays are passed in from config so the
@@ -257,12 +243,11 @@ class StateMachine:
         self._state.screen = "PRINTING"
         self._state.printStatus = "printing"
         if self._job_queue and self._state.finalPhoto:
-            await self._job_queue.enqueue({
-                "type": "PRINT_PHOTO",
-                "filename": self._state.finalPhoto,
-                "on_success": self.job_print_done,
-                "on_failure": self.job_print_failed,
-            })
+            await self._job_queue.enqueue(jobs.print_photo_job(
+                self._state.finalPhoto,
+                on_success=self.job_print_done,
+                on_failure=self.job_print_failed,
+            ))
 
     # Job Completion Callbacks
     async def job_photo_processed(self, filename: str, images: list):
