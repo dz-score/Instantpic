@@ -71,3 +71,19 @@ def test_camera_capture(client, mocker):
     assert response.status_code == 200
     assert response.json()["status"] == "enqueued"
     assert response.json()["job_id"] == "1234abcd"
+
+
+def test_lifespan_startup_and_shutdown(temp_workspace, temp_config):
+    """Run the real lifespan (TestClient as context manager). The plain
+    TestClient(app) fixture never executes it, which let an
+    UnboundLocalError in startup (shadowed sse_svc import) reach runtime
+    unseen — this would have caught it."""
+    from fastapi.testclient import TestClient
+    from backend.main import app
+
+    with TestClient(app) as client:
+        resp = client.get("/api/health")
+        assert resp.status_code == 200
+        # bind_loop() ran: the SSE service holds the app's event loop.
+        from backend.sse_service import sse_svc
+        assert sse_svc._loop is not None

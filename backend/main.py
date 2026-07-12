@@ -76,7 +76,6 @@ async def lifespan(app: FastAPI):
 
     def terminate_now(signum: int, frame: FrameType | None = None):
         log.info("system", "signal_shutdown", "Shutting down active streams via signal handler")
-        from backend.sse_service import sse_svc
         sse_svc.request_shutdown()
         if GPHOTO2_AVAILABLE:
             camera_svc.shutdown()
@@ -95,7 +94,6 @@ async def lifespan(app: FastAPI):
 
     # Clean shutdown (fallback for tests where signals aren't used)
     log.info("system", "system_shutdown", "Backend shutting down...")
-    from backend.sse_service import sse_svc
     sse_svc.request_shutdown()
     
     await job_queue.stop()
