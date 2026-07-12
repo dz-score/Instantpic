@@ -17,6 +17,10 @@ class MockCameraService:
 
     def __init__(self):
         self.connected = False
+        # Defaults to the real singleton so the service works unmodified if
+        # set_sse() is never called; set_sse() exists so tests/callers can
+        # inject a double, same DI shape as CameraService.
+        self._sse = sse_svc
         self._capture_in_progress = False
         self._last_error = None
         self._shutdown_event = threading.Event()
@@ -41,12 +45,15 @@ class MockCameraService:
         Image.new("RGB", (640, 480), (18, 18, 22)).save(buf, format="JPEG")
         self._black_jpeg = buf.getvalue()
 
+    def set_sse(self, sse):
+        self._sse = sse
+
     def init(self):
         with self.lock:
             log.info("camera", "camera_init", "Initializing MOCK camera...")
             self.connected = True
             self._last_error = None
-            sse_svc.dispatch_event("camera_status", self.get_status())
+            self._sse.dispatch_event("camera_status", self.get_status())
             log.info("camera", "camera_ready", "MOCK camera ready")
             self._start_worker()
 
@@ -98,7 +105,7 @@ class MockCameraService:
 
     def _emit_job_state(self, job_id: str, status: str, filename: str = None, error: str = None):
         payload = {"job_id": job_id, "status": status, "filename": filename, "error": error}
-        sse_svc.dispatch_event("camera_job", payload)
+        self._sse.dispatch_event("camera_job", payload)
         log.info("camera", f"capture_{status}", f"MOCK capture job {job_id} is {status}", data=payload)
 
     def enqueue_capture(self, on_complete=None, on_failure=None) -> str:
@@ -139,20 +146,20 @@ class MockCameraService:
         """Parity with CameraService: pause the mock preview worker."""
         if self._preview_allowed.is_set():
             self._preview_allowed.clear()
-            sse_svc.dispatch_event("camera_status", self.get_status())
+            self._sse.dispatch_event("camera_status", self.get_status())
 
     def resume_preview(self):
         """Parity with CameraService: wake the mock preview worker."""
         if not self._preview_allowed.is_set():
             self._preview_allowed.set()
-            sse_svc.dispatch_event("camera_status", self.get_status())
+            self._sse.dispatch_event("camera_status", self.get_status())
 
     def capture(self):
         log.info("camera", "camera_capture_start", "MOCK capture started")
 
         self._capture_in_progress = True
         self._preview_allowed.clear()
-        sse_svc.dispatch_event("camera_status", self.get_status())
+        self._sse.dispatch_event("camera_status", self.get_status())
 
         time.sleep(1)  # Simulate shutter lag
 
@@ -164,7 +171,7 @@ class MockCameraService:
 
         self._capture_in_progress = False
         self._preview_allowed.set()
-        sse_svc.dispatch_event("camera_status", self.get_status())
+        self._sse.dispatch_event("camera_status", self.get_status())
 
         log.info("camera", "camera_capture_done", f"MOCK capture saved: {filename}")
         return filename
@@ -188,4 +195,4 @@ class MockCameraService:
         if self._worker_thread and self._worker_thread.is_alive():
             self._worker_thread.join(timeout=3)
         self.connected = False
-        sse_svc.dispatch_event("camera_status", self.get_status())
+        self._sse.dispatch_event("camera_status", self.get_status())

@@ -46,6 +46,11 @@ class StateMachine:
         self._lock = None
         self._job_queue = None  # Injected later to avoid circular import
         self._camera = None     # Injected at startup (set_camera), like the queue
+        # Defaults to the real singleton so the FSM works unmodified if
+        # set_sse() is never called; set_sse() exists so tests/callers can
+        # inject a double instead of monkeypatching the module import, same
+        # DI shape as set_job_queue/set_camera.
+        self._sse = sse_svc
         # True while a capture is between FIRE_SHOT and its terminal callback;
         # guards against double-firing the shutter.
         self._shot_in_flight = False
@@ -64,6 +69,9 @@ class StateMachine:
     def set_camera(self, camera):
         self._camera = camera
 
+    def set_sse(self, sse):
+        self._sse = sse
+
     async def get_state(self) -> BoothState:
         async with self._get_lock():
             return self._state.model_copy()
@@ -76,7 +84,7 @@ class StateMachine:
         in the gap — reading live state would let clients observe broadcasts
         out of transition order.
         """
-        sse_svc.dispatch_event("state_update", state_dict)
+        self._sse.dispatch_event("state_update", state_dict)
         log.info("state_machine", "state_update", f"State transitioned to {state_dict['screen']}", data=state_dict)
 
     async def handle_event(self, event_type: str, payload: dict, settings: AppSettings):
