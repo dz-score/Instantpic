@@ -89,7 +89,7 @@ Every important file in the project, grouped by layer. Use this as a quick-refer
 |---|---|
 | [`AttractScreen.jsx`](frontend/src/screens/AttractScreen.jsx) | Idle/attract loop: displays welcome message, language picker (EN/FR), and the "Start" button that fires `START_SESSION`. |
 | [`ChooseStyleScreen.jsx`](frontend/src/screens/ChooseStyleScreen.jsx) | Lets the guest pick Single photo or 3-photo Collage layout; fires `SELECT_LAYOUT` with the chosen mode. |
-| [`CountdownScreen.jsx`](frontend/src/screens/CountdownScreen.jsx) | Shows the live MJPEG camera preview, runs per-shot countdowns, triggers captures via `captureFrame()`, and reports each completed shot via `SHOT_CAPTURED`. Owns no retry, pacing, or completion logic (Rule 14) — the backend retries a failed capture once and drives round pacing/advancement via `shot_interval_ms`/`capturedCount`. |
+| [`CountdownScreen.jsx`](frontend/src/screens/CountdownScreen.jsx) | Shows the live MJPEG camera preview, runs per-shot countdowns, and fires each shot via the `FIRE_SHOT` event. Capture completion is backend-owned (camera->FSM callback); `camera_job` SSE events are presentation-only here (flash, thumbnail, failure overlay). Owns no retry, pacing, or completion logic (Rule 14) — the backend drives round advancement via `capturedCount`. |
 | [`RevealScreen.jsx`](frontend/src/screens/RevealScreen.jsx) | Displays the processed photo (or a spinner while `isProcessing`); offers Retake (up to limit) or Print actions. |
 | [`PickFavoriteScreen.jsx`](frontend/src/screens/PickFavoriteScreen.jsx) | Shows thumbnails of all photos from multi-retake sessions so the guest can choose their favourite before printing. |
 | [`FramePickerScreen.jsx`](frontend/src/screens/FramePickerScreen.jsx) | Presents available overlay frames side-by-side; fires `FRAME_SELECT` (with overlay id) or `FRAME_SKIP`. |
@@ -124,7 +124,7 @@ Every important file in the project, grouped by layer. Use this as a quick-refer
 | File | Responsibility |
 |---|---|
 | [`useSse.js`](frontend/src/hooks/useSse.js) | Opens and maintains the `EventSource` connection to `/api/sse`; parses `state_update`, `camera_status`, `config_update`, and `camera_job` events; auto-reconnects on error. |
-| [`useCamera.js`](frontend/src/hooks/useCamera.js) | Provides `previewUrl` (MJPEG stream), `captureFrame()`, `standbyPreview()`, and `resumePreview()` — thin wrappers over the camera REST endpoints. |
+| [`useCamera.js`](frontend/src/hooks/useCamera.js) | Provides `previewUrl` (MJPEG stream), `standbyPreview()`, and `resumePreview()` — thin wrappers over the camera REST endpoints. Capture is fired through the FSM (`FIRE_SHOT`), not here. |
 | [`useApi.js`](frontend/src/hooks/useApi.js) | Centralises REST writes/reads: exposes `sendEvent`, `saveConfig`, `getQrUrl`, `getDownloadUrl`, `getDiagnostics`, `emergencyAction`, `changePin`, `getRecentLogs`, and `fetchState` (config arrives via SSE, not here). |
 
 ### `frontend/src/utils/`

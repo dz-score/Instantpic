@@ -24,6 +24,38 @@ class MockQueue:
         self.last_job = job
 
 
+class MockCamera:
+    """Test double for CameraService.enqueue_capture's contract: the FSM
+    hands over terminal callbacks; the test invokes them to simulate the
+    camera worker finishing."""
+    def __init__(self):
+        self.pending = []
+    def enqueue_capture(self, on_complete=None, on_failure=None):
+        self.pending.append((on_complete, on_failure))
+        return f"job{len(self.pending)}"
+    async def complete(self, filename):
+        on_complete, _ = self.pending.pop(0)
+        await on_complete(filename)
+    async def fail(self, error):
+        _, on_failure = self.pending.pop(0)
+        await on_failure(error)
+
+
+def make_sm():
+    sm = StateMachine()
+    q = MockQueue()
+    cam = MockCamera()
+    sm.set_job_queue(q)
+    sm.set_camera(cam)
+    return sm, q, cam
+
+
+async def fire_and_complete(sm, cam, filename, settings):
+    """One full shot: UI fires, camera worker completes via callback."""
+    await sm.handle_event("FIRE_SHOT", {}, settings)
+    await cam.complete(filename)
+
+
 @pytest.mark.anyio
 async def test_initial_state():
     sm = StateMachine()
@@ -51,24 +83,23 @@ async def test_layout_sets_shot_count():
 
 @pytest.mark.anyio
 async def test_full_flow_no_frames():
-    sm = StateMachine()
-    q = MockQueue()
-    sm.set_job_queue(q)
+    sm, q, cam = make_sm()
 
     await sm.handle_event("START_SESSION", {}, NO_FRAME_SETTINGS)
     await sm.handle_event("SELECT_LAYOUT", {"mode": "collage"}, NO_FRAME_SETTINGS)
 
-    # The UI reports each shot; the FSM only advances to REVEAL on the last one.
-    await sm.handle_event("SHOT_CAPTURED", {"filename": "img1"}, NO_FRAME_SETTINGS)
+    # Each shot lands via the camera callback; the FSM appends it first-hand
+    # and only advances to REVEAL on the last one.
+    await fire_and_complete(sm, cam, "img1", NO_FRAME_SETTINGS)
     state = await sm.get_state()
     assert state.screen == "COUNTDOWN"
     assert state.capturedImages == ["img1"]
 
-    await sm.handle_event("SHOT_CAPTURED", {"filename": "img2"}, NO_FRAME_SETTINGS)
+    await fire_and_complete(sm, cam, "img2", NO_FRAME_SETTINGS)
     state = await sm.get_state()
     assert state.screen == "COUNTDOWN"
 
-    await sm.handle_event("SHOT_CAPTURED", {"filename": "img3"}, NO_FRAME_SETTINGS)
+    await fire_and_complete(sm, cam, "img3", NO_FRAME_SETTINGS)
     state = await sm.get_state()
     assert state.screen == "REVEAL"
     assert state.isProcessing is True
@@ -92,11 +123,11 @@ async def test_full_flow_no_frames():
 
 @pytest.mark.anyio
 async def test_retake_and_pick_favorite():
-    sm = StateMachine()
+    sm, q, cam = make_sm()
     await sm.handle_event("START_SESSION", {}, NO_FRAME_SETTINGS)
     await sm.handle_event("SELECT_LAYOUT", {"mode": "single"}, NO_FRAME_SETTINGS)
 
-    await sm.handle_event("SHOT_CAPTURED", {"filename": "img1"}, NO_FRAME_SETTINGS)
+    await fire_and_complete(sm, cam, "img1", NO_FRAME_SETTINGS)
     await sm.job_photo_processed("p1.jpg", ["img1"])
 
     await sm.handle_event("RETAKE", {}, NO_FRAME_SETTINGS)
@@ -105,7 +136,7 @@ async def test_retake_and_pick_favorite():
     assert state.retakeCount == 1
     assert state.capturedImages == []
 
-    await sm.handle_event("SHOT_CAPTURED", {"filename": "img2"}, NO_FRAME_SETTINGS)
+    await fire_and_complete(sm, cam, "img2", NO_FRAME_SETTINGS)
     await sm.job_photo_processed("p2.jpg", ["img2"])
 
     # User has multiple photos, printing from reveal goes to pick favorite
@@ -121,13 +152,11 @@ async def test_retake_and_pick_favorite():
 
 @pytest.mark.anyio
 async def test_frame_picker_flow():
-    sm = StateMachine()
-    q = MockQueue()
-    sm.set_job_queue(q)
+    sm, q, cam = make_sm()
 
     await sm.handle_event("START_SESSION", {}, FRAMED_SETTINGS)
     await sm.handle_event("SELECT_LAYOUT", {"mode": "single"}, FRAMED_SETTINGS)
-    await sm.handle_event("SHOT_CAPTURED", {"filename": "img1"}, FRAMED_SETTINGS)
+    await fire_and_complete(sm, cam, "img1", FRAMED_SETTINGS)
     await sm.job_photo_processed("p1.jpg", ["img1"])
 
     # Default config ships real frames -> routing lands on the frame picker.
@@ -150,13 +179,11 @@ async def test_frame_picker_flow():
 async def test_entering_printing_kicks_off_print_job():
     """Print is backend-owned: entering PRINTING enqueues a PRINT_PHOTO job and
     marks printStatus 'printing' — the UI never triggers the print itself."""
-    sm = StateMachine()
-    q = MockQueue()
-    sm.set_job_queue(q)
+    sm, q, cam = make_sm()
 
     await sm.handle_event("START_SESSION", {}, NO_FRAME_SETTINGS)
     await sm.handle_event("SELECT_LAYOUT", {"mode": "single"}, NO_FRAME_SETTINGS)
-    await sm.handle_event("SHOT_CAPTURED", {"filename": "img1"}, NO_FRAME_SETTINGS)
+    await fire_and_complete(sm, cam, "img1", NO_FRAME_SETTINGS)
     await sm.job_photo_processed("p1.jpg", ["img1"])
 
     await sm.handle_event("PRINT_FROM_REVEAL", {}, NO_FRAME_SETTINGS)
@@ -171,9 +198,7 @@ async def test_entering_printing_kicks_off_print_job():
 async def test_print_outcome_projected_from_backend():
     """The FSM records the real printer outcome; success and failure are distinct
     states the UI can render instead of guessing from a timeout."""
-    sm = StateMachine()
-    q = MockQueue()
-    sm.set_job_queue(q)
+    sm, q, cam = make_sm()
     sm._state.screen = "PRINTING"
     sm._state.printStatus = "printing"
 
@@ -187,9 +212,7 @@ async def test_print_outcome_projected_from_backend():
 @pytest.mark.anyio
 async def test_frame_skip_enters_printing():
     """FRAME_SKIP prints the already-processed photo through the same path."""
-    sm = StateMachine()
-    q = MockQueue()
-    sm.set_job_queue(q)
+    sm, q, cam = make_sm()
     sm._state.screen = "FRAME_PICKER"
     sm._state.finalPhoto = "p1.jpg"
 
@@ -202,10 +225,10 @@ async def test_frame_skip_enters_printing():
 
 @pytest.mark.anyio
 async def test_job_failure_recovery():
-    sm = StateMachine()
+    sm, q, cam = make_sm()
     await sm.handle_event("START_SESSION", {}, DEFAULT_SETTINGS)
     await sm.handle_event("SELECT_LAYOUT", {"mode": "single"}, DEFAULT_SETTINGS)
-    await sm.handle_event("SHOT_CAPTURED", {"filename": "img1"}, DEFAULT_SETTINGS)
+    await fire_and_complete(sm, cam, "img1", DEFAULT_SETTINGS)
 
     state = await sm.get_state()
     assert state.isProcessing is True
@@ -217,6 +240,61 @@ async def test_job_failure_recovery():
     assert state.screen == "REVEAL"
 
 
+# --- FIRE_SHOT / capture-callback seam ---
+
+@pytest.mark.anyio
+async def test_fire_shot_in_flight_guard():
+    """A second FIRE_SHOT while a capture is pending must not enqueue a
+    second capture; the guard clears once the shot completes."""
+    sm, q, cam = make_sm()
+    await sm.handle_event("START_SESSION", {}, DEFAULT_SETTINGS)
+    await sm.handle_event("SELECT_LAYOUT", {"mode": "collage"}, DEFAULT_SETTINGS)
+
+    await sm.handle_event("FIRE_SHOT", {}, DEFAULT_SETTINGS)
+    await sm.handle_event("FIRE_SHOT", {}, DEFAULT_SETTINGS)  # double-tap
+    assert len(cam.pending) == 1
+
+    await cam.complete("img1")
+    # Guard released -> next shot fires normally.
+    await sm.handle_event("FIRE_SHOT", {}, DEFAULT_SETTINGS)
+    assert len(cam.pending) == 1
+
+@pytest.mark.anyio
+async def test_shot_failure_keeps_countdown_and_releases_guard():
+    """A permanently failed capture leaves the session in COUNTDOWN (the UI
+    offers retry/home from the camera_job SSE event) and allows re-firing."""
+    sm, q, cam = make_sm()
+    await sm.handle_event("START_SESSION", {}, DEFAULT_SETTINGS)
+    await sm.handle_event("SELECT_LAYOUT", {"mode": "single"}, DEFAULT_SETTINGS)
+
+    await sm.handle_event("FIRE_SHOT", {}, DEFAULT_SETTINGS)
+    await cam.fail("shutter jammed")
+
+    state = await sm.get_state()
+    assert state.screen == "COUNTDOWN"
+    assert state.capturedImages == []
+
+    # Retry works: guard was released by the failure.
+    await fire_and_complete(sm, cam, "img1", DEFAULT_SETTINGS)
+    assert (await sm.get_state()).screen == "REVEAL"
+
+@pytest.mark.anyio
+async def test_late_shot_completion_after_session_end_is_dropped():
+    """If the session ends (TIMEOUT) while the shutter is busy, the late
+    completion must not mutate the fresh session's state."""
+    sm, q, cam = make_sm()
+    await sm.handle_event("START_SESSION", {}, DEFAULT_SETTINGS)
+    await sm.handle_event("SELECT_LAYOUT", {"mode": "single"}, DEFAULT_SETTINGS)
+    await sm.handle_event("FIRE_SHOT", {}, DEFAULT_SETTINGS)
+
+    await sm.handle_event("TIMEOUT", {}, DEFAULT_SETTINGS)  # guest walked away
+    await cam.complete("img_late")  # camera finishes anyway
+
+    state = await sm.get_state()
+    assert state.screen == "ATTRACT"
+    assert state.capturedImages == []
+
+
 @pytest.mark.anyio
 async def test_broadcast_payload_is_transition_snapshot(monkeypatch):
     """Each broadcast must carry the state snapshot taken under the handler
@@ -225,8 +303,7 @@ async def test_broadcast_payload_is_transition_snapshot(monkeypatch):
     earlier broadcast must NOT leak the later mutation."""
     from backend import state_machine as sm_mod
 
-    sm = StateMachine()
-    sm.set_job_queue(MockQueue())
+    sm, q, cam = make_sm()
 
     payloads = []
     monkeypatch.setattr(sm_mod.sse_svc, "dispatch_event",
@@ -240,13 +317,14 @@ async def test_broadcast_payload_is_transition_snapshot(monkeypatch):
 
     await sm.handle_event("START_SESSION", {}, NO_FRAME_SETTINGS)
     await sm.handle_event("SELECT_LAYOUT", {"mode": "single"}, NO_FRAME_SETTINGS)
+    await sm.handle_event("FIRE_SHOT", {}, NO_FRAME_SETTINGS)
     payloads.clear()
 
-    # The capture transition (-> REVEAL, isProcessing=True) and the job
+    # The capture completion (-> REVEAL, isProcessing=True) and the job
     # callback (isProcessing=False, finalPhoto set) run concurrently; the
     # callback mutates state before the transition's delayed broadcast fires.
     await asyncio.gather(
-        sm.handle_event("SHOT_CAPTURED", {"filename": "raw1.jpg"}, NO_FRAME_SETTINGS),
+        cam.complete("raw1.jpg"),
         sm.job_photo_processed("final.jpg", ["raw1.jpg"]),
     )
 
@@ -260,8 +338,8 @@ async def test_broadcast_payload_is_transition_snapshot(monkeypatch):
     assert payloads[1]["finalPhoto"] == "final.jpg"
 
 
-# --- COUNTDOWN stall watchdog (backend backstop for the frontend-couriered
-# SHOT_CAPTURED hop) ---
+# --- COUNTDOWN stall watchdog (floor for a browser or camera that died
+# mid-session — ordinary capture completion is backend-owned callbacks) ---
 
 STALL_SETTINGS = AppSettings(capture_stall_timeout=0.15)
 
@@ -270,8 +348,7 @@ async def test_stall_watchdog_resets_stranded_countdown(monkeypatch):
     """A session stuck in COUNTDOWN with no shot progress must reset to
     ATTRACT after capture_stall_timeout, and broadcast the reset."""
     from backend import state_machine as sm_mod
-    sm = StateMachine()
-    sm.set_job_queue(MockQueue())
+    sm, q, cam = make_sm()
 
     screens = []
     monkeypatch.setattr(sm_mod.sse_svc, "dispatch_event",
@@ -286,21 +363,23 @@ async def test_stall_watchdog_resets_stranded_countdown(monkeypatch):
     state = await sm.get_state()
     assert state.screen == "ATTRACT"
     assert screens[-1] == "ATTRACT"  # the reset was broadcast to clients
+    # The stall reset is also the floor for a capture whose callback never
+    # arrived — the in-flight guard must not leak into the next session.
+    assert sm._shot_in_flight is False
 
 @pytest.mark.anyio
 async def test_stall_watchdog_rearms_per_shot():
     """Each shot of a multi-shot layout gets a fresh stall window — progress
     mid-sequence must not trip the watchdog, silence after it must."""
     settings = AppSettings(capture_stall_timeout=0.4)
-    sm = StateMachine()
-    sm.set_job_queue(MockQueue())
+    sm, q, cam = make_sm()
 
     await sm.handle_event("START_SESSION", {}, settings)
     await sm.handle_event("SELECT_LAYOUT", {"mode": "collage"}, settings)
 
     # Shot 1 arrives inside the first window -> re-arms the watchdog.
     await asyncio.sleep(0.25)
-    await sm.handle_event("SHOT_CAPTURED", {"filename": "raw1.jpg"}, settings)
+    await fire_and_complete(sm, cam, "raw1.jpg", settings)
 
     # Past the ORIGINAL window (0.25+0.25 > 0.4) but inside the re-armed one.
     await asyncio.sleep(0.25)
@@ -316,12 +395,11 @@ async def test_stall_watchdog_rearms_per_shot():
 async def test_stall_watchdog_cancelled_on_leaving_countdown():
     """Completing the sequence (-> REVEAL) must cancel the watchdog — no
     spurious reset later."""
-    sm = StateMachine()
-    sm.set_job_queue(MockQueue())
+    sm, q, cam = make_sm()
 
     await sm.handle_event("START_SESSION", {}, STALL_SETTINGS)
     await sm.handle_event("SELECT_LAYOUT", {"mode": "single"}, STALL_SETTINGS)
-    await sm.handle_event("SHOT_CAPTURED", {"filename": "raw1.jpg"}, STALL_SETTINGS)
+    await fire_and_complete(sm, cam, "raw1.jpg", STALL_SETTINGS)
 
     assert (await sm.get_state()).screen == "REVEAL"
     assert sm._stall_watchdog is None

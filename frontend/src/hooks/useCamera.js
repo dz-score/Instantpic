@@ -7,23 +7,9 @@ export default function useCamera(cameraStatus) {
 
   const previewUrl = '/api/camera/preview';
 
-  /** Request a high-quality frame from the camera */
-  const captureFrame = useCallback(async () => {
-    try {
-      logger.info('camera', 'capture_enqueue', 'Triggering backend capture job');
-      const res = await fetch('/api/camera/capture', { method: 'POST' });
-      if (!res.ok) {
-        throw new Error(`Capture failed with status: ${res.status}`);
-      }
-      const data = await res.json();
-      logger.info('camera', 'capture_enqueued', 'Backend capture job enqueued', { job_id: data.job_id });
-      // Return the job_id to listen for via SSE
-      return data.job_id;
-    } catch (err) {
-      logger.error('camera', 'capture_fail', `Backend capture failed: ${err.message}`);
-      return null;
-    }
-  }, []);
+  // NOTE: capture is no longer triggered here. The countdown fires the
+  // shutter via the FSM (FIRE_SHOT event), and completion returns to the
+  // FSM through backend-owned callbacks — the browser is not in that loop.
 
   const resumePreview = useCallback(async () => {
     try {
@@ -43,5 +29,5 @@ export default function useCamera(cameraStatus) {
     }
   }, []);
 
-  return { previewUrl, captureFrame, resumePreview, standbyPreview, mode, cameraStatus };
+  return { previewUrl, resumePreview, standbyPreview, mode, cameraStatus };
 }

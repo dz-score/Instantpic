@@ -92,7 +92,7 @@ These two events bypass `VALID_TRANSITIONS` and are accepted from **any** screen
 ---
 
 ### Rule: `isProcessing` must always be cleared by job callbacks
-The job queue is the **only** entity allowed to set `isProcessing=False`. The FSM sets it to `True` when `SHOT_CAPTURED` completes the sequence (`capturedImages` reaches `totalShots`) and in `FRAME_SELECT`, then waits for `job_photo_processed()`, `job_frame_processed()`, or `job_failed()`.
+The job queue is the **only** entity allowed to set `isProcessing=False`. The FSM sets it to `True` when the `shot_completed` camera callback completes the sequence (`capturedImages` reaches `totalShots`) and in `FRAME_SELECT`, then waits for `job_photo_processed()`, `job_frame_processed()`, or `job_failed()`.
 
 > **Why:** If something else clears `isProcessing`, the frontend might proceed while the job is still running, showing a stale `finalPhoto`.
 

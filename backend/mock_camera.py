@@ -1,3 +1,4 @@
+import asyncio
 import os
 import time
 import uuid
@@ -30,18 +31,15 @@ class MockCameraService:
         self._worker_thread = None
         self._worker_running = False
 
-        # 1x1 black JPEG used for both preview and capture
-        self._black_jpeg = bytes.fromhex(
-            "ffd8ffe000104a46494600010101006000600000ffdb0043000806060706050807"
-            "07070909080a0c140d0c0b0b0c1912130f141d1a1f1e1d1a1c1c20242e272022"
-            "2c231c1c2837292c30313434341f27393d38323c2e333432ffdb004301090909"
-            "0c0b0c180d0d1832211c213232323232323232323232323232323232323232323"
-            "2323232323232323232323232323232323232323232323232ffc0001108000100"
-            "0103011100021101031101ffc40015000101000000000000000000000000000000"
-            "09ffc40014100100000000000000000000000000000000ffc400150101010000000"
-            "00000000000000000000000009ffc40014110100000000000000000000000000000"
-            "000ffda000c03010002110311003f00a0000ffd9"
-        )
+        # Dark JPEG used for both preview and capture. Generated with PIL so
+        # it is genuinely decodable — captured mock files flow into
+        # photo_processor (PROCESS_PHOTO) now that capture completion is
+        # backend-owned, and a hand-crafted byte blob broke there.
+        from io import BytesIO
+        from PIL import Image
+        buf = BytesIO()
+        Image.new("RGB", (640, 480), (18, 18, 22)).save(buf, format="JPEG")
+        self._black_jpeg = buf.getvalue()
 
     def init(self):
         with self.lock:
@@ -97,6 +95,57 @@ class MockCameraService:
 
             yield (b'--frame\r\n'
                    b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+
+    def _emit_job_state(self, job_id: str, status: str, filename: str = None, error: str = None):
+        payload = {"job_id": job_id, "status": status, "filename": filename, "error": error}
+        sse_svc.dispatch_event("camera_job", payload)
+        log.info("camera", f"capture_{status}", f"MOCK capture job {job_id} is {status}", data=payload)
+
+    def enqueue_capture(self, on_complete=None, on_failure=None) -> str:
+        """Same contract as CameraService.enqueue_capture: emits the granular
+        camera_job SSE stages (presentation-only) and delivers the terminal
+        outcome to the submitter's coroutines on the caller's event loop."""
+        callbacks_loop = asyncio.get_running_loop() if (on_complete or on_failure) else None
+        job_id = uuid.uuid4().hex[:8]
+        self._emit_job_state(job_id, "pending")
+
+        def _run():
+            self._emit_job_state(job_id, "started")
+            self._emit_job_state(job_id, "fired")
+            try:
+                self._capture_in_progress = True
+                self._preview_allowed.clear()
+                time.sleep(1)  # simulate shutter lag
+                self._emit_job_state(job_id, "downloading")
+                filename = f"capture_{job_id}_mock.jpg"
+                with open(os.path.join(PHOTOS_DIR, filename), "wb") as f:
+                    f.write(self._black_jpeg)
+                self._capture_in_progress = False
+                self._preview_allowed.set()
+                self._emit_job_state(job_id, "completed", filename=filename)
+                if on_complete and callbacks_loop:
+                    asyncio.run_coroutine_threadsafe(on_complete(filename), callbacks_loop)
+            except Exception as e:
+                self._capture_in_progress = False
+                self._preview_allowed.set()
+                self._emit_job_state(job_id, "failed", error=str(e))
+                if on_failure and callbacks_loop:
+                    asyncio.run_coroutine_threadsafe(on_failure(str(e)), callbacks_loop)
+
+        threading.Thread(target=_run, daemon=True, name="mock-capture").start()
+        return job_id
+
+    def standby(self):
+        """Parity with CameraService: pause the mock preview worker."""
+        if self._preview_allowed.is_set():
+            self._preview_allowed.clear()
+            sse_svc.dispatch_event("camera_status", self.get_status())
+
+    def resume_preview(self):
+        """Parity with CameraService: wake the mock preview worker."""
+        if not self._preview_allowed.is_set():
+            self._preview_allowed.set()
+            sse_svc.dispatch_event("camera_status", self.get_status())
 
     def capture(self):
         log.info("camera", "camera_capture_start", "MOCK capture started")

@@ -21,15 +21,15 @@ Use a non-default port (8123) — the user's real booth/dev server may hold 8000
 
 ## Drive
 
-- FSM flow: `POST /api/events` with `{"type": ..., "payload": {...}}` — exactly what the frontend sends. Sequence: START_SESSION → SELECT_LAYOUT {mode: single|collage} → SHOT_CAPTURED {filename} (×totalShots) → PRINT_FROM_REVEAL → FRAME_SELECT {overlay_id} or FRAME_SKIP → FINISH.
+- FSM flow: `POST /api/events` with `{"type": ..., "payload": {...}}` — exactly what the frontend sends. Sequence: START_SESSION → SELECT_LAYOUT {mode: single|collage} → FIRE_SHOT (×totalShots; the mock camera completes each in ~1s via backend callback — wait ~2s between shots) → PRINT_FROM_REVEAL → FRAME_SELECT {overlay_id} or FRAME_SKIP → FINISH.
 - State: `GET /api/state`.
 - SSE observation: `curl -sN http://127.0.0.1:8123/api/sse > sse.log &` — first event is always a seeded `config_update`; then grep `event:`/`data:` lines. This is the ground truth for broadcast order.
-- SHOT_CAPTURED needs a real JPEG in `backend/photos/` (photo_processor opens it): create one with PIL via `backend.storage.PHOTOS_DIR`. Processed `photo_*.jpg` outputs appear there too — delete the ones you created.
+- FIRE_SHOT makes the mock camera write its own decodable JPEG to `backend/photos/` (`capture_<id>_mock.jpg`), which then flows through processing. Clean up both the mock captures and the processed `photo_*.jpg` outputs afterwards.
 - Mock printer (`printer_name: "mock"`) completes prints instantly; `printStatus` goes printing → printed via the job queue.
 
 ## Gotchas
 
 - **Tests never run the lifespan** — the `client` fixture uses `TestClient(app)` without a context manager. Startup-time bugs only show when the real server boots. There is one lifespan test (`test_lifespan_startup_and_shutdown`); keep it passing.
-- **MockCameraService has no `enqueue_capture`/`standby`/`resume_preview`** — `POST /api/camera/capture` 500s in mock mode. Capture flow must be driven by posting SHOT_CAPTURED directly; the camera_job SSE path and the off-thread camera_metrics dispatch are only observable with real gphoto2 hardware.
+- **MockCameraService has full capture parity** (`enqueue_capture` with FSM callbacks, `standby`, `resume_preview`) — the whole FIRE_SHOT flow, including the cross-thread camera→FSM callback, is drivable in mock mode. Only `camera_metrics` (monitor thread) remains real-hardware-only.
 - Kill the server via the PID on the port (`netstat -ano | grep :8123`, `taskkill //F //PID <pid>`); the SSE curl dies with it.
 - The user's editor touches file mtimes without changing content — a "file modified since read" error usually just needs a re-read.

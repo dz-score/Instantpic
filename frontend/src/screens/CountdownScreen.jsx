@@ -9,37 +9,43 @@ import './CountdownScreen.css';
 /**
  * Full-screen camera feed with countdown overlay.
  *
- * Presentation + input + dispatch only. This screen renders the live view and
- * countdown, plays capture effects, invokes the backend capture action, and
- * reports each completed shot back to the FSM via `onShotCaptured`.
+ * Presentation + trigger only. This screen renders the live view and
+ * countdown, fires the shutter via the FSM (`fireShot` -> FIRE_SHOT), and
+ * plays capture effects. Capture *completion* never passes through here:
+ * the camera reports straight to the FSM (backend-owned callbacks, same
+ * pattern as print/process), and this screen advances rounds purely off
+ * `capturedCount` from backend state.
  *
  * It does NOT decide how many shots a layout needs, when the sequence is
  * finished, how long to pace between shots, or whether a failed capture
  * gets retried — that workflow authority lives in the backend. `totalShots`
- * and `capturedCount` arrive as backend state and drive round advancement
- * here; `shot_interval_ms` arrives via config. CameraService retries a
- * failed capture internally, so this screen only ever sees one terminal
- * 'completed' or 'failed' event per shot. The backend advances to REVEAL
- * once it has received all the shots (which unmounts this screen).
+ * and `capturedCount` arrive as backend state; `shot_interval_ms` arrives
+ * via config. CameraService retries a failed capture internally, so this
+ * screen only ever sees one terminal 'completed' or 'failed' event per
+ * shot. The backend advances to REVEAL once it has all the shots (which
+ * unmounts this screen).
  *
  * Camera events are consumed from the app's single SSE stream (`cameraJob`)
- * passed down as a prop, rather than opening a second stream. Camera *health*
- * likewise comes from the backend via `cameraStatus` (SSE camera_status, also
- * surfaced app-wide as a banner) — this screen does not form its own opinion of
- * whether the camera is broken. The only camera fact it owns is `cameraReady`:
- * whether our preview <img> has actually painted a frame, which is ephemeral
- * view state the backend can't observe and only gates when the countdown starts.
+ * passed down as a prop — and are PRESENTATION-ONLY here: 'fired' drives
+ * flash/sound, 'completed' the between-shots thumbnail, 'failed' the retry
+ * overlay. The FSM guards one-shot-in-flight, so any camera_job event that
+ * arrives while this screen is mounted belongs to the current shot — no
+ * job-id bookkeeping needed. Camera *health* likewise comes from the backend
+ * via `cameraStatus` (SSE camera_status, also surfaced app-wide as a banner)
+ * — this screen does not form its own opinion of whether the camera is
+ * broken. The only camera fact it owns is `cameraReady`: whether our preview
+ * <img> has actually painted a frame, which is ephemeral view state the
+ * backend can't observe and only gates when the countdown starts.
  */
 export default function CountdownScreen({
   previewUrl,
   totalShots = 1,
   capturedCount = 0,
-  captureFrame,
+  fireShot,
   resumePreview,
   standbyPreview,
   cameraJob,
   cameraStatus,
-  onShotCaptured,
   onCancel,
   config,
   language,
@@ -94,7 +100,9 @@ export default function CountdownScreen({
   const pendingTimeouts = useRef([]);
   const timerRef = useRef(null);
   const countdownVideoRef = useRef(null);
-  const captureResolvers = useRef({});
+  // Last camera_job event already handled (`${job_id}:${status}`) so an SSE
+  // re-delivery can't double-fire the flash or the failure overlay.
+  const lastHandledJobEvent = useRef(null);
   // Tracks the capturedCount we've already reacted to, so the round-advance
   // effect below only fires once per new shot the backend confirms.
   const lastHandledCount = useRef(capturedCount);
@@ -128,25 +136,46 @@ export default function CountdownScreen({
     return id;
   }, []);
 
-  // Route capture-lifecycle events from the app's central SSE stream to the
-  // resolver registered for the in-flight job. Only presentation effects and
-  // the "report this shot" dispatch happen here.
+  // Present capture-lifecycle events from the app's central SSE stream.
+  // PRESENTATION ONLY: completion reaches the FSM via backend callbacks, so
+  // nothing here reports anything back. The FSM guards one-shot-in-flight,
+  // so any event arriving while this screen is mounted is the current shot;
+  // the (job_id, status) dedupe just absorbs SSE re-deliveries.
   useEffect(() => {
     if (!cameraJob) return;
-    const resolvers = captureResolvers.current[cameraJob.job_id];
-    if (!resolvers) return;
+    const key = `${cameraJob.job_id}:${cameraJob.status}`;
+    if (lastHandledJobEvent.current === key) return;
+    lastHandledJobEvent.current = key;
 
-    if (cameraJob.status === 'fired' && resolvers.onFired) {
-      resolvers.onFired();
-      resolvers.onFired = null; // Prevent duplicate fires if SSE re-delivers
-    } else if (cameraJob.status === 'completed' && resolvers.onCompleted) {
-      resolvers.onCompleted(cameraJob.filename);
-      delete captureResolvers.current[cameraJob.job_id];
-    } else if (cameraJob.status === 'failed' && resolvers.onFailed) {
-      resolvers.onFailed(cameraJob.error);
-      delete captureResolvers.current[cameraJob.job_id];
+    if (cameraJob.status === 'fired') {
+      // Flash + sound once the backend confirms the shutter opened — but
+      // never before the countdown ring has actually finished playing. If
+      // the ring is still mid-playback when 'fired' arrives, defer the
+      // flash to the ring's own 'ended' event instead of overlapping it.
+      const triggerFlash = () => {
+        if (flashEnabled) {
+          setFlashActive(true);
+          safeTimeout(() => setFlashActive(false), 250);
+        }
+        playShutterSound();
+      };
+      if (countdownVideoDoneRef.current) {
+        triggerFlash();
+      } else {
+        pendingFlashRef.current = triggerFlash;
+      }
+    } else if (cameraJob.status === 'completed') {
+      setIsCapturing(false);
+      if (cameraJob.filename) {
+        setLastCapture(`/photos/${cameraJob.filename}`);
+      }
+      // Round advancement comes from capturedCount (backend state), not here.
+    } else if (cameraJob.status === 'failed') {
+      logger.warn('countdown', 'capture_failed', 'Shot capture failed permanently', { error: cameraJob.error });
+      setIsCapturing(false);
+      setCaptureError(cameraJob.error || true);
     }
-  }, [cameraJob]);
+  }, [cameraJob, flashEnabled, safeTimeout]);
 
   // Run a single countdown round
   const runCountdown = useCallback((onDone) => {
@@ -193,56 +222,22 @@ export default function CountdownScreen({
     }, 250);
   }, [COUNTDOWN_FROM, standbyPreview]);
 
-  // Fire the shutter for one shot and wait for its terminal event. The
-  // backend (CameraService) retries a failed capture internally, so this
-  // only ever sees a single 'completed' or 'failed' outcome.
+  // Fire the shutter for one shot via the FSM (FIRE_SHOT). Everything after
+  // this is backend-owned: the camera reports completion straight to the FSM,
+  // which bumps capturedCount (round advance) or moves to REVEAL. This screen
+  // just hears the presentational camera_job events handled above.
   const fireShutter = useCallback(async () => {
     setIsCapturing(true);
-    const jobId = await captureFrame();
-
-    if (!jobId) {
+    try {
+      await fireShot();
+    } catch (err) {
+      // The FIRE_SHOT dispatch itself failed (backend unreachable) — no
+      // camera_job events will ever come, so surface the retry overlay now.
+      logger.warn('countdown', 'fire_shot_fail', 'FIRE_SHOT dispatch failed', { error: err.message });
       setIsCapturing(false);
-      return null;
+      setCaptureError(err.message || true);
     }
-
-    return new Promise((resolve) => {
-      captureResolvers.current[jobId] = {
-        onFired: () => {
-          // Flash + sound once the backend confirms the shutter opened —
-          // but never before the countdown ring has actually finished
-          // playing. The two are only usually in sync by timing coincidence;
-          // if the ring is still mid-playback when 'fired' arrives, defer
-          // the flash to the ring's own 'ended' event instead of overlapping it.
-          const triggerFlash = () => {
-            if (flashEnabled) {
-              setFlashActive(true);
-              safeTimeout(() => setFlashActive(false), 250);
-            }
-            playShutterSound();
-          };
-          if (countdownVideoDoneRef.current) {
-            triggerFlash();
-          } else {
-            pendingFlashRef.current = triggerFlash;
-          }
-        },
-        onCompleted: (filename) => {
-          setIsCapturing(false);
-          setLastCapture(`/photos/${filename}`);
-          // Report the shot to the FSM — the backend owns accumulation and
-          // decides when the sequence is complete.
-          if (onShotCaptured) onShotCaptured(filename);
-          resolve(filename);
-        },
-        onFailed: (error) => {
-          logger.warn('countdown', 'capture_failed', 'Shot capture failed permanently', { error });
-          setIsCapturing(false);
-          setCaptureError(error || true);
-          resolve(null);
-        }
-      };
-    });
-  }, [captureFrame, flashEnabled, safeTimeout, onShotCaptured]);
+  }, [fireShot]);
 
   const startRound = useCallback(async () => {
     // Wake up the camera worker from standby

@@ -153,8 +153,10 @@ printStatus: str                   # "idle" | "printing" | "printed" | "failed" 
 ```
 ATTRACT       -> [START_SESSION]
 CHOOSE_STYLE  -> [SELECT_LAYOUT]
-COUNTDOWN     -> [SHOT_CAPTURED]   # one event per shot; FSM stays in COUNTDOWN
-                                   # until capturedImages reaches totalShots
+COUNTDOWN     -> [FIRE_SHOT]       # one event per shot fires the shutter;
+                                   # completion returns via camera->FSM callback
+                                   # (never via the browser) and the FSM stays in
+                                   # COUNTDOWN until capturedImages reaches totalShots
 REVEAL        -> [RETAKE, PRINT_FROM_REVEAL]
 PICK_FAVORITE -> [FAVORITE_SELECT]
 FRAME_PICKER  -> [FRAME_SELECT, FRAME_SKIP]
@@ -171,7 +173,9 @@ Global events (from any state): TIMEOUT, FINISH
 
 Each state change broadcasts via `sse_svc.dispatch_event("state_update", ...)`. The broadcast payload is a snapshot taken under the handler lock, so concurrent job callbacks can never leak later mutations into an earlier broadcast.
 
-**COUNTDOWN stall watchdog:** `SHOT_CAPTURED` is couriered by the frontend (the `camera_job` SSE event triggers `POST /api/events`); if that hop is lost, the photo sits on disk but the session would strand in COUNTDOWN. The FSM arms a watchdog whenever a transition lands in COUNTDOWN, re-arms it on every shot (each shot of a multi-shot layout gets a fresh window), and cancels it on any transition elsewhere. On expiry with no shot progress it resets to ATTRACT and broadcasts. Window: `capture_stall_timeout` (config, default 75s). Same backend-owned recovery idiom as `TIMEOUT` and `printStatus` (Rule 14) — recovery never lives in the UI or `camera_service`.
+**Capture callbacks:** `FIRE_SHOT` (from the UI when its countdown ends) makes the FSM call `camera_svc.enqueue_capture(on_complete, on_failure)` — the camera worker delivers the terminal outcome straight back to the FSM on the event loop (`shot_completed` appends the shot first-hand; `shot_failed` releases the in-flight guard and leaves COUNTDOWN for the UI's retry overlay). Same submitter-owned-callback inversion as the job queue; the browser is never the courier and client-supplied filenames are never trusted. A `_shot_in_flight` guard makes double `FIRE_SHOT`s no-ops.
+
+**COUNTDOWN stall watchdog:** the floor for a browser or camera that died mid-session (no `FIRE_SHOT` ever arrives, or a capture callback never lands). Armed whenever a transition lands in COUNTDOWN, re-armed per shot, cancelled elsewhere; on expiry with no shot progress it resets to ATTRACT (also clearing the in-flight guard) and broadcasts. Window: `capture_stall_timeout` (config, default 75s). Same backend-owned recovery idiom as `TIMEOUT` and `printStatus` (Rule 14).
 
 ---
 
@@ -440,7 +444,7 @@ Mounts `<App />` into `#root`. Minimal boilerplate.
 |---|---|---|---|
 | **AttractScreen** | `AttractScreen.jsx` | `ATTRACT` | Idle welcome. Language picker. Start button. |
 | **ChooseStyleScreen** | `ChooseStyleScreen.jsx` | `CHOOSE_STYLE` | Single vs. collage layout selection. |
-| **CountdownScreen** | `CountdownScreen.jsx` | `COUNTDOWN` | Live MJPEG preview. Per-shot countdown. Triggers captures and reports each one via `SHOT_CAPTURED`. Owns no retry, pacing, or completion logic — those are backend-owned (Rule 14); on a permanently failed shot it shows a retry/home overlay rather than deciding what to do next. |
+| **CountdownScreen** | `CountdownScreen.jsx` | `COUNTDOWN` | Live MJPEG preview. Per-shot countdown. Fires each shot via `FIRE_SHOT`; completion is backend-owned (camera->FSM callback) and `camera_job` SSE events are presentation-only here (flash, thumbnail, failure overlay). Owns no retry, pacing, or completion logic (Rule 14). |
 | **RevealScreen** | `RevealScreen.jsx` | `REVEAL` | Shows processed photo. Retake / proceed to print. |
 | **PickFavoriteScreen** | `PickFavoriteScreen.jsx` | `PICK_FAVORITE` | Choose best photo from multi-retake session. |
 | **FramePickerScreen** | `FramePickerScreen.jsx` | `FRAME_PICKER` | Choose decorative overlay frame. |
@@ -476,9 +480,11 @@ Exposes `isOnline` (true when EventSource is open).
 #### `useCamera.js`
 Thin wrapper over camera REST endpoints:
 - `previewUrl` -> `/api/camera/preview` (MJPEG stream, used as `<img src>`)
-- `captureFrame()` -> `POST /api/camera/capture`
 - `resumePreview()` -> `POST /api/camera/resume`
 - `standbyPreview()` -> `POST /api/camera/standby`
+
+(Capture is not triggered here: the countdown fires the shutter through the
+FSM via the `FIRE_SHOT` event, and completion returns camera->FSM by callback.)
 
 #### `useApi.js`
 Centralises all REST interactions:
@@ -536,7 +542,8 @@ Centralises all REST interactions:
                +----|   COUNTDOWN   |<---- RETAKE
                |    +---------------+
                |           |
-               |    SHOT_CAPTURED x totalShots
+               |    FIRE_SHOT x totalShots
+               |    (completion: camera->FSM callback)
                |           |
           FINISH            v
                |    +---------------+
@@ -600,8 +607,9 @@ CountdownScreen renders with live MJPEG preview at /api/camera/preview
 
 [Repeat per shot, up to totalShots=3] Countdown fires
         |  camera.standbyPreview()  -> POST /api/camera/standby
-        |  camera.captureFrame()    -> POST /api/camera/capture
-        |  camera_svc.enqueue_capture() -> worker thread runs _execute_capture_job()
+        |  api.sendEvent("FIRE_SHOT") -> FSM (guards one-shot-in-flight) calls
+        |    camera_svc.enqueue_capture(on_complete=shot_completed, on_failure=shot_failed)
+        |    -> worker thread runs _execute_capture_job()
         |  SSE: camera_job {job_id, status: "fired"}       -> flash/shutter sound
         |  SSE: camera_job {job_id, status: "downloading"}
         |  SSE: camera_job {job_id, status: "completed", filename}
@@ -610,8 +618,9 @@ CountdownScreen renders with live MJPEG preview at /api/camera/preview
         |       the frontend never orchestrates the retry — Rule 14)
         |  camera.resumePreview()   -> POST /api/camera/resume
         v
-CountdownScreen: onShotCaptured(filename)
-        |  api.sendEvent("SHOT_CAPTURED", {filename})
+camera worker -> FSM (run_coroutine_threadsafe): shot_completed(filename)
+        |  (the camera_job SSE events above are presentation-only; the
+        |   browser no longer reports the shot back)
         v
 state_machine: capturedImages.append(filename)
         |  len(capturedImages) < totalShots?
@@ -943,9 +952,11 @@ state_machine <-> job_queue wiring (no import in either direction beyond
 the above): main.py injects the queue into the FSM at startup via
 set_job_queue(). The FSM enqueues jobs carrying its own bound methods as
 on_success/on_failure callbacks; the queue invokes them blindly and
-never imports the state machine. camera_service is fully ignorant of
-both — captures reach the FSM as SHOT_CAPTURED events couriered by the
-frontend, with the FSM's COUNTDOWN stall watchdog as the backstop.
+never imports the state machine. camera_service uses the same
+inversion: enqueue_capture(on_complete, on_failure) delivers the capture
+outcome straight to FSM-supplied callbacks without importing the FSM,
+and the COUNTDOWN stall watchdog remains the floor for a dead browser
+or a callback that never lands.
 ```
 
 ---

@@ -63,6 +63,10 @@ async def lifespan(app: FastAPI):
 
     # Initialize State Machine and Job Queue
     state_machine.set_job_queue(job_queue)
+    if GPHOTO2_AVAILABLE:
+        # FIRE_SHOT capture completion returns to the FSM via callbacks,
+        # mirroring set_job_queue — the camera never imports the FSM.
+        state_machine.set_camera(camera_svc)
     job_queue.start()
 
     # Eagerly init camera

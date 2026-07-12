@@ -28,12 +28,12 @@ class AppSettings(BaseModel):
     flash_enabled: bool = True
     max_photos_per_session: int = 3
     session_timeout: int = 120
-    # Backend backstop for a stalled capture sequence. SHOT_CAPTURED is
-    # couriered by the frontend (camera_job SSE -> POST /api/events); if that
-    # hop is lost the session would strand in COUNTDOWN forever. After this
-    # many seconds with no shot progress the FSM resets to ATTRACT. Sized
-    # well above countdown + capture + retry-once + shot interval; recovery
-    # is backend-owned per Rule 14.
+    # Floor for a stalled capture sequence: if the browser or camera dies
+    # mid-session, COUNTDOWN would strand forever. After this many seconds
+    # with no shot progress the FSM resets to ATTRACT. Sized well above
+    # countdown + capture + retry-once + shot interval; recovery is
+    # backend-owned per Rule 14. (Ordinary completion never depends on the
+    # browser: the camera reports straight to the FSM via callbacks.)
     capture_stall_timeout: float = 75.0
     show_names_on_photo: bool = True
     printer_name: str = "mock"
