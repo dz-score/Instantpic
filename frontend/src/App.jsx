@@ -116,13 +116,12 @@ export default function App() {
     api.sendEvent('SELECT_LAYOUT', { mode });
   }, [api]);
 
-  // Report a single completed capture to the backend. The FSM owns shot
-  // accumulation, sequencing, and the decision to advance to REVEAL — the UI
-  // only relays the filename it was handed.
-  const handleShotCaptured = useCallback((filename) => {
-    if (!filename) return;
-    logger.info('camera', 'camera_capture', `Shot captured: ${filename}`);
-    api.sendEvent('SHOT_CAPTURED', { filename });
+  // Fire the shutter when the countdown ends. Completion is backend-owned:
+  // the camera reports straight to the FSM (same pattern as print/process),
+  // and this UI only presents the camera_job SSE events (flash, progress).
+  const handleFireShot = useCallback(() => {
+    logger.info('camera', 'camera_fire', 'Countdown finished — firing shutter via FSM');
+    return api.sendEvent('FIRE_SHOT');
   }, [api]);
 
   const handleRetake = useCallback(() => {
@@ -198,12 +197,11 @@ export default function App() {
           previewUrl={camera.previewUrl}
           totalShots={appState?.totalShots || 1}
           capturedCount={appState?.capturedImages?.length || 0}
-          captureFrame={camera.captureFrame}
+          fireShot={handleFireShot}
           resumePreview={camera.resumePreview}
           standbyPreview={camera.standbyPreview}
           cameraJob={sse.cameraJob}
           cameraStatus={camera.cameraStatus}
-          onShotCaptured={handleShotCaptured}
           onCancel={() => api.sendEvent('FINISH')}
           config={config}
           language={language}

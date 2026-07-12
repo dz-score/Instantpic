@@ -63,7 +63,8 @@ The simplest end-to-end guest journey.
   Camera live preview starts (MJPEG stream at /api/camera/preview)
   Countdown ring animates (e.g. 5 → 4 → 3 → 2 → 1)
     → camera.standbyPreview() → POST /api/camera/standby  (pauses preview worker)
-    → camera.captureFrame()   → POST /api/camera/capture  (fires shutter)
+    → POST /api/events {type: "FIRE_SHOT"}  → FSM (one-shot-in-flight guard)
+      calls camera_svc.enqueue_capture(on_complete=shot_completed, on_failure=shot_failed)
     → backend worker (_execute_capture_job): fires shutter, downloads, saves to photos/
     → SSE: camera_job {job_id, status: "fired"}       (flash + shutter sound)
     → SSE: camera_job {job_id, status: "downloading"}
@@ -73,8 +74,9 @@ The simplest end-to-end guest journey.
          orchestrates the retry itself, per Rule 14; a shot that fails
          both attempts shows a "Try Again / Home" overlay instead)
     → camera.resumePreview()  → POST /api/camera/resume
-  CountdownScreen: onShotCaptured(filename)
-    → POST /api/events {type: "SHOT_CAPTURED", filename}
+  camera worker → FSM callback (run_coroutine_threadsafe): shot_completed(filename)
+    → (the camera_job SSE events above are presentation-only — the browser
+       does not report the shot back)
     → FSM: capturedImages=[filename], len(capturedImages) >= totalShots (1)
     → FSM composes banner text/overlay_id itself, state → REVEAL (isProcessing=true)
     → SSE state_update → frontend renders RevealScreen (spinner)
@@ -123,20 +125,20 @@ backend-confirmed `capturedCount`, not any frontend-owned counter.
 
 [COUNTDOWN screen — 3 shots]
   Shot 1:
-    Countdown → standby → capture (camera_job: fired/downloading/completed) → resume
-    SHOT_CAPTURED → FSM: capturedImages=[f1], 1 < totalShots
+    Countdown → standby → FIRE_SHOT → capture (camera_job: fired/downloading/completed) → resume
+    shot_completed(f1) callback → FSM: capturedImages=[f1], 1 < totalShots
       → SSE state_update (capturedImages, totalShots)
       → CountdownScreen: ProgressDots shows ● ○ ○, "BETWEEN" interstitial for
         shot_interval_ms (backend config, default 3000ms), then fires next shot
 
   Shot 2:
-    Countdown → standby → capture → resume
-    SHOT_CAPTURED → FSM: capturedImages=[f1,f2], 2 < totalShots
+    Countdown → standby → FIRE_SHOT → capture → resume
+    shot_completed(f2) callback → FSM: capturedImages=[f1,f2], 2 < totalShots
       → ProgressDots shows ● ● ○, same BETWEEN pacing
 
   Shot 3:
-    Countdown → standby → capture → resume
-    SHOT_CAPTURED → FSM: capturedImages=[f1,f2,f3], 3 >= totalShots
+    Countdown → standby → FIRE_SHOT → capture → resume
+    shot_completed(f3) callback → FSM: capturedImages=[f1,f2,f3], 3 >= totalShots
       → ProgressDots shows ● ● ●
       → FSM composes banner text/overlay_id itself, state → REVEAL
 
@@ -349,8 +351,8 @@ Operator taps "Close" or presses outside
     → frontend: setConfig(data) — live update, no restart needed
 
   Effect on photos:
-    Next time a shot sequence completes (SHOT_CAPTURED reaches totalShots),
-    state_machine._compose_banner_text(settings) reads the fresh
+    Next time a shot sequence completes (shot_completed reaches totalShots),
+    jobs.compose_banner_text(settings) reads the fresh
     couple_names + event_date as the banner text composited onto the canvas
 ```
 
@@ -536,12 +538,12 @@ CountdownScreen: countdown hits 0
        → _cmd_queue.put("STANDBY")
        → worker thread: _preview_allowed.clear() → preview loop pauses
 
-  2. camera.captureFrame()
-       → POST /api/camera/capture
-       → camera_svc.enqueue_capture()
-       → generates job_id (uuid)
-       → _cmd_queue.put(("CAPTURE", job_id))
-       → returns {status: "enqueued", job_id}
+  2. POST /api/events {type: "FIRE_SHOT"}
+       → state_machine: _shot_in_flight guard, then
+         camera_svc.enqueue_capture(on_complete=shot_completed,
+                                    on_failure=shot_failed)
+       → captures the running loop for the callbacks, generates job_id (uuid)
+       → _cmd_queue.put(("CAPTURE", job_id, callbacks))
 
   [_worker_thread]
   3. dequeues ("CAPTURE", job_id) → _execute_capture_job(job_id)
@@ -558,11 +560,15 @@ CountdownScreen: countdown hits 0
        })
        — or, if both attempts failed: {job_id, status: "failed", error}
 
-  [CountdownScreen — SSE listener]
-  7. Receives terminal camera_job event for matching job_id
-     completed → onShotCaptured(filename) → POST SHOT_CAPTURED
-     failed    → shows "Try Again / Home" overlay (no automatic retry —
-                 CameraService already retried once)
+  [Terminal outcome — backend-owned]
+  7. The worker thread delivers the outcome straight to the FSM via the
+     callbacks supplied at enqueue_capture (run_coroutine_threadsafe):
+     completed → state_machine.shot_completed(filename) appends the shot
+     failed    → state_machine.shot_failed(error) releases the in-flight
+                 guard; the UI shows its "Try Again / Home" overlay from the
+                 presentational camera_job 'failed' SSE event (a retry
+                 re-fires FIRE_SHOT — no automatic retry: CameraService
+                 already retried once)
   8. camera.resumePreview()
        → POST /api/camera/resume
        → camera_svc.resume_preview()
@@ -577,10 +583,10 @@ CountdownScreen: countdown hits 0
 
 ### 18. Photo Processing Job
 
-Triggered by the `SHOT_CAPTURED` event that brings `capturedImages` up to `totalShots`.
+Triggered by the `shot_completed` camera callback that brings `capturedImages` up to `totalShots`.
 
 ```
-state_machine.handle_event("SHOT_CAPTURED", {filename}):
+state_machine.shot_completed(filename):   # camera worker → FSM callback
   1. state.capturedImages.append(filename)
   2. if len(capturedImages) < totalShots:
        broadcast state_update only — CountdownScreen paces the next shot
@@ -592,7 +598,7 @@ state_machine.handle_event("SHOT_CAPTURED", {filename}):
          type: "PROCESS_PHOTO",
          images: capturedImages,                 # filenames, FSM-owned list
          layout: state.layoutMode,                # "single" | "collage"
-         text: _compose_banner_text(settings),    # FSM composes this itself
+         text: compose_banner_text(settings),     # composed in backend/jobs.py
          overlay_id: settings.selected_overlay or "none",
        })
   4. sse_svc broadcasts state_update → RevealScreen shows spinner

@@ -1,3 +1,4 @@
+import asyncio
 import threading
 import time
 import os
@@ -31,6 +32,11 @@ class CameraService:
     def __init__(self):
         self.camera = None
         self.lock = threading.Lock()
+        # Defaults to the real singleton so the service works unmodified if
+        # set_sse() is never called; set_sse() exists so tests/callers can
+        # inject a double instead of monkeypatching the module import, same
+        # DI shape as StateMachine.set_camera.
+        self._sse = sse_svc
         self.connected = False
         self._capture_in_progress = False
         self._preview_generation = 0
@@ -98,6 +104,9 @@ class CameraService:
         # Start diagnostic monitor
         self._start_monitor()
 
+    def set_sse(self, sse):
+        self._sse = sse
+
     def _start_monitor(self):
         if self._monitor_thread and self._monitor_thread.is_alive():
             return
@@ -115,7 +124,7 @@ class CameraService:
             time_since_last = time.perf_counter() - self._last_frame_time
             
             # Broadcast metrics
-            sse_svc.dispatch_event("camera_metrics", {
+            self._sse.dispatch_event("camera_metrics", {
                 "fps": fps,
                 "latency_ms": round(self._last_cap_time * 1000, 1),
                 "time_since_last_frame_ms": round(time_since_last * 1000, 1),
@@ -166,7 +175,7 @@ class CameraService:
                 self._init_backoff = 5
                 self._init_fail_count = 0
                 self._last_init_time = time.monotonic()
-                sse_svc.dispatch_event("camera_status", self.get_status())
+                self._sse.dispatch_event("camera_status", self.get_status())
                 log.info("camera", "camera_ready", "Camera initialized successfully")
 
                 # Configure basic settings for stability
@@ -227,7 +236,7 @@ class CameraService:
                 self._last_error = str(e)
                 self._init_fail_count += 1
                 self._last_init_time = time.monotonic()
-                sse_svc.dispatch_event("camera_status", self.get_status())
+                self._sse.dispatch_event("camera_status", self.get_status())
                 if self._init_fail_count == 1:
                     log.error("camera", "camera_init_fail",
                               f"Failed to initialize camera: {e}", data={"error": str(e)})
@@ -268,7 +277,7 @@ class CameraService:
             try:
                 cmd = self._cmd_queue.get_nowait()
                 if cmd.get("type") == "CAPTURE":
-                    self._execute_capture_job(cmd["job_id"])
+                    self._execute_capture_job(cmd["job_id"], cmd.get("callbacks"))
                     continue
             except queue.Empty:
                 pass
@@ -397,7 +406,7 @@ class CameraService:
                     # carrying it over gave the healed session a hair trigger
                     # where a single transient stall re-tripped a disconnect.
                     consecutive_errors = 0
-                    sse_svc.dispatch_event("camera_status", self.get_status())
+                    self._sse.dispatch_event("camera_status", self.get_status())
                 
                 # Sleep briefly on error. 0.1s is enough to let USB settle
                 # without causing a massive freeze on the frontend.
@@ -499,8 +508,26 @@ class CameraService:
 
     # ─── High-res Capture ─────────────────────────────────────────
 
-    def enqueue_capture(self) -> str:
-        """Enqueues a high-res capture job and returns its ID immediately."""
+    def enqueue_capture(self, on_complete=None, on_failure=None) -> str:
+        """Enqueues a high-res capture job and returns its ID immediately.
+
+        `on_complete(filename)` / `on_failure(error)` are optional coroutines
+        invoked on the caller's event loop at the job's terminal state — the
+        same submitter-owned-callback inversion as JobQueue, so the camera
+        never knows who consumes the result (the FSM supplies bound methods).
+        The camera_job SSE events still fire for every stage, but they are
+        presentation-only (flash, sounds, progress): workflow completion
+        travels through these callbacks, never through the browser.
+        """
+        callbacks = None
+        if on_complete or on_failure:
+            callbacks = {
+                # Captured here because enqueue runs on the event loop; the
+                # worker thread uses it to marshal the callback back over.
+                "loop": asyncio.get_running_loop(),
+                "on_complete": on_complete,
+                "on_failure": on_failure,
+            }
         job_id = uuid.uuid4().hex[:8]
 
         # Make the capture authoritative over live view BEFORE the job is even
@@ -511,25 +538,38 @@ class CameraService:
         # ~3s stall and drag the shutter out with it.
         self._capture_in_progress = True
         self.standby()
-        self._cmd_queue.put({"type": "CAPTURE", "job_id": job_id})
+        self._cmd_queue.put({"type": "CAPTURE", "job_id": job_id, "callbacks": callbacks})
 
         # Emit initial pending state
         self._emit_job_state(job_id, "pending")
         return job_id
 
+    def _invoke_capture_callback(self, callbacks, key: str, arg):
+        """Deliver a submitter callback coroutine onto its event loop. Runs on
+        the worker thread; failures are logged, never raised — the SSE events
+        already reported the outcome for presentation regardless."""
+        if not callbacks or not callbacks.get(key):
+            return
+        try:
+            asyncio.run_coroutine_threadsafe(callbacks[key](arg), callbacks["loop"])
+        except Exception as e:
+            log.error("camera", "capture_callback_fail",
+                      f"Could not deliver capture {key} callback: {e}")
+
     def _emit_job_state(self, job_id: str, status: str, filename: str = None, error: str = None):
         state = CaptureJobState(job_id=job_id, status=status, filename=filename, error=error)
-        sse_svc.dispatch_event("camera_job", state.model_dump())
+        self._sse.dispatch_event("camera_job", state.model_dump())
         log.info("camera", f"capture_{status}", f"Capture job {job_id} is {status}", data=state.model_dump())
 
-    def _execute_capture_job(self, job_id: str):
+    def _execute_capture_job(self, job_id: str, callbacks=None):
         """Internal capture execution on the worker thread.
         Handles trigger, flush, download, save, and emits granular SSE events.
 
         Retries once on failure before giving up, mirroring PrintService's
         retry-once policy. This is a workflow decision and must live here,
         not in the frontend (Rule 14) — callers just see one 'failed' event
-        if both attempts fail.
+        if both attempts fail. The terminal outcome is also delivered to the
+        submitter's on_complete/on_failure coroutines when provided.
         """
         self._capture_in_progress = True
         self._emit_job_state(job_id, "started")
@@ -545,6 +585,7 @@ class CameraService:
             if not self.connected:
                 self._emit_job_state(job_id, "failed", error="Camera not connected")
                 self._capture_in_progress = False
+                self._invoke_capture_callback(callbacks, "on_failure", "Camera not connected")
                 return
 
         error = self._attempt_capture(job_id)
@@ -560,6 +601,10 @@ class CameraService:
         self._capture_in_progress = False
         if error:
             self._emit_job_state(job_id, "failed", error=error)
+            self._invoke_capture_callback(callbacks, "on_failure", error)
+        else:
+            # Filename is deterministic from the job id (see _attempt_capture).
+            self._invoke_capture_callback(callbacks, "on_complete", f"capture_{job_id}.jpg")
 
     def _attempt_capture(self, job_id: str) -> Optional[str]:
         """Runs a single trigger+download+save attempt. Emits the 'fired',
@@ -653,7 +698,7 @@ class CameraService:
         if self._preview_allowed.is_set():
             log.info("camera", "camera_standby", "Entering standby mode (pausing live view)")
             self._preview_allowed.clear()
-            sse_svc.dispatch_event("camera_status", self.get_status())
+            self._sse.dispatch_event("camera_status", self.get_status())
 
     def resume_preview(self):
         """Wakes up the background worker to resume the preview stream."""
@@ -665,7 +710,7 @@ class CameraService:
         if not self._preview_allowed.is_set():
             log.info("camera", "camera_resume", "Resuming live view (waking worker)")
             self._preview_allowed.set()
-            sse_svc.dispatch_event("camera_status", self.get_status())
+            self._sse.dispatch_event("camera_status", self.get_status())
 
     # ─── Settings & Status ────────────────────────────────────────
 
@@ -737,7 +782,7 @@ class CameraService:
                 finally:
                     self.camera = None
             self.connected = False
-            sse_svc.dispatch_event("camera_status", self.get_status())
+            self._sse.dispatch_event("camera_status", self.get_status())
 
 
 # Global singleton instance

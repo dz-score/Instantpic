@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from backend.logger import log
 from backend.sse_service import sse_svc
 from backend.config import AppSettings
+from backend import jobs
 
 class BoothState(BaseModel):
     screen: str = "ATTRACT"
@@ -29,7 +30,7 @@ SHOTS_PER_LAYOUT = {
 VALID_TRANSITIONS = {
     "ATTRACT": ["START_SESSION"],
     "CHOOSE_STYLE": ["SELECT_LAYOUT"],
-    "COUNTDOWN": ["SHOT_CAPTURED"],
+    "COUNTDOWN": ["FIRE_SHOT"],
     "REVEAL": ["RETAKE", "PRINT_FROM_REVEAL"],
     "PICK_FAVORITE": ["FAVORITE_SELECT"],
     "FRAME_PICKER": ["FRAME_SELECT", "FRAME_SKIP"],
@@ -44,6 +45,18 @@ class StateMachine:
         self._state = BoothState()
         self._lock = None
         self._job_queue = None  # Injected later to avoid circular import
+        self._camera = None     # Injected at startup (set_camera), like the queue
+        # Defaults to the real singleton so the FSM works unmodified if
+        # set_sse() is never called; set_sse() exists so tests/callers can
+        # inject a double instead of monkeypatching the module import, same
+        # DI shape as set_job_queue/set_camera.
+        self._sse = sse_svc
+        # True while a capture is between FIRE_SHOT and its terminal callback;
+        # guards against double-firing the shutter.
+        self._shot_in_flight = False
+        # Floor for a session stranded in COUNTDOWN (browser or camera died
+        # mid-shot); armed while the FSM sits there (see _manage_stall_watchdog).
+        self._stall_watchdog: Optional[asyncio.Task] = None
 
     def _get_lock(self):
         if self._lock is None:
@@ -53,14 +66,26 @@ class StateMachine:
     def set_job_queue(self, queue):
         self._job_queue = queue
 
+    def set_camera(self, camera):
+        self._camera = camera
+
+    def set_sse(self, sse):
+        self._sse = sse
+
     async def get_state(self) -> BoothState:
         async with self._get_lock():
             return self._state.model_copy()
 
-    async def broadcast_state(self):
-        state_dict = self._state.model_dump()
-        sse_svc.dispatch_event("state_update", state_dict)
-        log.info("state_machine", "state_update", f"State transitioned to {self._state.screen}", data=state_dict)
+    async def broadcast_state(self, state_dict: dict):
+        """Broadcast a state snapshot taken under the handler lock.
+
+        The snapshot is passed in rather than read from self._state here:
+        this runs outside the lock, and a job callback can mutate the state
+        in the gap — reading live state would let clients observe broadcasts
+        out of transition order.
+        """
+        self._sse.dispatch_event("state_update", state_dict)
+        log.info("state_machine", "state_update", f"State transitioned to {state_dict['screen']}", data=state_dict)
 
     async def handle_event(self, event_type: str, payload: dict, settings: AppSettings):
         async with self._get_lock():
@@ -85,37 +110,27 @@ class StateMachine:
                 self._state.finalPhoto = None
                 self._state.allSessionPhotos = []
 
-            elif event_type == "SHOT_CAPTURED":
-                # The UI reports a single completed capture. The FSM owns shot
-                # accumulation and decides when the capture sequence is finished.
-                filename = payload.get("filename")
-                if not filename:
-                    log.error("state_machine", "capture_error", "No filename provided in SHOT_CAPTURED")
+            elif event_type == "FIRE_SHOT":
+                # The UI's countdown finished — fire the shutter. The terminal
+                # outcome returns via shot_completed/shot_failed on this loop
+                # (backend-owned completion, same pattern as print/process);
+                # the browser is never the courier. camera_job SSE events
+                # remain purely presentational (flash, sounds, progress).
+                if self._shot_in_flight:
+                    log.warn("state_machine", "shot_in_flight",
+                             "FIRE_SHOT ignored — a capture is already in flight")
                     return
-
-                self._state.capturedImages.append(filename)
-                log.info("state_machine", "shot_captured",
-                         f"Shot {len(self._state.capturedImages)}/{self._state.totalShots} captured")
-
-                # Sequence complete? -> move to REVEAL and kick off processing.
-                if len(self._state.capturedImages) >= self._state.totalShots:
-                    self._state.screen = "REVEAL"
-                    self._state.isProcessing = True
-                    self._state.finalPhoto = None
-
-                    if self._job_queue:
-                        images = list(self._state.capturedImages)
-                        await self._job_queue.enqueue({
-                            "type": "PROCESS_PHOTO",
-                            "images": images,
-                            "layout": self._state.layoutMode,
-                            "text": self._compose_banner_text(settings),
-                            "overlay_id": settings.selected_overlay or "none",
-                            "on_success": lambda filename: self.job_photo_processed(filename, images),
-                            "on_failure": self.job_failed,
-                        })
-                # Otherwise stay in COUNTDOWN; broadcasting the new state lets the
-                # UI advance its shot-progress presentation.
+                if not self._camera:
+                    log.error("state_machine", "no_camera",
+                              "FIRE_SHOT with no camera service injected")
+                    return
+                self._shot_in_flight = True
+                self._camera.enqueue_capture(
+                    on_complete=lambda filename: self.shot_completed(filename, settings),
+                    on_failure=self.shot_failed,
+                )
+                # No state change yet — the shot lands via shot_completed.
+                return
 
             elif event_type == "RETAKE":
                 self._state.retakeCount += 1
@@ -146,15 +161,12 @@ class StateMachine:
 
                 # Push job to queue
                 if self._job_queue:
-                    await self._job_queue.enqueue({
-                        "type": "PROCESS_FRAME",
-                        "images": self._state.capturedImages,
-                        "layout": self._state.layoutMode,
-                        "text": self._compose_banner_text(settings),
-                        "overlay_id": overlay_id,
-                        "on_success": self.job_frame_processed,
-                        "on_failure": self.job_failed,
-                    })
+                    await self._job_queue.enqueue(jobs.process_frame_job(
+                        self._state.capturedImages, self._state.layoutMode,
+                        overlay_id, settings,
+                        on_success=self.job_frame_processed,
+                        on_failure=self.job_failed,
+                    ))
                     
             elif event_type == "FRAME_SKIP":
                 await self._enter_printing()
@@ -172,16 +184,56 @@ class StateMachine:
                 log.warn("state_machine", "unknown_event", f"Unknown event type: {event_type}")
                 return
 
-        # Broadcast outside the lock to avoid blocking
-        await self.broadcast_state()
+            self._manage_stall_watchdog(settings)
+            state_dict = self._state.model_dump()
 
-    def _compose_banner_text(self, settings) -> str:
-        """Assemble the branding text printed on the photo. This is a business
-        rule and must be owned by the backend, not derived in the UI."""
-        if not settings.show_names_on_photo:
-            return ""
-        parts = [p for p in (settings.couple_names, settings.event_date) if p]
-        return " · ".join(parts) if parts else (settings.default_text or "")
+        # Broadcast outside the lock to avoid blocking
+        await self.broadcast_state(state_dict)
+
+    def _manage_stall_watchdog(self, settings: AppSettings):
+        """(Re)arm or cancel the COUNTDOWN stall floor. Runs under the
+        handler lock, after every state transition.
+
+        Ordinary capture completion is backend-owned (camera -> FSM
+        callbacks), so this watchdog is a true last resort: it only fires if
+        the browser died mid-session (no FIRE_SHOT ever arrives) or a capture
+        callback never lands. Either way the session is unrecoverable and the
+        booth resets to ATTRACT for the next guest — the same backend-owned
+        recovery idiom as TIMEOUT and printStatus (Rule 14).
+
+        Re-armed on every event that lands in COUNTDOWN, so each shot of a
+        multi-shot layout gets a fresh window; cancelled on any transition
+        elsewhere.
+        """
+        if self._stall_watchdog:
+            self._stall_watchdog.cancel()
+            self._stall_watchdog = None
+        if self._state.screen == "COUNTDOWN":
+            self._stall_watchdog = asyncio.create_task(
+                self._stall_watchdog_expire(
+                    settings.capture_stall_timeout,
+                    len(self._state.capturedImages),
+                )
+            )
+
+    async def _stall_watchdog_expire(self, timeout: float, armed_shots: int):
+        await asyncio.sleep(timeout)
+        async with self._get_lock():
+            # A shot may have landed while this task waited for the lock —
+            # only a session still in COUNTDOWN with no shot progress since
+            # arming is genuinely stalled.
+            if self._state.screen != "COUNTDOWN" or len(self._state.capturedImages) != armed_shots:
+                return
+            log.error("state_machine", "capture_stalled",
+                      f"No shot progress after {timeout}s in COUNTDOWN "
+                      f"({armed_shots}/{self._state.totalShots} shots) — resetting to ATTRACT")
+            self._state = BoothState(screen="ATTRACT")
+            self._stall_watchdog = None
+            # A capture whose callback never arrived would otherwise block
+            # FIRE_SHOT forever; the stall reset is the floor for that too.
+            self._shot_in_flight = False
+            state_dict = self._state.model_dump()
+        await self.broadcast_state(state_dict)
 
     async def _proceed_to_print_flow(self, settings: AppSettings):
         """Decide whether the guest should pick a frame or go straight to
@@ -203,12 +255,57 @@ class StateMachine:
         self._state.screen = "PRINTING"
         self._state.printStatus = "printing"
         if self._job_queue and self._state.finalPhoto:
-            await self._job_queue.enqueue({
-                "type": "PRINT_PHOTO",
-                "filename": self._state.finalPhoto,
-                "on_success": self.job_print_done,
-                "on_failure": self.job_print_failed,
-            })
+            await self._job_queue.enqueue(jobs.print_photo_job(
+                self._state.finalPhoto,
+                on_success=self.job_print_done,
+                on_failure=self.job_print_failed,
+            ))
+
+    # Capture callbacks — the camera worker delivers the terminal outcome
+    # straight to the FSM (via enqueue_capture's marshalled coroutines). The
+    # FSM appends the shot first-hand instead of trusting a browser-couriered
+    # filename; the UI only presents.
+    async def shot_completed(self, filename: str, settings: AppSettings):
+        async with self._get_lock():
+            self._shot_in_flight = False
+            if self._state.screen != "COUNTDOWN":
+                # Session ended (TIMEOUT / FINISH / stall watchdog) while the
+                # shutter was busy — the photo stays on disk but the workflow
+                # has moved on.
+                log.warn("state_machine", "shot_after_exit",
+                         f"Capture {filename} completed after leaving COUNTDOWN — ignored")
+                return
+            self._state.capturedImages.append(filename)
+            log.info("state_machine", "shot_captured",
+                     f"Shot {len(self._state.capturedImages)}/{self._state.totalShots} captured")
+
+            # Sequence complete? -> move to REVEAL and kick off processing.
+            if len(self._state.capturedImages) >= self._state.totalShots:
+                self._state.screen = "REVEAL"
+                self._state.isProcessing = True
+                self._state.finalPhoto = None
+
+                if self._job_queue:
+                    images = list(self._state.capturedImages)
+                    await self._job_queue.enqueue(jobs.process_photo_job(
+                        images, self._state.layoutMode, settings,
+                        on_success=lambda filename: self.job_photo_processed(filename, images),
+                        on_failure=self.job_failed,
+                    ))
+            # Otherwise stay in COUNTDOWN; broadcasting the new state lets the
+            # UI advance its shot-progress presentation.
+            self._manage_stall_watchdog(settings)
+            state_dict = self._state.model_dump()
+        await self.broadcast_state(state_dict)
+
+    async def shot_failed(self, error: str):
+        async with self._get_lock():
+            self._shot_in_flight = False
+            log.error("state_machine", "shot_failed",
+                      f"Capture failed permanently: {error}")
+        # State unchanged: the UI shows its retry overlay from the camera_job
+        # 'failed' SSE event (a retry re-fires FIRE_SHOT), and the stall
+        # watchdog remains the floor if the guest walks away.
 
     # Job Completion Callbacks
     async def job_photo_processed(self, filename: str, images: list):
@@ -219,20 +316,23 @@ class StateMachine:
                 "filename": filename,
                 "rawImages": images
             })
-        await self.broadcast_state()
+            state_dict = self._state.model_dump()
+        await self.broadcast_state(state_dict)
 
     async def job_frame_processed(self, filename: str):
         async with self._get_lock():
             self._state.isProcessing = False
             self._state.finalPhoto = filename
             await self._enter_printing()
-        await self.broadcast_state()
+            state_dict = self._state.model_dump()
+        await self.broadcast_state(state_dict)
 
     async def job_failed(self, error: str):
         async with self._get_lock():
             self._state.isProcessing = False
             log.error("state_machine", "job_failed", f"Background job failed: {error}")
-        await self.broadcast_state()
+            state_dict = self._state.model_dump()
+        await self.broadcast_state(state_dict)
 
     # Print job callbacks — the FSM records the real printer outcome so the UI
     # can project it instead of racing a timeout.
@@ -240,13 +340,15 @@ class StateMachine:
         async with self._get_lock():
             self._state.printStatus = "printed"
             log.info("state_machine", "print_done", f"Print completed: {filename}")
-        await self.broadcast_state()
+            state_dict = self._state.model_dump()
+        await self.broadcast_state(state_dict)
 
     async def job_print_failed(self, error: str):
         async with self._get_lock():
             self._state.printStatus = "failed"
             log.error("state_machine", "print_failed", f"Print failed: {error}")
-        await self.broadcast_state()
+            state_dict = self._state.model_dump()
+        await self.broadcast_state(state_dict)
 
 # Global Singleton
 state_machine = StateMachine()

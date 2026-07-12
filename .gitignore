@@ -16,7 +16,6 @@ frontend/dist/
 backend/photos/photo_*.jpg
 backend/overlays/blush_floral.png
 backend/overlays/gold_glitter.png
-backend/PlayfairDisplay-Regular.ttf
 
 # Session log files
 logs/*

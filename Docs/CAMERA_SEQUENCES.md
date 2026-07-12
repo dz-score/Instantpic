@@ -148,7 +148,7 @@ sequenceDiagram
     S-->>F: camera_job: completed (filename)
     end
 
-    F->>A: POST event SHOT_CAPTURED
+    W->>A: shot_completed(filename) — camera→FSM callback on the event loop
     A-->>F: FSM → REVEAL (single mode: 1/1 shots done)
     Note over A: job queue runs PROCESS_PHOTO (overlay/layout)
     Note over W: worker stays in standby through REVEAL —<br/>camera rests while guest views the photo
@@ -158,9 +158,12 @@ sequenceDiagram
 
 **Key takeaways for a new dev:**
 
-- **The FSM never touches the camera.** The frontend calls camera endpoints
-  and reports `SHOT_CAPTURED`; the backend owns retries and job state — the
-  frontend only ever sees one terminal `completed`/`failed` per shot.
+- **The UI triggers, the backend completes.** The frontend fires `FIRE_SHOT`
+  when its countdown ends; the FSM drives the camera and receives the
+  terminal outcome via callbacks (`shot_completed`/`shot_failed`). The
+  `camera_job` SSE events the frontend sees are presentation-only, one
+  terminal `completed`/`failed` per shot — retries and job state are
+  backend-owned.
 - **Live view and capture never overlap.** From `enqueue_capture()` the
   capture is authoritative — `_capture_in_progress` blocks new preview grabs
   and makes `resume_preview()` a no-op, so nothing can re-arm polling before

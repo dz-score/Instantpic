@@ -57,8 +57,18 @@ async def lifespan(app: FastAPI):
     # Log startup
     log.info("system", "system_boot", f"Backend started", data={"version": "1.0.0"})
 
+    # Bind the event loop so camera threads can dispatch SSE events safely.
+    # Must happen before camera_svc.init() starts emitting from its threads.
+    sse_svc.bind_loop()
+
     # Initialize State Machine and Job Queue
     state_machine.set_job_queue(job_queue)
+    state_machine.set_sse(sse_svc)
+    if GPHOTO2_AVAILABLE:
+        # FIRE_SHOT capture completion returns to the FSM via callbacks,
+        # mirroring set_job_queue — the camera never imports the FSM.
+        state_machine.set_camera(camera_svc)
+        camera_svc.set_sse(sse_svc)
     job_queue.start()
 
     # Eagerly init camera
@@ -72,7 +82,6 @@ async def lifespan(app: FastAPI):
 
     def terminate_now(signum: int, frame: FrameType | None = None):
         log.info("system", "signal_shutdown", "Shutting down active streams via signal handler")
-        from backend.sse_service import sse_svc
         sse_svc.request_shutdown()
         if GPHOTO2_AVAILABLE:
             camera_svc.shutdown()
@@ -91,7 +100,6 @@ async def lifespan(app: FastAPI):
 
     # Clean shutdown (fallback for tests where signals aren't used)
     log.info("system", "system_shutdown", "Backend shutting down...")
-    from backend.sse_service import sse_svc
     sse_svc.request_shutdown()
     
     await job_queue.stop()

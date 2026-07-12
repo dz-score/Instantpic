@@ -22,7 +22,7 @@ Every important file in the project, grouped by layer. Use this as a quick-refer
 |---|---|
 | [`main.py`](backend/main.py) | FastAPI app entry point. Declares all HTTP/SSE routes, runs the startup lifespan (init camera, start job queue), and serves the built frontend as static files. |
 | [`state_machine.py`](backend/state_machine.py) | Pure event-driven FSM representing the booth's logical state (`BoothState`). Validates transitions, updates state, and broadcasts changes via SSE. Issues no hardware commands directly. |
-| [`job_queue.py`](backend/job_queue.py) | Async work queue that offloads CPU-bound photo processing to a thread pool, then calls back into the state machine when done. Also triggers circular storage cleanup after each job. |
+| [`job_queue.py`](backend/job_queue.py) | Async work queue that offloads blocking work (photo processing, printing) to a thread pool, then reports results through per-job `on_success`/`on_failure` callbacks supplied by the submitter — it never imports the state machine. Also triggers circular storage cleanup after each processing job. |
 | [`camera_service.py`](backend/camera_service.py) | gphoto2 wrapper managing a dedicated background worker thread for live MJPEG preview (decoupled frame buffer) and shutter capture, with auto-standby watchdog, exponential-backoff reconnection, and a retry-once policy for a failed high-res capture. |
 | [`mock_camera.py`](backend/mock_camera.py) | Drop-in replacement for `camera_service.py` that generates synthetic preview frames; used on Windows/dev when `camera_backend: "mock"` is set in config. |
 | [`photo_processor.py`](backend/photo_processor.py) | Composites captured images into a 1800×1200 px canvas using Pillow: arranges single/collage layouts, blends RGBA overlay PNGs, renders Playfair Display branding text, and saves as JPEG. |
@@ -89,7 +89,7 @@ Every important file in the project, grouped by layer. Use this as a quick-refer
 |---|---|
 | [`AttractScreen.jsx`](frontend/src/screens/AttractScreen.jsx) | Idle/attract loop: displays welcome message, language picker (EN/FR), and the "Start" button that fires `START_SESSION`. |
 | [`ChooseStyleScreen.jsx`](frontend/src/screens/ChooseStyleScreen.jsx) | Lets the guest pick Single photo or 3-photo Collage layout; fires `SELECT_LAYOUT` with the chosen mode. |
-| [`CountdownScreen.jsx`](frontend/src/screens/CountdownScreen.jsx) | Shows the live MJPEG camera preview, runs per-shot countdowns, triggers captures via `captureFrame()`, and reports each completed shot via `SHOT_CAPTURED`. Owns no retry, pacing, or completion logic (Rule 14) — the backend retries a failed capture once and drives round pacing/advancement via `shot_interval_ms`/`capturedCount`. |
+| [`CountdownScreen.jsx`](frontend/src/screens/CountdownScreen.jsx) | Shows the live MJPEG camera preview, runs per-shot countdowns, and fires each shot via the `FIRE_SHOT` event. Capture completion is backend-owned (camera->FSM callback); `camera_job` SSE events are presentation-only here (flash, thumbnail, failure overlay). Owns no retry, pacing, or completion logic (Rule 14) — the backend drives round advancement via `capturedCount`. |
 | [`RevealScreen.jsx`](frontend/src/screens/RevealScreen.jsx) | Displays the processed photo (or a spinner while `isProcessing`); offers Retake (up to limit) or Print actions. |
 | [`PickFavoriteScreen.jsx`](frontend/src/screens/PickFavoriteScreen.jsx) | Shows thumbnails of all photos from multi-retake sessions so the guest can choose their favourite before printing. |
 | [`FramePickerScreen.jsx`](frontend/src/screens/FramePickerScreen.jsx) | Presents available overlay frames side-by-side; fires `FRAME_SELECT` (with overlay id) or `FRAME_SKIP`. |
@@ -124,7 +124,7 @@ Every important file in the project, grouped by layer. Use this as a quick-refer
 | File | Responsibility |
 |---|---|
 | [`useSse.js`](frontend/src/hooks/useSse.js) | Opens and maintains the `EventSource` connection to `/api/sse`; parses `state_update`, `camera_status`, `config_update`, and `camera_job` events; auto-reconnects on error. |
-| [`useCamera.js`](frontend/src/hooks/useCamera.js) | Provides `previewUrl` (MJPEG stream), `captureFrame()`, `standbyPreview()`, and `resumePreview()` — thin wrappers over the camera REST endpoints. |
+| [`useCamera.js`](frontend/src/hooks/useCamera.js) | Provides `previewUrl` (MJPEG stream), `standbyPreview()`, and `resumePreview()` — thin wrappers over the camera REST endpoints. Capture is fired through the FSM (`FIRE_SHOT`), not here. |
 | [`useApi.js`](frontend/src/hooks/useApi.js) | Centralises REST writes/reads: exposes `sendEvent`, `saveConfig`, `getQrUrl`, `getDownloadUrl`, `getDiagnostics`, `emergencyAction`, `changePin`, `getRecentLogs`, and `fetchState` (config arrives via SSE, not here). |
 
 ### `frontend/src/utils/`

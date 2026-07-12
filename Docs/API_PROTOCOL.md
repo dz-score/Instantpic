@@ -37,7 +37,7 @@ ATTRACT
 CHOOSE_STYLE
   ↓ SELECT_LAYOUT
 COUNTDOWN
-  ↓ SHOT_CAPTURED (repeated until sequence complete)
+  ↓ FIRE_SHOT (per shot; completion returns via camera→FSM callback)
 REVEAL
   ├─ RETAKE → COUNTDOWN (cycle back)
   ├─ PRINT_FROM_REVEAL → PICK_FAVORITE (if multiple photos) OR FRAME_PICKER/PRINTING
@@ -113,21 +113,20 @@ Confirms the guest's layout choice. The backend calculates `totalShots` based on
 
 ---
 
-### SHOT_CAPTURED
+### FIRE_SHOT
 **Valid from:** `COUNTDOWN` only  
-**Payload:**
-- `filename` (string): Name of the captured image file (e.g., `"shot_001.jpg"`)
+**Payload:** `{}` (no data required)
 
-Informs the backend that one photo has been captured. The backend accumulates captured images until `totalShots` is reached, then automatically transitions to `REVEAL` and enqueues photo processing.
+Fires the shutter for one shot. The FSM (guarding one shot in flight) asks the camera service to capture; the camera worker delivers the terminal outcome straight back to the FSM via callbacks — `shot_completed(filename)` appends the shot, `shot_failed(error)` releases the guard. The browser never reports the shot: the `camera_job` SSE events (`fired`/`downloading`/`completed`/`failed`) are presentation-only (flash, thumbnail, retry overlay).
 
-**Important:** The backend owns the decision of when the capture sequence is complete. The UI must not assume the sequence is done until receiving a state update showing `screen: "REVEAL"`.
+The backend accumulates captured images until `totalShots` is reached, then automatically transitions to `REVEAL` and enqueues photo processing.
+
+**Important:** The backend owns the decision of when the capture sequence is complete. The UI must not assume the sequence is done until receiving a state update showing `screen: "REVEAL"`. A `FIRE_SHOT` while a capture is already in flight is ignored.
 
 ```json
 {
-  "type": "SHOT_CAPTURED",
-  "payload": {
-    "filename": "shot_001_captured.jpg"
-  }
+  "type": "FIRE_SHOT",
+  "payload": {}
 }
 ```
 
@@ -352,9 +351,7 @@ Contains the complete current application settings:
 
 ### Raw Capture (Backend-Owned)
 
-When the UI sends `SHOT_CAPTURED`, it includes a filename that the backend has already written to disk. The backend accepts this as authoritative and adds it to `capturedImages`.
-
-The UI does **not** upload the image data — the camera service writes directly to disk.
+The UI sends `FIRE_SHOT`; the camera service captures, writes the file to disk, and delivers the filename straight to the FSM via a completion callback. Filenames never pass through the browser, and the UI does **not** upload image data.
 
 ### Photo Processing (Async Job)
 
@@ -585,9 +582,10 @@ Admin PIN change. Requires the correct current PIN.
 
 6. UI starts countdown video from GET /api/camera/preview
    At T-0, UI sends: POST /api/events
-   { "type": "SHOT_CAPTURED", "payload": { "filename": "shot_001.jpg" } }
+   { "type": "FIRE_SHOT", "payload": {} }
 
-7. Backend processes → sees totalShots reached → 
+7. Camera captures; its completion callback hands the filename to the FSM,
+   which sees totalShots reached → 
    - Enqueues PROCESS_PHOTO job
    - Emits state_update: screen: "REVEAL", isProcessing: true
 
@@ -696,7 +694,7 @@ The guest can retry by retaking or selecting a different frame.
 
 4. **Config is global.** Changes to config are broadcast to all connected clients via SSE.
 
-5. **Filenames are absolute truth.** When the UI reports a filename in SHOT_CAPTURED, it is trusted as-is. No validation or transformation by the UI.
+5. **Filenames never pass through the UI.** Captured filenames travel camera → FSM via completion callbacks; the browser only ever *displays* them (from state and camera_job events).
 
 6. **Print status is backend-reported.** The UI never guesses whether a print succeeded. It waits for the backend's printStatus update.
 

@@ -36,8 +36,8 @@ def test_auth_change_pin_short(client):
 def test_request_isolation_concurrency(client, temp_workspace):
     """Fire 3 rapid requests sequentially (TestClient isn't thread-safe for async locking)."""
     payload = {
-        "type": "SHOT_CAPTURED",
-        "payload": {"filename": "capture_test.jpg"},
+        "type": "TIMEOUT",  # global event: valid from any state, no side effects
+        "payload": {},
     }
 
     results = []

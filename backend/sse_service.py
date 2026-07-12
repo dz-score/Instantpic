@@ -15,6 +15,13 @@ class SseService:
     def __init__(self):
         self._clients: list[SseClient] = []
         self._shutdown = False
+        self._loop: asyncio.AbstractEventLoop | None = None
+
+    def bind_loop(self):
+        """Capture the running event loop so dispatches coming from other
+        threads (camera worker/monitor) can be marshalled onto it. Called
+        once at startup, from the lifespan handler."""
+        self._loop = asyncio.get_running_loop()
 
     def setup_client(self, client: SseClient):
         self._clients.append(client)
@@ -36,6 +43,43 @@ class SseService:
             "data": json.dumps(data)
         }
 
+    def _enqueue(self, client: SseClient, payload: dict):
+        try:
+            client.queue.put_nowait(payload)
+        except asyncio.QueueFull:
+            # If a client is too slow, we might drop events.
+            # This usually means a stale connection.
+            pass
+
+    def _enqueue_all(self, payload: dict):
+        for client in self._clients:
+            self._enqueue(client, payload)
+
+    def _run_on_loop(self, fn, *args):
+        """Run `fn` on the event loop thread.
+
+        The client queues are asyncio.Queues, which are not thread-safe:
+        put_nowait() from a foreign thread can race the loop waking a
+        parked consumer. Callers (state machine, camera worker/monitor
+        threads) stay ignorant of threading — this boundary owns it.
+        """
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            pass
+        else:
+            # Already on the event loop thread — enqueue directly.
+            fn(*args)
+            return
+
+        loop = self._loop
+        if loop is None or loop.is_closed():
+            # Dispatched before startup bound a loop (the camera monitor
+            # thread starts at import time) or after shutdown — no client
+            # can be listening, so dropping is safe.
+            return
+        loop.call_soon_threadsafe(fn, *args)
+
     def send_to_client(self, client: SseClient, event_type: str, data: dict):
         """Send one event to a single client.
 
@@ -43,24 +87,13 @@ class SseService:
         config) so it arrives over the same resilient channel as state, without
         a separate REST pull.
         """
-        try:
-            client.queue.put_nowait(self._make_payload(event_type, data))
-        except asyncio.QueueFull:
-            pass
+        self._run_on_loop(self._enqueue, client, self._make_payload(event_type, data))
 
     def dispatch_event(self, event_type: str, data: dict):
         if not self._clients:
             return
 
-        payload = self._make_payload(event_type, data)
-
-        for client in self._clients:
-            try:
-                client.queue.put_nowait(payload)
-            except asyncio.QueueFull:
-                # If a client is too slow, we might drop events.
-                # This usually means a stale connection.
-                pass
+        self._run_on_loop(self._enqueue_all, self._make_payload(event_type, data))
 
     async def event_iterator(self, client: SseClient) -> AsyncGenerator[dict, None]:
         try:
