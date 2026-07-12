@@ -44,6 +44,9 @@ class StateMachine:
         self._state = BoothState()
         self._lock = None
         self._job_queue = None  # Injected later to avoid circular import
+        # Backstop for the frontend-couriered SHOT_CAPTURED hop; armed while
+        # the FSM sits in COUNTDOWN (see _manage_stall_watchdog).
+        self._stall_watchdog: Optional[asyncio.Task] = None
 
     def _get_lock(self):
         if self._lock is None:
@@ -178,9 +181,52 @@ class StateMachine:
                 log.warn("state_machine", "unknown_event", f"Unknown event type: {event_type}")
                 return
 
+            self._manage_stall_watchdog(settings)
             state_dict = self._state.model_dump()
 
         # Broadcast outside the lock to avoid blocking
+        await self.broadcast_state(state_dict)
+
+    def _manage_stall_watchdog(self, settings: AppSettings):
+        """(Re)arm or cancel the COUNTDOWN stall backstop. Runs under the
+        handler lock, after every state transition.
+
+        SHOT_CAPTURED reaches the FSM via the frontend (camera_job SSE event
+        -> POST /api/events). If that hop is lost, the photo sits on disk but
+        the session strands in COUNTDOWN with nothing backend-side to recover
+        it — the print flow has printStatus, sessions have TIMEOUT; this is
+        the same idiom for the capture sequence (Rule 14: recovery is
+        workflow and belongs here, not in the UI or camera_service).
+
+        Re-armed on every event that lands in COUNTDOWN, so each shot of a
+        multi-shot layout gets a fresh window; cancelled on any transition
+        elsewhere.
+        """
+        if self._stall_watchdog:
+            self._stall_watchdog.cancel()
+            self._stall_watchdog = None
+        if self._state.screen == "COUNTDOWN":
+            self._stall_watchdog = asyncio.create_task(
+                self._stall_watchdog_expire(
+                    settings.capture_stall_timeout,
+                    len(self._state.capturedImages),
+                )
+            )
+
+    async def _stall_watchdog_expire(self, timeout: float, armed_shots: int):
+        await asyncio.sleep(timeout)
+        async with self._get_lock():
+            # A shot may have landed while this task waited for the lock —
+            # only a session still in COUNTDOWN with no shot progress since
+            # arming is genuinely stalled.
+            if self._state.screen != "COUNTDOWN" or len(self._state.capturedImages) != armed_shots:
+                return
+            log.error("state_machine", "capture_stalled",
+                      f"No shot progress after {timeout}s in COUNTDOWN "
+                      f"({armed_shots}/{self._state.totalShots} shots) — resetting to ATTRACT")
+            self._state = BoothState(screen="ATTRACT")
+            self._stall_watchdog = None
+            state_dict = self._state.model_dump()
         await self.broadcast_state(state_dict)
 
     def _compose_banner_text(self, settings) -> str:

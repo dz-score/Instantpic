@@ -258,3 +258,73 @@ async def test_broadcast_payload_is_transition_snapshot(monkeypatch):
     # Second broadcast: the callback's completed state.
     assert payloads[1]["isProcessing"] is False
     assert payloads[1]["finalPhoto"] == "final.jpg"
+
+
+# --- COUNTDOWN stall watchdog (backend backstop for the frontend-couriered
+# SHOT_CAPTURED hop) ---
+
+STALL_SETTINGS = AppSettings(capture_stall_timeout=0.15)
+
+@pytest.mark.anyio
+async def test_stall_watchdog_resets_stranded_countdown(monkeypatch):
+    """A session stuck in COUNTDOWN with no shot progress must reset to
+    ATTRACT after capture_stall_timeout, and broadcast the reset."""
+    from backend import state_machine as sm_mod
+    sm = StateMachine()
+    sm.set_job_queue(MockQueue())
+
+    screens = []
+    monkeypatch.setattr(sm_mod.sse_svc, "dispatch_event",
+                        lambda event, data: screens.append(data["screen"]))
+
+    await sm.handle_event("START_SESSION", {}, STALL_SETTINGS)
+    await sm.handle_event("SELECT_LAYOUT", {"mode": "single"}, STALL_SETTINGS)
+    assert (await sm.get_state()).screen == "COUNTDOWN"
+
+    await asyncio.sleep(0.4)
+
+    state = await sm.get_state()
+    assert state.screen == "ATTRACT"
+    assert screens[-1] == "ATTRACT"  # the reset was broadcast to clients
+
+@pytest.mark.anyio
+async def test_stall_watchdog_rearms_per_shot():
+    """Each shot of a multi-shot layout gets a fresh stall window — progress
+    mid-sequence must not trip the watchdog, silence after it must."""
+    settings = AppSettings(capture_stall_timeout=0.4)
+    sm = StateMachine()
+    sm.set_job_queue(MockQueue())
+
+    await sm.handle_event("START_SESSION", {}, settings)
+    await sm.handle_event("SELECT_LAYOUT", {"mode": "collage"}, settings)
+
+    # Shot 1 arrives inside the first window -> re-arms the watchdog.
+    await asyncio.sleep(0.25)
+    await sm.handle_event("SHOT_CAPTURED", {"filename": "raw1.jpg"}, settings)
+
+    # Past the ORIGINAL window (0.25+0.25 > 0.4) but inside the re-armed one.
+    await asyncio.sleep(0.25)
+    state = await sm.get_state()
+    assert state.screen == "COUNTDOWN"
+    assert state.capturedImages == ["raw1.jpg"]
+
+    # Now go silent past the re-armed window -> genuinely stalled.
+    await asyncio.sleep(0.6)
+    assert (await sm.get_state()).screen == "ATTRACT"
+
+@pytest.mark.anyio
+async def test_stall_watchdog_cancelled_on_leaving_countdown():
+    """Completing the sequence (-> REVEAL) must cancel the watchdog — no
+    spurious reset later."""
+    sm = StateMachine()
+    sm.set_job_queue(MockQueue())
+
+    await sm.handle_event("START_SESSION", {}, STALL_SETTINGS)
+    await sm.handle_event("SELECT_LAYOUT", {"mode": "single"}, STALL_SETTINGS)
+    await sm.handle_event("SHOT_CAPTURED", {"filename": "raw1.jpg"}, STALL_SETTINGS)
+
+    assert (await sm.get_state()).screen == "REVEAL"
+    assert sm._stall_watchdog is None
+
+    await asyncio.sleep(0.4)  # well past the stall timeout
+    assert (await sm.get_state()).screen == "REVEAL"
