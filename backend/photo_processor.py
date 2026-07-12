@@ -1,6 +1,5 @@
 import os
 import base64
-import urllib.request
 from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 from backend.config import load_settings
@@ -8,24 +7,17 @@ from backend.config import load_settings
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PHOTOS_DIR = os.path.join(BASE_DIR, "backend", "photos")
 OVERLAYS_DIR = os.path.join(BASE_DIR, "backend", "overlays")
+# Playfair Display is bundled with the app (committed alongside this module).
+# The booth must run fully offline (no venue internet / captive portals), so
+# the font is NEVER fetched at runtime — a missing file falls back to PIL's
+# built-in default rather than blocking the job worker on a network call.
 FONT_PATH = os.path.join(BASE_DIR, "backend", "PlayfairDisplay-Regular.ttf")
 
-# Default Google Font URL to download if missing
-FONT_URL = "https://raw.githubusercontent.com/technext/cozastore/master/fonts/PlayfairDisplay/PlayfairDisplay-Regular.ttf"
-
-def ensure_font():
-    """Download Playfair Display font if it doesn't exist locally."""
-    if not os.path.exists(FONT_PATH):
-        try:
-            print("Downloading Playfair Display font from Google Fonts...")
-            urllib.request.urlretrieve(FONT_URL, FONT_PATH)
-            print("Font downloaded successfully.")
-        except Exception as e:
-            print(f"Failed to download font: {e}. Will fallback to system default.")
-
 def get_font(size: int):
-    """Get the downloaded font or fallback to default."""
-    ensure_font()
+    """Load the bundled Playfair Display font, or fall back to PIL's default.
+
+    Never touches the network: the font ships with the app so photo
+    processing works with no external connection."""
     if os.path.exists(FONT_PATH):
         try:
             return ImageFont.truetype(FONT_PATH, size)
