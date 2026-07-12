@@ -91,6 +91,7 @@ The backend **serves the frontend** as static files (`/frontend/dist/`). There i
 ### `main.py` lifespan (startup)
 ```python
 ensure_directories()          # photos/ and overlays/
+sse_svc.bind_loop()           # bind event loop so camera threads can dispatch SSE safely
 state_machine.set_job_queue() # inject job_queue into state machine
 job_queue.start()             # launch asyncio worker task
 camera_svc.init()             # connect to gphoto2 camera
@@ -145,6 +146,7 @@ finalPhoto: Optional[str]          # Filename of processed photo
 retakeCount: int                   # Number of retakes this session
 allSessionPhotos: List[Dict]       # All processed photos this session
 isProcessing: bool                 # True while job_queue is processing
+printStatus: str                   # "idle" | "printing" | "printed" | "failed" — real printer outcome, FSM-owned
 ```
 
 **Valid transitions:**
@@ -161,17 +163,20 @@ PRINTING      -> [FINISH, ANOTHER]
 Global events (from any state): TIMEOUT, FINISH
 ```
 
-**Job queue callbacks** (called by `job_queue.py` when async work completes):
+**Job completion callbacks** — the FSM supplies these as `on_success`/`on_failure` when it enqueues a job; the queue invokes them blindly and knows nothing about the FSM:
 - `job_photo_processed(filename, images)` -> updates `finalPhoto`, sets `isProcessing=False`
 - `job_frame_processed(filename)` -> moves to `PRINTING` screen
 - `job_failed(error)` -> clears `isProcessing`
+- `job_print_done(filename)` / `job_print_failed(error)` -> set `printStatus` to the real printer outcome
 
-Each state change broadcasts via `sse_svc.dispatch_event("state_update", ...)`.
+Each state change broadcasts via `sse_svc.dispatch_event("state_update", ...)`. The broadcast payload is a snapshot taken under the handler lock, so concurrent job callbacks can never leak later mutations into an earlier broadcast.
+
+**COUNTDOWN stall watchdog:** `SHOT_CAPTURED` is couriered by the frontend (the `camera_job` SSE event triggers `POST /api/events`); if that hop is lost, the photo sits on disk but the session would strand in COUNTDOWN. The FSM arms a watchdog whenever a transition lands in COUNTDOWN, re-arms it on every shot (each shot of a multi-shot layout gets a fresh window), and cancels it on any transition elsewhere. On expiry with no shot progress it resets to ATTRACT and broadcasts. Window: `capture_stall_timeout` (config, default 75s). Same backend-owned recovery idiom as `TIMEOUT` and `printStatus` (Rule 14) — recovery never lives in the UI or `camera_service`.
 
 ---
 
 ### `job_queue.py` — Async Work Queue
-**Responsibility:** Offloads CPU-bound image processing from the asyncio event loop to a thread pool, then calls back into the state machine.
+**Responsibility:** Offloads blocking work (CPU-bound image processing, shelling out to CUPS) from the asyncio event loop to a thread pool, then reports the result through per-job `on_success`/`on_failure` coroutines supplied by the submitter. The queue does not know or import whoever consumes the results — the submitter owns that wiring.
 
 **Architecture:**
 ```
@@ -179,16 +184,21 @@ asyncio.Queue -> _worker() task
                     |
                     +-- PROCESS_PHOTO / PROCESS_FRAME
                     |     +-- loop.run_in_executor(process_photo_layout)
-                    |           +-- state_machine.job_photo_processed()
-                    |               state_machine.job_frame_processed()
+                    |           +-- await on_success(filename)   # supplied by submitter
+                    |               await on_failure(error)
                     |
-                    +-- After each job: asyncio.create_task(_run_cleanup())
-                                           +-- enforce_circular_storage()
+                    +-- PRINT_PHOTO
+                    |     +-- loop.run_in_executor(print_svc.print)
+                    |           +-- await on_success / on_failure with the real outcome
+                    |
+                    +-- After each processing job: asyncio.create_task(_run_cleanup())
+                                                      +-- enforce_circular_storage()
 ```
 
 **Job types:**
 - `PROCESS_PHOTO` — initial capture processing; result goes to `REVEAL` screen
 - `PROCESS_FRAME` — frame re-processing after user picks an overlay; result goes to `PRINTING`
+- `PRINT_PHOTO` — sends the final photo to `print_svc` and reports the real success/failure back to the submitter (the FSM projects it as `printStatus`)
 
 ---
 
@@ -216,7 +226,7 @@ asyncio.Queue -> _worker() task
          | SSE events
 +------------------------------------------+
 |  _diagnostic_monitor (camera-monitor)   |
-|  Periodically dispatches camera_status  |
+|  Dispatches camera_metrics every ~1s    |
 +------------------------------------------+
 ```
 
@@ -282,23 +292,38 @@ PrintService (singleton print_svc)
 SseService (singleton sse_svc)
    _clients: List[SseClient]          <- one per browser tab
 
-   dispatch_event(event_type, data)   <- called by any module
-     +-- put_nowait() into each client's asyncio.Queue(maxsize=100)
-         (drops silently if queue full -- stale connections)
+   bind_loop()                        <- called once at startup (lifespan)
+     captures the event loop for cross-thread dispatch
+
+   dispatch_event(event_type, data)   <- callable from ANY thread
+     +-- on the event loop: put_nowait() into each client's
+     |   asyncio.Queue(maxsize=100) directly
+     +-- from a foreign thread (camera worker/monitor):
+     |   marshalled via loop.call_soon_threadsafe()
+     +-- before the loop is bound (import-time threads): dropped —
+     |   nothing can be listening yet
+     (drops silently if a client queue is full -- stale connections)
+
+   send_to_client(client, ...)        <- seed one client (config on connect);
+                                          same thread-safety contract
 
    event_iterator(client)             <- async generator for EventSourceResponse
      +-- pops from client queue, yields SSE payloads
          auto-removes client on disconnect or shutdown
 ```
 
+**Thread-safety contract:** client queues are `asyncio.Queue`s, which are not thread-safe. `SseService` owns the marshalling — callers never need to know which thread they're on. This matters because `camera_service` dispatches from its worker and monitor threads.
+
 **Events emitted:**
 
 | Event | Emitted by | Content |
 |---|---|---|
-| `state_update` | `state_machine.py` | Full `BoothState` dict |
-| `camera_status` | `camera_service.py` (monitor) | `{connected, is_capturing, error, ...}` |
-| `camera_job` | `camera_service.py` | `{job_id, status, filename?, error?}` — status: `started`/`fired`/`downloading`/`completed`/`failed`, one or more per capture (retried attempts re-emit `fired`) |
+| `state_update` | `state_machine.py` | Full `BoothState` dict (snapshot taken under the FSM handler lock) |
+| `camera_status` | `camera_service.py` | `{connected, is_capturing, error}` on connect/disconnect/standby/resume |
+| `camera_metrics` | `camera_service.py` (monitor thread, ~1s) | `{fps, latency_ms, time_since_last_frame_ms, connected, ...}` |
+| `camera_job` | `camera_service.py` (worker thread) | `{job_id, status, filename?, error?}` — status: `started`/`fired`/`downloading`/`completed`/`failed`, one or more per capture (retried attempts re-emit `fired`) |
 | `printer_status` | `print_service.py` | `{connected, ready, status_text}` |
+| `config_update` | `main.py` | Full `AppSettings` dict — broadcast on `POST /api/config` / PIN change, and seeded per-client on every SSE (re)connect |
 
 ---
 
@@ -329,6 +354,7 @@ SseService (singleton sse_svc)
 | `shot_interval_ms` | `3000` | Pacing (ms) between shots in a multi-shot layout — backend-owned per Rule 14 |
 | `max_photos_per_session` | `3` | Retake limit |
 | `session_timeout` | `120` | Inactivity timeout (seconds) |
+| `capture_stall_timeout` | `75.0` | Seconds without shot progress in COUNTDOWN before the FSM's stall watchdog resets to ATTRACT |
 | `printer_name` | `"mock"` | CUPS queue name |
 | `max_photos` | `1000` | Circular storage photo limit |
 | `disk_min_free_gb` | `2.0` | Circular storage disk limit |
@@ -652,10 +678,14 @@ The SSE channel at `GET /api/sse` is the **backbone** of the frontend-backend co
 Backend Module          Event Type          Triggered When
 ----------------------------------------------------------
 state_machine.py   ->   state_update      -> Any FSM transition
-camera_service.py  ->   camera_status     -> Periodic monitor (~5s)
+camera_service.py  ->   camera_status     -> Connect/disconnect/standby/resume
+camera_service.py  ->   camera_metrics    -> Periodic monitor thread (~1s)
 camera_service.py  ->   camera_job        -> Per capture, granular: started/fired/downloading/completed/failed
 print_service.py   ->   printer_status    -> On print attempt
+main.py            ->   config_update     -> Config/PIN change; also seeded per-client on every SSE (re)connect
 ```
+
+Dispatch is thread-safe: `sse_svc.bind_loop()` runs at startup, and events emitted from camera threads are marshalled onto the event loop by `SseService` itself (see [sse_service.py](#sse_servicepy--server-sent-events)).
 
 **Reconnection:** `useSse.js` auto-reconnects after 3 seconds on error. On reconnect, the frontend also calls `GET /api/state` to catch up on missed state.
 
@@ -699,8 +729,8 @@ HTTP POST           |  resume_preview()         |
                     |      STANDBY -> sleep     |
                     |                           |
   [Thread: camera-monitor]                      |
-                    |  Every 5s: get_status()   |
-                    |  dispatch camera_status   |
+                    |  Every 1s: fps/latency    |
+                    |  dispatch camera_metrics  |
                     +---------------------------+
 ```
 
@@ -898,21 +928,24 @@ main.py
   +-- storage.py         <- config.py
   +-- logger.py          (no backend imports)
   +-- sse_service.py     <- logger.py
-  +-- state_machine.py   <- logger.py, sse_service.py
+  +-- state_machine.py   <- logger.py, sse_service.py, config.py
   +-- job_queue.py       <- logger.py, photo_processor.py,
-  |                         storage.py, state_machine.py
+  |                         storage.py, print_service.py
   +-- camera_service.py  <- logger.py, storage.py, sse_service.py
   +-- mock_camera.py     <- logger.py, storage.py, sse_service.py
   +-- photo_processor.py <- config.py
   +-- print_service.py   <- config.py, logger.py
   +-- diagnostics.py     <- config.py, print_service.py
 
-Circular import avoidance:
-  state_machine <- job_queue (job_queue imports state_machine)
-  job_queue injected into state_machine at startup via set_job_queue()
-  -> breaks the cycle at definition time
+state_machine <-> job_queue wiring (no import in either direction beyond
+the above): main.py injects the queue into the FSM at startup via
+set_job_queue(). The FSM enqueues jobs carrying its own bound methods as
+on_success/on_failure callbacks; the queue invokes them blindly and
+never imports the state machine. camera_service is fully ignorant of
+both — captures reach the FSM as SHOT_CAPTURED events couriered by the
+frontend, with the FSM's COUNTDOWN stall watchdog as the backstop.
 ```
 
 ---
 
-*Generated: 2026-06-29*
+*Generated: 2026-06-29 · Updated: 2026-07-12 (SSE thread-safety, snapshot broadcasts, COUNTDOWN stall watchdog, corrected job_queue/state_machine dependency map)*
