@@ -116,6 +116,10 @@ export default function CountdownScreen({
 
   const pendingTimeouts = useRef([]);
   const timerRef = useRef(null);
+  // The current round's completion callback (fireShutter). Held in a ref so the
+  // tick — which is started from the video's 'playing' event, not from
+  // runCountdown's closure — can read it without going stale.
+  const onDoneRef = useRef(null);
   const countdownVideoRef = useRef(null);
   // Last camera_job event already handled (`${job_id}:${status}`) so an SSE
   // re-delivery can't double-fire the flash or the failure overlay.
@@ -223,36 +227,16 @@ export default function CountdownScreen({
     }
   }, [cameraJob, flashEnabled, safeTimeout]);
 
-  // Run a single countdown round
-  const runCountdown = useCallback((onDone) => {
-    setPhase('COUNTDOWN');
-    setCountdownVideoDone(false);
-    countdownVideoDoneRef.current = false;
-    pendingFlashRef.current = null;
+  // Advance the numeric countdown, one tick at a time. Started from the video's
+  // own 'playing' event (see runCountdown), NOT in parallel with play(), so the
+  // numbers and the ring animation run off a single clock. The guard on timerRef
+  // means the 'playing' event and the safety-net fallback in runCountdown can't
+  // both start it; onDoneRef carries the round's completion callback because this
+  // runs as a bare event handler with no closure over the round.
+  const startTick = useCallback(() => {
+    if (timerRef.current) return;   // already ticking this round
     let c = COUNTDOWN_FROM;
     setCount(c);
-
-    // Start the ring. handleCountdownVideoDone already parked it on ringStartTime
-    // when the last round ended, so it is normally sitting on the right frame
-    // and needs no seek at all — in which case NO 'seeked' event will fire, and
-    // gating visibility on that event would hide the ring for the whole fallback.
-    // So: if it is already parked, show it immediately; only gate when we
-    // genuinely have to seek (first round after mount, or a config change).
-    const v = countdownVideoRef.current;
-    if (v) {
-      v.playbackRate = COUNTDOWN_SPEED;
-      if (Math.abs(v.currentTime - ringStartTime) < 0.05) {
-        setRingSeeked(true);
-      } else {
-        setRingSeeked(false);
-        v.currentTime = ringStartTime;   // async — onSeeked reveals the ring
-        safeTimeout(() => setRingSeeked(true), 400);  // ...or this does, if it never fires
-      }
-      v.play().catch(err =>
-        logger.warn('countdown', 'countdown_video_play_fail', 'Countdown ring video failed to play', { error: err.message })
-      );
-    }
-
     timerRef.current = setInterval(() => {
       c -= 0.25;
       if (c > 0) {
@@ -270,11 +254,61 @@ export default function CountdownScreen({
         // whether the next shot lands inside the M50's healthy live-view
         // window (~6s after the previous capture).
         clearInterval(timerRef.current);
+        timerRef.current = null;
         setPhase('POSING');
-        onDone();
+        const onDone = onDoneRef.current;
+        onDoneRef.current = null;
+        if (onDone) onDone();
       }
     }, TICK_MS);
-  }, [COUNTDOWN_FROM, COUNTDOWN_SPEED, TICK_MS, ringStartTime, safeTimeout]);
+  }, [COUNTDOWN_FROM, TICK_MS]);
+
+  // Run a single countdown round.
+  const runCountdown = useCallback((onDone) => {
+    setPhase('COUNTDOWN');
+    setCountdownVideoDone(false);
+    countdownVideoDoneRef.current = false;
+    pendingFlashRef.current = null;
+    onDoneRef.current = onDone;
+    // Drop any stale interval so startTick's guard reflects this round only.
+    clearInterval(timerRef.current);
+    timerRef.current = null;
+    setCount(COUNTDOWN_FROM);
+
+    // Start the ring. handleCountdownVideoDone already parked it on ringStartTime
+    // when the last round ended, so it is normally sitting on the right frame
+    // and needs no seek at all — in which case NO 'seeked' event will fire, and
+    // gating visibility on that event would hide the ring for the whole fallback.
+    // So: if it is already parked, show it immediately; only gate when we
+    // genuinely have to seek (first round after mount, or a config change).
+    const v = countdownVideoRef.current;
+    if (v) {
+      v.playbackRate = COUNTDOWN_SPEED;
+      if (Math.abs(v.currentTime - ringStartTime) < 0.05) {
+        setRingSeeked(true);
+      } else {
+        setRingSeeked(false);
+        v.currentTime = ringStartTime;   // async — onSeeked reveals the ring
+        safeTimeout(() => setRingSeeked(true), 400);  // ...or this does, if it never fires
+      }
+      // The numeric tick starts from the video's 'playing' event (onPlaying),
+      // not here, so both begin on the same real instant. The first play() of a
+      // session pays a decode/seek cost of tens-to-hundreds of ms; starting the
+      // tick in parallel let that latency desync the two, leaving the ring on
+      // "1" while POSING/"Smile" (and the deferred shutter flash) came up over
+      // it — the reported first-shot overlap. The 500ms fallback re-arms the
+      // tick if 'playing' never fires (missing/broken video) so capture can't
+      // stall waiting on a ring that will never play.
+      v.play().catch(err => {
+        logger.warn('countdown', 'countdown_video_play_fail', 'Countdown ring video failed to play', { error: err.message });
+        startTick();   // playback won't happen — run the numbers on their own
+      });
+      safeTimeout(startTick, 500);
+    } else {
+      // No video element at all — run the numbers on the JS clock alone.
+      startTick();
+    }
+  }, [COUNTDOWN_SPEED, ringStartTime, safeTimeout, startTick]);
 
   // Fire the shutter for one shot via the FSM (FIRE_SHOT). Everything after
   // this is backend-owned: the camera reports completion straight to the FSM,
@@ -447,12 +481,17 @@ export default function CountdownScreen({
         )}
 
         {/* Countdown video - always mounted for performance, toggled via opacity.
-            Visibility follows the video's own playback (onEnded), not `phase` —
-            standby/capture run on a fixed hardware schedule that shouldn't cut
-            the ring's animation short. z-index keeps it below the flash (100). */}
+            Shown only while phase === COUNTDOWN: the numbers and the ring now
+            share one clock (the tick starts from the video's own 'playing'
+            event), so the ring reaches its end just as the tick completes. The
+            phase gate is the hard guarantee on top of that timing — the instant
+            the count hits zero and phase flips to POSING, the ring is hidden, so
+            it is structurally impossible for it to paint over "Smile"/the flash
+            even if onEnded is late or dropped. z-index keeps it below the flash
+            (100). */}
         <div
           className="countdown-center"
-          style={{ opacity: !countdownVideoDone && ringSeeked ? 1 : 0, transition: 'opacity 0.2s' }}
+          style={{ opacity: phase === 'COUNTDOWN' && !countdownVideoDone && ringSeeked ? 1 : 0, transition: 'opacity 0.2s' }}
         >
           <video
             ref={countdownVideoRef}
@@ -462,6 +501,7 @@ export default function CountdownScreen({
             preload="auto"
             className="countdown-ring-video"
             onLoadedMetadata={parkRing}
+            onPlaying={startTick}
             onSeeked={() => setRingSeeked(true)}
             onEnded={handleCountdownVideoDone}
             onError={handleCountdownVideoDone}
