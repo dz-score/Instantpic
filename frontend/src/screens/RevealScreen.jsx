@@ -1,8 +1,7 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import ScreenShell from '../components/ScreenShell';
 import PhotoFrame from '../components/PhotoFrame';
 import ConfettiOverlay from '../components/ConfettiOverlay';
-import { getRandomCompliment } from '../utils/compliments';
 import { t } from '../utils/i18n';
 import useTapGuard from '../hooks/useTapGuard';
 import { RotateCcw, Heart, Home } from 'lucide-react';
@@ -33,7 +32,6 @@ export default function RevealScreen({
   onCancel,
   language,
 }) {
-  const compliment = useMemo(() => getRandomCompliment(language), [finalPhoto, language]);
   const [showPhoto, setShowPhoto] = useState(false);
   const [guard, armed] = useTapGuard();
   const cacheKey = useRef(Date.now());
@@ -64,18 +62,7 @@ export default function RevealScreen({
         /* ── Photo Reveal ── */
         <div className={`reveal-content ${showPhoto ? 'reveal-content--visible' : ''}`}>
 
-          {/* Flourish */}
-          <div className="reveal-flourish" aria-hidden="true">
-            <span className="reveal-flourish__hearts">♡♡</span>
-            <div className="reveal-flourish__line">
-              <span className="reveal-flourish__curl">❧</span>
-              <span className="reveal-flourish__dash" />
-              <span className="reveal-flourish__curl reveal-flourish__curl--flip">❧</span>
-            </div>
-          </div>
-
           {/* Heading */}
-          <p className="reveal-kicker">{t('reveal.kicker', language)}</p>
           <h1 className="reveal-title">{t('reveal.title', language)}</h1>
 
           {/* Photo */}
@@ -87,9 +74,6 @@ export default function RevealScreen({
               className="photo-frame--reveal"
             />
           </div>
-
-          {/* Compliment */}
-          <p className="reveal-compliment">{compliment}</p>
 
           {/* Actions */}
           <div className="reveal-actions">

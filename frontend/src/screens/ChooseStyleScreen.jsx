@@ -13,18 +13,7 @@ export default function ChooseStyleScreen({ onSelect, onBack, language }) {
   return (
     <ScreenShell className="choose-screen">
 
-      {/* ── Decorative top flourish ── */}
-      <div className="choose-flourish" aria-hidden="true">
-        <span className="choose-flourish__hearts">♡</span>
-        <div className="choose-flourish__line">
-          <span className="choose-flourish__curl">❧</span>
-          <span className="choose-flourish__dash" />
-          <span className="choose-flourish__curl choose-flourish__curl--flip">❧</span>
-        </div>
-      </div>
-
       {/* ── Heading ── */}
-      <p className="choose-kicker">{t('chooseStyle.kicker', language)}</p>
       <h1 className="choose-title">{t('chooseStyle.title', language)}</h1>
       <span className="choose-title__heart" aria-hidden="true">♥</span>
 
