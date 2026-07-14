@@ -82,14 +82,17 @@ class CameraService:
         self._last_frame_time = time.perf_counter()
         self._last_cap_time = 0
         self._monitor_thread = None
-        
+
         # Route libgphoto2 logs to Python's logging
         import logging
         gp_logger = logging.getLogger("gphoto2")
         gp_logger.setLevel(logging.DEBUG)
-        
-        # Start diagnostic monitor
-        self._start_monitor()
+
+        # The diagnostic monitor is NOT started here. Constructing a service must not
+        # start a thread (Rule 19): an object that spawns a thread on construction
+        # cannot be built, inspected or dropped without also being shut down. It
+        # starts in init(), alongside the camera it reports on, and stops in
+        # shutdown() via _shutdown_event.
 
     def _start_monitor(self):
         if self._monitor_thread and self._monitor_thread.is_alive():
@@ -119,6 +122,10 @@ class CameraService:
             })
 
     def init(self):
+        # Idempotent (guarded in _start_monitor), which matters because the worker's
+        # heal path re-enters init() on a wedged camera.
+        self._start_monitor()
+
         with self.lock:
             # Prevent double-initialization race conditions
             if self.connected:
