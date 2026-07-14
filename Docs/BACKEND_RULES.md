@@ -318,17 +318,44 @@ one.
 
 ### Rule 21: Configuration Has One In-Memory Authority
 
-Configuration is loaded from disk once and cached. Writes invalidate the cache.
+Configuration is loaded from disk once and held in memory. Memory is the source
+of truth; the file is where it is persisted. Writes go through the authority,
+which updates memory and flushes to disk.
 
 Forbidden:
 
 * re-reading and re-parsing the config file per request, per event, or per
   operation
-* threading a settings object through four call layers as a parameter because
-  no layer is allowed to ask for it
+* a second path to the values that bypasses the authority — keep the disk read
+  private so no call site can reach past it by accident
 
 Cost is not the reason. The reason is that a value re-derived at every call site
-has no single authority, and no place to change how it is obtained.
+has no single authority, no place to change how it is obtained, and nowhere to
+put a lock — a read-modify-write against the file races two concurrent writers
+into a lost update.
+
+#### Passing config down is not a violation — re-deriving it is
+
+There are two reasons a settings object travels as a parameter, and only one of
+them is the smell:
+
+* **Accidental** — it is threaded through layers *because no layer is allowed to
+  ask for it*. That is the missing authority, and it is what this rule forbids.
+* **Deliberate** — a long-running operation takes a **snapshot** at entry and
+  works from it for its whole duration, so a mid-flight config change cannot
+  alter behaviour halfway through. That is a feature, and this rule requires it.
+
+Required, for any operation that spans multiple steps or outlives the request
+that started it (a capture sequence, a print run, a session):
+
+* the operation reads config **once, at entry**, and passes that snapshot down
+* the authority **rebinds** its cached object on write rather than mutating it in
+  place, so every in-flight holder keeps the snapshot it started with
+* re-reading the authority at each step of such an operation is a bug: an admin
+  save mid-sequence would retime or reconfigure a session already underway
+
+Immutability is what makes this safe. A settings object handed to a running
+operation must never be mutated by a later write.
 
 ---
 
