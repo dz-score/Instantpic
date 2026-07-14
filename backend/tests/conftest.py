@@ -34,12 +34,11 @@ def temp_workspace(tmp_path, monkeypatch):
     import backend.photo_processor as photo_processor
     monkeypatch.setattr(photo_processor, "PHOTOS_DIR", str(photos_dir))
     monkeypatch.setattr(photo_processor, "OVERLAYS_DIR", str(overlays_dir))
-    
-    # Patch main module
-    import backend.main as main_mod
-    monkeypatch.setattr(main_mod, "PHOTOS_DIR", str(photos_dir))
-    monkeypatch.setattr(main_mod, "OVERLAYS_DIR", str(overlays_dir))
-    
+
+    # The photos router reads storage.PHOTOS_DIR at call time, so patching the
+    # storage module above already redirects /download. main.py only touches
+    # PHOTOS_DIR at import (StaticFiles mounts), which no fixture can reach.
+
     return {
         "photos_dir": str(photos_dir),
         "overlays_dir": str(overlays_dir)

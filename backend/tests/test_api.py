@@ -76,14 +76,24 @@ def test_diagnostics(client):
 
 def test_camera_capture(client, mocker):
     """Test enqueuing a camera capture."""
-    mocker.patch("backend.main.GPHOTO2_AVAILABLE", True)
-    mock_svc = mocker.patch("backend.main.camera_svc", create=True)
+    mock_svc = mocker.patch("backend.camera_provider.camera_svc")
     mock_svc.enqueue_capture.return_value = "1234abcd"
-    
+
     response = client.post("/api/camera/capture")
     assert response.status_code == 200
     assert response.json()["status"] == "enqueued"
     assert response.json()["job_id"] == "1234abcd"
+
+
+def test_camera_route_501_without_backend(client, mocker):
+    """With no camera backend, the camera routes 501 rather than crashing."""
+    mocker.patch("backend.camera_provider.camera_svc", None)
+
+    assert client.post("/api/camera/capture").status_code == 501
+    # ...but status still answers, reporting the camera as disconnected.
+    resp = client.get("/api/camera/status")
+    assert resp.status_code == 200
+    assert resp.json()["connected"] is False
 
 
 def test_lifespan_startup_and_shutdown(temp_workspace, temp_config):

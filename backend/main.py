@@ -1,53 +1,24 @@
 import os
-import shutil
-import anyio.to_thread
-from io import BytesIO
-import qrcode
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
-from pydantic import BaseModel, Field
-from typing import List, Optional, Literal
-from contextlib import asynccontextmanager
-
-from backend.config import load_settings, update_settings, AppSettings
-from backend.storage import (
-    ensure_directories,
-    get_all_photos,
-    enforce_circular_storage,
-    PHOTOS_DIR,
-    OVERLAYS_DIR,
-    BASE_DIR
-)
-from backend.photo_processor import process_photo_layout
-from backend.print_service import print_svc
-from backend.sse_service import sse_svc, SseClient
-from backend.logger import log
-from sse_starlette.sse import EventSourceResponse
-
-from backend.state_machine import state_machine
-from backend.job_queue import job_queue
-
-# Load settings to know which camera backend to use
-settings = load_settings()
-
-if settings.camera_backend == "mock":
-    from backend.mock_camera import MockCameraService
-    camera_svc = MockCameraService()
-    GPHOTO2_AVAILABLE = True # Pretend it's available for mock
-else:
-    try:
-        from backend.camera_service import camera_svc
-        import gphoto2 as gp
-        GPHOTO2_AVAILABLE = True
-    except ImportError:
-        GPHOTO2_AVAILABLE = False
-        log.warn("system", "camera_import_failed", "python-gphoto2 not installed. Camera functions will return errors.")
-
 import signal
 import threading
+from contextlib import asynccontextmanager
 from types import FrameType
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, JSONResponse
+
+from backend.storage import ensure_directories, PHOTOS_DIR, OVERLAYS_DIR, BASE_DIR
+from backend.print_service import print_svc
+from backend.sse_service import sse_svc
+from backend.logger import log
+from backend.state_machine import state_machine
+from backend.job_queue import job_queue
+from backend.camera_provider import get_camera
+
+from backend.routers import booth, camera, config, logs, photos, sse, system
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -57,6 +28,8 @@ async def lifespan(app: FastAPI):
     # Log startup
     log.info("system", "system_boot", f"Backend started", data={"version": "1.0.0"})
 
+    camera_svc = get_camera()
+
     # Bind the event loop so camera threads can dispatch SSE events safely.
     # Must happen before camera_svc.init() starts emitting from its threads.
     sse_svc.bind_loop()
@@ -64,7 +37,7 @@ async def lifespan(app: FastAPI):
     # Initialize State Machine and Job Queue
     state_machine.set_job_queue(job_queue)
     state_machine.set_sse(sse_svc)
-    if GPHOTO2_AVAILABLE:
+    if camera_svc:
         # FIRE_SHOT capture completion returns to the FSM via callbacks,
         # mirroring set_job_queue — the camera never imports the FSM.
         state_machine.set_camera(camera_svc)
@@ -72,7 +45,7 @@ async def lifespan(app: FastAPI):
     job_queue.start()
 
     # Eagerly init camera
-    if GPHOTO2_AVAILABLE:
+    if camera_svc:
         camera_svc.init()
 
     # Workaround for Uvicorn hanging on shutdown due to active streaming responses
@@ -83,7 +56,7 @@ async def lifespan(app: FastAPI):
     def terminate_now(signum: int, frame: FrameType | None = None):
         log.info("system", "signal_shutdown", "Shutting down active streams via signal handler")
         sse_svc.request_shutdown()
-        if GPHOTO2_AVAILABLE:
+        if camera_svc:
             camera_svc.shutdown()
         print_svc.shutdown()
 
@@ -101,10 +74,10 @@ async def lifespan(app: FastAPI):
     # Clean shutdown (fallback for tests where signals aren't used)
     log.info("system", "system_shutdown", "Backend shutting down...")
     sse_svc.request_shutdown()
-    
+
     await job_queue.stop()
 
-    if GPHOTO2_AVAILABLE:
+    if camera_svc:
         camera_svc.shutdown()
     print_svc.shutdown()
 
@@ -120,315 +93,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Request schemas
-class ConfigUpdateRequest(BaseModel):
-    printer_name: Optional[str] = None
-    max_photos: Optional[int] = None
-    disk_min_free_gb: Optional[float] = None
-    couple_names: Optional[str] = None
-    event_date: Optional[str] = None
-    default_text: Optional[str] = None
-    selected_overlay: Optional[str] = None
-    welcome_message: Optional[str] = None
-    thank_you_message: Optional[str] = None
-    countdown_duration: Optional[int] = None
-    flash_enabled: Optional[bool] = None
-    max_photos_per_session: Optional[int] = None
-    session_timeout: Optional[int] = None
-    show_names_on_photo: Optional[bool] = None
-    wifi_network_name: Optional[str] = None
-
-class SavePhotoRequest(BaseModel):
-    images: List[str]  # Base64 data URIs OR filenames generated by backend capture
-    layout: Literal["single", "collage"]
-    text: str          # Custom banner text
-    overlay_id: str    # Selected overlay ID
-
-class CameraSettingsRequest(BaseModel):
-    settings: dict
-
-class EventRequest(BaseModel):
-    type: str
-    payload: dict = Field(default_factory=dict)
-
-# Endpoints
-@app.get("/api/config", response_model=AppSettings)
-async def get_config():
-    """Retrieve current application settings."""
-    settings = load_settings()
-    return settings
-
-@app.post("/api/config", response_model=AppSettings)
-async def post_config(updates: ConfigUpdateRequest):
-    """Update configurations."""
-    try:
-        changed = {k: v for k, v in updates.model_dump(exclude_unset=True).items() if v is not None}
-        updated = update_settings(changed)
-        # Push the new config to all connected clients over SSE.
-        sse_svc.dispatch_event("config_update", updated.model_dump())
-        log.info("config", "config_updated", f"Config updated: {list(changed.keys())}", data=changed)
-        return updated
-    except Exception as e:
-        log.error("config", "config_update_fail", f"Config update failed: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
-
-@app.get("/api/photos")
-async def list_photos():
-    """Get list of all saved photos, newest first."""
-    try:
-        return get_all_photos()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/api/state")
-async def get_state():
-    """Get current booth state."""
-    return await state_machine.get_state()
-
-@app.post("/api/events")
-async def handle_event(req: EventRequest):
-    """Handle frontend events."""
-    settings = load_settings()
-    await state_machine.handle_event(req.type, req.payload, settings)
-    return {"status": "ok"}
-
-@app.get("/api/printer/status")
-async def printer_status():
-    """Get current printer status (connected, ready, errors)."""
-    status = print_svc.get_status()
-    return status.to_dict()
-
-@app.get("/api/health")
-async def health_check():
-    """Health check endpoint for connection watchdog."""
-    return {"status": "ok"}
-
-# --- Camera Integration ---
-@app.get("/api/camera/preview")
-async def camera_preview():
-    if not GPHOTO2_AVAILABLE:
-        raise HTTPException(status_code=501, detail="gphoto2 not installed")
-    return StreamingResponse(
-        camera_svc.preview_generator(),
-        media_type="multipart/x-mixed-replace; boundary=frame",
-        headers={
-            "Age": "0",
-            "Cache-Control": "no-cache, no-store, must-revalidate, private",
-            "Pragma": "no-cache",
-            "X-Accel-Buffering": "no",  # Disable nginx proxy buffering
-        }
-    )
-
-@app.post("/api/camera/capture")
-async def camera_capture():
-    if not GPHOTO2_AVAILABLE:
-        raise HTTPException(status_code=501, detail="gphoto2 not installed")
-    try:
-        job_id = camera_svc.enqueue_capture()
-        return {"status": "enqueued", "job_id": job_id}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/api/camera/standby")
-async def camera_standby():
-    if not GPHOTO2_AVAILABLE:
-        raise HTTPException(status_code=501, detail="gphoto2 not installed")
-    try:
-        camera_svc.standby()
-        return {"status": "success"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/api/camera/resume")
-async def camera_resume():
-    if not GPHOTO2_AVAILABLE:
-        raise HTTPException(status_code=501, detail="gphoto2 not installed")
-    try:
-        camera_svc.resume_preview()
-        return {"status": "success"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/api/camera/config")
-async def camera_config_get():
-    if not GPHOTO2_AVAILABLE:
-        raise HTTPException(status_code=501, detail="gphoto2 not installed")
-    # USB round-trips under the camera lock — if the worker is inside a ~3s
-    # preview stall this blocks until it releases, so keep it off the event
-    # loop (same for the setter below).
-    return await anyio.to_thread.run_sync(camera_svc.get_settings)
-
-@app.post("/api/camera/config")
-async def camera_config_set(req: CameraSettingsRequest):
-    if not GPHOTO2_AVAILABLE:
-        raise HTTPException(status_code=501, detail="gphoto2 not installed")
-    try:
-        await anyio.to_thread.run_sync(camera_svc.set_settings, req.settings)
-        return {"status": "success"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/api/camera/status")
-async def camera_status():
-    if not GPHOTO2_AVAILABLE:
-        return {"connected": False, "is_capturing": False, "error": "gphoto2 not installed"}
-    return camera_svc.get_status()
-
-# --- Diagnostics ---
-@app.get("/api/diagnostics")
-async def get_diagnostics():
-    from backend.diagnostics import get_diagnostics
-    return get_diagnostics()
-
-# --- Emergency Controls ---
-class EmergencyRequest(BaseModel):
-    action: str  # 'restart_booth', 'restart_camera', 'restart_printer', 'clear_queue'
-
-@app.post("/api/emergency")
-async def emergency_action(req: EmergencyRequest):
-    from backend.diagnostics import execute_emergency
-    log.warn("system", "system_emergency", f"Emergency action triggered: {req.action}", data={"action": req.action})
-    result = execute_emergency(req.action)
-    return result
-
-@app.get("/api/sse")
-async def sse_endpoint(request: Request):
-    """Eventstream for real-time updates to the frontend."""
-    client = SseClient(request)
-    sse_svc.setup_client(client)
-    # Seed this client with the current config immediately, so the frontend
-    # receives it over the resilient stream (on connect and every reconnect)
-    # instead of relying on a one-shot REST fetch.
-    sse_svc.send_to_client(client, "config_update", load_settings().model_dump())
-    return EventSourceResponse(sse_svc.event_iterator(client))
-
-# --- Change PIN ---
-class ChangePinRequest(BaseModel):
-    current_pin: str
-    new_pin: str = Field(min_length=6)
-
-@app.post("/api/change-pin")
-async def change_pin(req: ChangePinRequest):
-    settings = load_settings()
-    if req.current_pin != settings.admin_pin:
-        log.warn("config", "config_pin_fail", "PIN change attempted with wrong current PIN")
-        raise HTTPException(status_code=403, detail="Invalid current PIN")
-    updated = update_settings({"admin_pin": req.new_pin})
-    sse_svc.dispatch_event("config_update", updated.model_dump())
-    log.info("config", "config_pin_changed", "Admin PIN changed")
-    return {"status": "success", "detail": "PIN updated"}
-
-# --- Frontend Log Ingestion ---
-class FrontendLogBatch(BaseModel):
-    lines: List[str]  # Pre-formatted JSONL lines from the frontend
-
-@app.post("/api/logs")
-async def receive_frontend_logs(batch: FrontendLogBatch):
-    """Receive a batch of JSONL log lines from the frontend and write to frontend.log."""
-    for line in batch.lines:
-        log.write_frontend_line(line)
-    return {"status": "ok", "count": len(batch.lines)}
-
-@app.get("/api/logs/recent")
-async def get_recent_logs(count: int = 50, source: str = "both"):
-    """Tail the last N lines from log files. source: 'backend', 'frontend', or 'both'."""
-    import json as _json
-    from backend.logger import BACKEND_LOG, FRONTEND_LOG
-
-    def tail_file(filepath, n):
-        """Read last n lines from a file efficiently."""
-        try:
-            with open(filepath, "rb") as f:
-                # Seek to end
-                f.seek(0, 2)
-                size = f.tell()
-                if size == 0:
-                    return []
-                # Read last chunk (generous: 1KB per line estimate)
-                chunk_size = min(size, n * 1024)
-                f.seek(max(0, size - chunk_size))
-                data = f.read().decode("utf-8", errors="replace")
-                lines = data.strip().split("\n")
-                return lines[-n:]
-        except FileNotFoundError:
-            return []
-
-    entries = []
-
-    if source in ("backend", "both"):
-        for line in tail_file(BACKEND_LOG, count):
-            try:
-                entries.append(_json.loads(line))
-            except _json.JSONDecodeError:
-                pass
-
-    if source in ("frontend", "both"):
-        for line in tail_file(FRONTEND_LOG, count):
-            try:
-                entries.append(_json.loads(line))
-            except _json.JSONDecodeError:
-                pass
-
-    # Sort by timestamp descending (newest first) and cap
-    entries.sort(key=lambda e: e.get("ts", ""), reverse=True)
-    return entries[:count]
-
-
-@app.get("/api/qrcode")
-async def get_qrcode(text: str):
-    """Generate a QR code dynamically for the local download link."""
-    try:
-        qr = qrcode.QRCode(version=1, box_size=10, border=4)
-        qr.add_data(text)
-        qr.make(fit=True)
-        img = qr.make_image(fill_color="black", back_color="white")
-        buf = BytesIO()
-        img.save(buf, format="PNG")
-        buf.seek(0)
-        return StreamingResponse(buf, media_type="image/png")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"QR generation failed: {str(e)}")
-
-# --- Network Info (for QR code URLs) ---
-def _get_lan_ip():
-    """Get the machine's LAN IP address."""
-    import socket
-    try:
-        # Connect to an external address to determine the outbound interface
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.settimeout(0.5)
-        s.connect(("8.8.8.8", 80))
-        ip = s.getsockname()[0]
-        s.close()
-        return ip
-    except Exception:
-        return "127.0.0.1"
-
-@app.get("/api/network-info")
-async def get_network_info():
-    """Return the booth's LAN IP and port for QR code URL generation."""
-    settings = load_settings()
-    ip = _get_lan_ip()
-    port = getattr(settings, "port", 8000)
-    return {
-        "ip": ip,
-        "port": port,
-        "base_url": f"http://{ip}:{port}",
-    }
-
-# --- Photo Download (for guests scanning QR) ---
-@app.get("/download/{filename}")
-async def download_photo(filename: str):
-    """Serve a photo as a downloadable file for guest phones."""
-    filepath = os.path.join(PHOTOS_DIR, filename)
-    if not os.path.exists(filepath):
-        raise HTTPException(status_code=404, detail="Photo not found")
-    return FileResponse(
-        filepath,
-        media_type="image/jpeg",
-        filename=filename,
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
+# API routes. These must be registered before the SPA catch-all below, which
+# would otherwise swallow every path.
+app.include_router(config.router)
+app.include_router(booth.router)
+app.include_router(camera.router)
+app.include_router(photos.router)
+app.include_router(system.router)
+app.include_router(logs.router)
+app.include_router(sse.router)
 
 # Serve Static Folders
 app.mount("/photos", StaticFiles(directory=PHOTOS_DIR), name="photos")
@@ -441,7 +114,7 @@ FRONTEND_DIST = os.path.join(BASE_DIR, "frontend", "dist")
 # Else serve a simple message for backend testing.
 if os.path.exists(FRONTEND_DIST):
     app.mount("/assets", StaticFiles(directory=os.path.join(FRONTEND_DIST, "assets")), name="assets")
-    
+
     # Catch-all route: serve static files from dist/ if they exist,
     # otherwise fall back to index.html for SPA routing.
     @app.get("/{catchall:path}")
@@ -449,12 +122,12 @@ if os.path.exists(FRONTEND_DIST):
         # Skip API / photo / overlay routes
         if catchall.startswith("api/") or catchall.startswith("photos/") or catchall.startswith("overlays/"):
             return JSONResponse(status_code=404, content={"detail": "Not found"})
-        
+
         # Check if the file exists in dist/ (e.g. bg-wedding.png, preview-single.png)
         file_path = os.path.join(FRONTEND_DIST, catchall)
         if catchall and os.path.isfile(file_path):
             return FileResponse(file_path)
-        
+
         # SPA fallback
         return FileResponse(os.path.join(FRONTEND_DIST, "index.html"))
 else:
