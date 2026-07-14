@@ -4,7 +4,7 @@
 
 .frame-screen {
   position: relative;
-  padding: var(--space-md) var(--space-lg);
+  padding: clamp(var(--space-md), 4vh, var(--space-xl)) var(--space-xl);
   gap: 0;
 }
 
@@ -96,10 +96,10 @@
 
 .frame__title {
   font-family: var(--font-script);
-  font-size: clamp(var(--text-h1), 6vw, var(--text-hero));
+  font-size: clamp(var(--text-h1), 7vw, 6.5rem);
   font-weight: 400;
   line-height: 1.4;
-  margin-bottom: var(--space-md);
+  margin-bottom: clamp(var(--space-md), 3vh, var(--space-lg));
   padding: var(--space-md);
   color: var(--gold);
 }
@@ -107,18 +107,18 @@
 /* ═══ Body — Split Layout ═══ */
 .frame__body {
   display: flex;
-  gap: var(--space-lg);
+  gap: clamp(var(--space-lg), 4vw, var(--space-2xl));
   width: 100%;
-  max-width: 1000px;
-  align-items: flex-start;
+  max-width: min(92vw, 1700px);
+  align-items: center;
   justify-content: center;
-  margin-bottom: var(--space-md);
+  margin-bottom: clamp(var(--space-md), 4vh, var(--space-xl));
 }
 
 /* ── Large Photo Preview (left) ── */
 .frame__preview-wrap {
   flex: 1.2;
-  max-width: 500px;
+  max-width: min(48vw, 780px);
 }
 
 .frame__preview {
@@ -159,7 +159,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--space-sm);
+  gap: clamp(var(--space-sm), 2vh, var(--space-lg));
 }
 
 .frame__options-header {
@@ -188,14 +188,14 @@
 /* ── Frame Cards Grid ── */
 .frame__cards {
   display: flex;
-  gap: var(--space-sm);
+  gap: clamp(var(--space-sm), 1.5vw, var(--space-lg));
   flex-wrap: wrap;
   justify-content: center;
 }
 
 .frame__card {
   position: relative;
-  width: 130px;
+  width: clamp(140px, 11vw, 200px);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -273,7 +273,7 @@
 
 .frame__card-name {
   font-family: var(--font-body);
-  font-size: 0.7rem;
+  font-size: clamp(0.7rem, 0.9vw, var(--text-caption));
   font-weight: 600;
   letter-spacing: var(--tracking-hairline);
   text-transform: uppercase;
@@ -294,9 +294,9 @@
   align-items: center;
   justify-content: center;
   gap: var(--space-sm);
-  min-width: var(--cta-min-width-sm);
-  height: var(--cta-height-sm);
-  padding: 0 var(--space-lg);
+  min-width: min(30vw, 460px);
+  height: clamp(var(--cta-height-sm), 9vh, var(--cta-height-lg));
+  padding: 0 clamp(var(--space-lg), 3vw, var(--space-xl));
   border-radius: var(--radius-button);
   border: 2px solid transparent;
   cursor: pointer;
@@ -318,7 +318,7 @@
 
 .frame__btn-print-main {
   font-family: var(--font-body);
-  font-size: var(--text-caption);
+  font-size: clamp(var(--text-caption), 1.5vw, var(--text-h3));
   font-weight: 700;
   letter-spacing: var(--tracking-md);
   text-transform: uppercase;
