@@ -274,6 +274,114 @@ Dependencies must always point downward.
 
 ---
 
+### Rule 19: Wiring Happens at the Composition Root
+
+Services are constructed and connected in exactly one place: the application
+entrypoint's startup path.
+
+Forbidden:
+
+* module-level singletons that other modules import to reach a service
+* work in a constructor — threads, I/O, timers, device handles
+* two wiring mechanisms for the same edge (an injected dependency that also
+  falls back to a global)
+
+Importing a module must have no side effects. If constructing an object starts
+a thread or opens a device, the object cannot be tested, replaced, or shut down
+on demand.
+
+Required: the entrypoint constructs each service, passes collaborators in, and
+owns their lifecycle. Everything below the entrypoint receives its dependencies
+and never reaches for them.
+
+---
+
+### Rule 20: One Reason to Change per Module
+
+Split modules by responsibility, not by length.
+
+A module that owns a device typically accumulates several distinct jobs — the
+background loop, the consumer-facing stream, the one-shot command runner, the
+settings interface. Each is a separate reason to change and belongs in its own
+unit, even when they share a device.
+
+The strongest signal that a boundary is missing: two or more concurrency
+domains (a worker thread, a callback thread, the event loop) coordinating
+through shared mutable flags on the same object. Every defensive comment
+explaining why a guard is duplicated in a second place is that missing boundary
+asking to be drawn.
+
+When choosing what to refactor, prefer the tangled module over the merely long
+one.
+
+---
+
+### Rule 21: Configuration Has One In-Memory Authority
+
+Configuration is loaded from disk once and cached. Writes invalidate the cache.
+
+Forbidden:
+
+* re-reading and re-parsing the config file per request, per event, or per
+  operation
+* threading a settings object through four call layers as a parameter because
+  no layer is allowed to ask for it
+
+Cost is not the reason. The reason is that a value re-derived at every call site
+has no single authority, and no place to change how it is obtained.
+
+---
+
+## Code and Documentation Hygiene
+
+### Rule 22: Comments State Live Constraints, Not History
+
+A comment explains what the code cannot: a constraint, an invariant, a
+non-obvious reason this value and not another.
+
+Forbidden:
+
+* narrating what the code used to be
+* explaining why a past approach was wrong
+* eulogies for deleted code
+
+Version control holds history; investigation notes hold the archaeology. A hot
+file whose comments are mostly obituaries cannot be read for what it does now.
+
+---
+
+### Rule 23: Documentation Records Why, Not What
+
+Prose documentation earns its place only when it holds knowledge the code
+cannot express: hardware behavior, root causes, constraints discovered the hard
+way, decisions and their rejected alternatives.
+
+Forbidden:
+
+* hand-maintained documents that restate an interface the code already declares
+  or a tool already generates
+* prose transcriptions of a transition table, a schema, or a route list
+
+Anything derivable from the code will drift from it, and a drifted document is
+worse than none.
+
+---
+
+### Rule 24: Diagnostic Code Is Temporary
+
+Probes, one-off harnesses, and instrumentation written to characterize a
+specific failure are deleted once that failure is understood and fixed. The
+finding is recorded in the notes; the scaffolding is not kept.
+
+Instrumentation may stay in a production path only if it earns its cost as a
+permanent signal — and then it is documented as such, not left behind by
+accident.
+
+No diagnostic tool should outgrow the production module it was written to
+investigate.
+
+---
+
 ## Architectural Goal
 
 The system must continue operating correctly even when hardware disconnects, operations timeout, or a session is interrupted. The state machine remains the authoritative source of truth, services remain isolated, and every component has a single clear responsibility.
