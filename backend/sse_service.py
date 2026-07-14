@@ -114,5 +114,5 @@ class SseService:
         finally:
             self.remove_client(client)
 
-# Global singleton
-sse_svc = SseService()
+# No module-level singleton: the composition root (main.py's lifespan) constructs
+# the SseService and hands it to everyone who dispatches events. Rule 19.

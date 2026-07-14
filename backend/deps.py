@@ -13,6 +13,8 @@ from fastapi import Depends, HTTPException, Request
 
 from backend.settings import AppSettings, SettingsService
 from backend.print_service import PrintService
+from backend.sse_service import SseService
+from backend.state_machine import StateMachine
 
 
 def get_settings_service(request: Request) -> SettingsService:
@@ -30,6 +32,16 @@ def get_settings(
 def get_print_service(request: Request) -> PrintService:
     """The print service the lifespan built."""
     return request.app.state.print_svc
+
+
+def get_sse(request: Request) -> SseService:
+    """The SSE fan-out service."""
+    return request.app.state.sse
+
+
+def get_state_machine(request: Request) -> StateMachine:
+    """The booth FSM."""
+    return request.app.state.state_machine
 
 
 def get_camera(request: Request):

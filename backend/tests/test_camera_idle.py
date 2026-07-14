@@ -28,7 +28,7 @@ def test_watchdog_fires_despite_repeated_capture_errors(mock_gphoto2):
         mock_camera.capture_preview.side_effect = Exception("[-1] Unspecified error")
 
         from backend.camera_service import CameraService
-        camera = CameraService()
+        camera = CameraService(MagicMock())
         camera.connected = True
         camera.camera = mock_camera
         camera._preview_allowed.set()
@@ -60,7 +60,7 @@ async def test_preview_generator_refreshes_watchdog_while_frameless(mock_gphoto2
     """
     with patch('backend.camera_service.gp', mock_gphoto2):
         from backend.camera_service import CameraService
-        camera = CameraService()
+        camera = CameraService(MagicMock())
         camera.connected = True
 
         stale = time.monotonic() - 100
@@ -97,7 +97,7 @@ async def test_preview_generator_self_closes_when_idle(mock_gphoto2):
     """
     with patch('backend.camera_service.gp', mock_gphoto2):
         from backend.camera_service import CameraService
-        camera = CameraService()
+        camera = CameraService(MagicMock())
         camera.connected = True
 
         call_count = 0

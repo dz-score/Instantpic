@@ -15,7 +15,7 @@ def test_worker_does_not_flush_events_per_frame(mock_gphoto2):
         mock_camera.wait_for_event.return_value = (mock_gphoto2.GP_EVENT_TIMEOUT, None)
 
         from backend.camera_service import CameraService
-        camera = CameraService()
+        camera = CameraService(MagicMock())
         camera.connected = True
         camera.camera = mock_camera
 
@@ -49,7 +49,7 @@ def test_capture_job_flushes_and_avoids_preview(mock_gphoto2):
         ]
         
         from backend.camera_service import CameraService
-        camera = CameraService()
+        camera = CameraService(MagicMock())
         camera.connected = True
         camera.camera = mock_camera
         
@@ -84,7 +84,7 @@ def test_preview_failure_disconnects_after_six_errors(mock_gphoto2):
         mock_camera.capture_preview.side_effect = Exception("[-1] Unspecified error")
 
         from backend.camera_service import CameraService
-        camera = CameraService()
+        camera = CameraService(MagicMock())
         camera.connected = True
         camera.camera = mock_camera
         camera._preview_allowed.set()
@@ -111,7 +111,7 @@ def test_standby_clears_preview_allowed(mock_gphoto2):
     """
     with patch('backend.camera_service.gp', mock_gphoto2):
         from backend.camera_service import CameraService
-        camera = CameraService()
+        camera = CameraService(MagicMock())
         
         camera.resume_preview()
         assert camera._preview_allowed.is_set() is True

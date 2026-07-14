@@ -12,9 +12,9 @@ from fastapi.responses import FileResponse, JSONResponse
 from backend.storage import ensure_directories, PHOTOS_DIR, OVERLAYS_DIR, BASE_DIR
 from backend.settings import SettingsService
 from backend.print_service import PrintService
-from backend.sse_service import sse_svc
+from backend.sse_service import SseService
 from backend.logger import log
-from backend.state_machine import state_machine
+from backend.state_machine import StateMachine
 from backend.job_queue import JobQueue
 from backend.camera_factory import create_camera
 
@@ -27,33 +27,35 @@ async def lifespan(app: FastAPI):
     # Every service is constructed here and handed its collaborators. Nothing below
     # this point reaches for a module global to find a dependency; routes receive
     # what they need via backend/deps.py, which reads app.state.
+    #
+    # Construction order is the dependency order, and it has no cycles:
+    #   sse -> settings -> printer -> queue -> camera -> FSM
+    # The FSM is last because it needs the other three. The queue and camera report
+    # back through callbacks the FSM supplies, so neither imports it (Rule 18).
     ensure_directories()
 
     log.info("system", "system_boot", f"Backend started", data={"version": "1.0.0"})
+
+    sse_svc = SseService()
 
     settings_svc = SettingsService()
     settings_svc.load()
 
     print_svc = PrintService(settings_svc)
     job_queue = JobQueue(print_svc, settings_svc)
-    camera_svc = create_camera(settings_svc.get())
+    camera_svc = create_camera(settings_svc.get(), sse_svc)
+    state_machine = StateMachine(sse_svc, job_queue, camera_svc)
 
+    app.state.sse = sse_svc
     app.state.settings = settings_svc
     app.state.print_svc = print_svc
     app.state.camera = camera_svc
+    app.state.state_machine = state_machine
 
     # Bind the event loop so camera threads can dispatch SSE events safely.
     # Must happen before camera_svc.init() starts emitting from its threads.
     sse_svc.bind_loop()
 
-    # Initialize State Machine and Job Queue
-    state_machine.set_job_queue(job_queue)
-    state_machine.set_sse(sse_svc)
-    if camera_svc:
-        # FIRE_SHOT capture completion returns to the FSM via callbacks,
-        # mirroring set_job_queue — the camera never imports the FSM.
-        state_machine.set_camera(camera_svc)
-        camera_svc.set_sse(sse_svc)
     job_queue.start()
 
     # Eagerly init camera

@@ -17,6 +17,18 @@ FRAMED_SETTINGS = AppSettings()
 """Default config ships real frames -> print flow routes to the frame picker."""
 
 
+class FakeSse:
+    """Records dispatches instead of pushing them to browsers.
+
+    The FSM takes its SSE service as a constructor argument, so a double goes
+    straight in — no monkeypatching a module global to intercept broadcasts.
+    """
+    def __init__(self):
+        self.payloads = []
+    def dispatch_event(self, event, data):
+        self.payloads.append(data)
+
+
 class MockQueue:
     def __init__(self):
         self.last_job = None
@@ -42,12 +54,8 @@ class MockCamera:
 
 
 def make_sm():
-    sm = StateMachine()
-    q = MockQueue()
-    cam = MockCamera()
-    sm.set_job_queue(q)
-    sm.set_camera(cam)
-    return sm, q, cam
+    q, cam, sse = MockQueue(), MockCamera(), FakeSse()
+    return StateMachine(sse, q, cam), q, cam, sse
 
 
 async def fire_and_complete(sm, cam, filename, settings):
@@ -58,21 +66,21 @@ async def fire_and_complete(sm, cam, filename, settings):
 
 @pytest.mark.anyio
 async def test_initial_state():
-    sm = StateMachine()
+    sm, q, cam, sse = make_sm()
     state = await sm.get_state()
     assert state.screen == "ATTRACT"
     assert state.isProcessing is False
 
 @pytest.mark.anyio
 async def test_start_session():
-    sm = StateMachine()
+    sm, q, cam, sse = make_sm()
     await sm.handle_event("START_SESSION", {}, DEFAULT_SETTINGS)
     state = await sm.get_state()
     assert state.screen == "CHOOSE_STYLE"
 
 @pytest.mark.anyio
 async def test_layout_sets_shot_count():
-    sm = StateMachine()
+    sm, q, cam, sse = make_sm()
     await sm.handle_event("START_SESSION", {}, DEFAULT_SETTINGS)
     await sm.handle_event("SELECT_LAYOUT", {"mode": "collage"}, DEFAULT_SETTINGS)
     state = await sm.get_state()
@@ -83,7 +91,7 @@ async def test_layout_sets_shot_count():
 
 @pytest.mark.anyio
 async def test_full_flow_no_frames():
-    sm, q, cam = make_sm()
+    sm, q, cam, sse = make_sm()
 
     await sm.handle_event("START_SESSION", {}, NO_FRAME_SETTINGS)
     await sm.handle_event("SELECT_LAYOUT", {"mode": "collage"}, NO_FRAME_SETTINGS)
@@ -123,7 +131,7 @@ async def test_full_flow_no_frames():
 
 @pytest.mark.anyio
 async def test_retake_and_pick_favorite():
-    sm, q, cam = make_sm()
+    sm, q, cam, sse = make_sm()
     await sm.handle_event("START_SESSION", {}, NO_FRAME_SETTINGS)
     await sm.handle_event("SELECT_LAYOUT", {"mode": "single"}, NO_FRAME_SETTINGS)
 
@@ -152,7 +160,7 @@ async def test_retake_and_pick_favorite():
 
 @pytest.mark.anyio
 async def test_frame_picker_flow():
-    sm, q, cam = make_sm()
+    sm, q, cam, sse = make_sm()
 
     await sm.handle_event("START_SESSION", {}, FRAMED_SETTINGS)
     await sm.handle_event("SELECT_LAYOUT", {"mode": "single"}, FRAMED_SETTINGS)
@@ -179,7 +187,7 @@ async def test_frame_picker_flow():
 async def test_entering_printing_kicks_off_print_job():
     """Print is backend-owned: entering PRINTING enqueues a PRINT_PHOTO job and
     marks printStatus 'printing' — the UI never triggers the print itself."""
-    sm, q, cam = make_sm()
+    sm, q, cam, sse = make_sm()
 
     await sm.handle_event("START_SESSION", {}, NO_FRAME_SETTINGS)
     await sm.handle_event("SELECT_LAYOUT", {"mode": "single"}, NO_FRAME_SETTINGS)
@@ -198,7 +206,7 @@ async def test_entering_printing_kicks_off_print_job():
 async def test_print_outcome_projected_from_backend():
     """The FSM records the real printer outcome; success and failure are distinct
     states the UI can render instead of guessing from a timeout."""
-    sm, q, cam = make_sm()
+    sm, q, cam, sse = make_sm()
     sm._state.screen = "PRINTING"
     sm._state.printStatus = "printing"
 
@@ -212,7 +220,7 @@ async def test_print_outcome_projected_from_backend():
 @pytest.mark.anyio
 async def test_frame_skip_enters_printing():
     """FRAME_SKIP prints the already-processed photo through the same path."""
-    sm, q, cam = make_sm()
+    sm, q, cam, sse = make_sm()
     sm._state.screen = "FRAME_PICKER"
     sm._state.finalPhoto = "p1.jpg"
 
@@ -225,7 +233,7 @@ async def test_frame_skip_enters_printing():
 
 @pytest.mark.anyio
 async def test_job_failure_recovery():
-    sm, q, cam = make_sm()
+    sm, q, cam, sse = make_sm()
     await sm.handle_event("START_SESSION", {}, DEFAULT_SETTINGS)
     await sm.handle_event("SELECT_LAYOUT", {"mode": "single"}, DEFAULT_SETTINGS)
     await fire_and_complete(sm, cam, "img1", DEFAULT_SETTINGS)
@@ -246,7 +254,7 @@ async def test_job_failure_recovery():
 async def test_fire_shot_in_flight_guard():
     """A second FIRE_SHOT while a capture is pending must not enqueue a
     second capture; the guard clears once the shot completes."""
-    sm, q, cam = make_sm()
+    sm, q, cam, sse = make_sm()
     await sm.handle_event("START_SESSION", {}, DEFAULT_SETTINGS)
     await sm.handle_event("SELECT_LAYOUT", {"mode": "collage"}, DEFAULT_SETTINGS)
 
@@ -263,7 +271,7 @@ async def test_fire_shot_in_flight_guard():
 async def test_shot_failure_keeps_countdown_and_releases_guard():
     """A permanently failed capture leaves the session in COUNTDOWN (the UI
     offers retry/home from the camera_job SSE event) and allows re-firing."""
-    sm, q, cam = make_sm()
+    sm, q, cam, sse = make_sm()
     await sm.handle_event("START_SESSION", {}, DEFAULT_SETTINGS)
     await sm.handle_event("SELECT_LAYOUT", {"mode": "single"}, DEFAULT_SETTINGS)
 
@@ -282,7 +290,7 @@ async def test_shot_failure_keeps_countdown_and_releases_guard():
 async def test_late_shot_completion_after_session_end_is_dropped():
     """If the session ends (TIMEOUT) while the shutter is busy, the late
     completion must not mutate the fresh session's state."""
-    sm, q, cam = make_sm()
+    sm, q, cam, sse = make_sm()
     await sm.handle_event("START_SESSION", {}, DEFAULT_SETTINGS)
     await sm.handle_event("SELECT_LAYOUT", {"mode": "single"}, DEFAULT_SETTINGS)
     await sm.handle_event("FIRE_SHOT", {}, DEFAULT_SETTINGS)
@@ -301,13 +309,8 @@ async def test_broadcast_payload_is_transition_snapshot(monkeypatch):
     lock. If a job callback mutates state between a transition and its
     broadcast (simulated here by delaying broadcasts one loop tick), the
     earlier broadcast must NOT leak the later mutation."""
-    from backend import state_machine as sm_mod
-
-    sm, q, cam = make_sm()
-
-    payloads = []
-    monkeypatch.setattr(sm_mod.sse_svc, "dispatch_event",
-                        lambda event, data: payloads.append(data))
+    sm, q, cam, sse = make_sm()
+    payloads = sse.payloads
 
     orig_broadcast = sm.broadcast_state
     async def delayed_broadcast(state_dict):
@@ -344,15 +347,10 @@ async def test_broadcast_payload_is_transition_snapshot(monkeypatch):
 STALL_SETTINGS = AppSettings(capture_stall_timeout=0.15)
 
 @pytest.mark.anyio
-async def test_stall_watchdog_resets_stranded_countdown(monkeypatch):
+async def test_stall_watchdog_resets_stranded_countdown():
     """A session stuck in COUNTDOWN with no shot progress must reset to
     ATTRACT after capture_stall_timeout, and broadcast the reset."""
-    from backend import state_machine as sm_mod
-    sm, q, cam = make_sm()
-
-    screens = []
-    monkeypatch.setattr(sm_mod.sse_svc, "dispatch_event",
-                        lambda event, data: screens.append(data["screen"]))
+    sm, q, cam, sse = make_sm()
 
     await sm.handle_event("START_SESSION", {}, STALL_SETTINGS)
     await sm.handle_event("SELECT_LAYOUT", {"mode": "single"}, STALL_SETTINGS)
@@ -362,7 +360,7 @@ async def test_stall_watchdog_resets_stranded_countdown(monkeypatch):
 
     state = await sm.get_state()
     assert state.screen == "ATTRACT"
-    assert screens[-1] == "ATTRACT"  # the reset was broadcast to clients
+    assert sse.payloads[-1]["screen"] == "ATTRACT"  # the reset was broadcast to clients
     # The stall reset is also the floor for a capture whose callback never
     # arrived — the in-flight guard must not leak into the next session.
     assert sm._shot_in_flight is False
@@ -372,7 +370,7 @@ async def test_stall_watchdog_rearms_per_shot():
     """Each shot of a multi-shot layout gets a fresh stall window — progress
     mid-sequence must not trip the watchdog, silence after it must."""
     settings = AppSettings(capture_stall_timeout=0.4)
-    sm, q, cam = make_sm()
+    sm, q, cam, sse = make_sm()
 
     await sm.handle_event("START_SESSION", {}, settings)
     await sm.handle_event("SELECT_LAYOUT", {"mode": "collage"}, settings)
@@ -395,7 +393,7 @@ async def test_stall_watchdog_rearms_per_shot():
 async def test_stall_watchdog_cancelled_on_leaving_countdown():
     """Completing the sequence (-> REVEAL) must cancel the watchdog — no
     spurious reset later."""
-    sm, q, cam = make_sm()
+    sm, q, cam, sse = make_sm()
 
     await sm.handle_event("START_SESSION", {}, STALL_SETTINGS)
     await sm.handle_event("SELECT_LAYOUT", {"mode": "single"}, STALL_SETTINGS)

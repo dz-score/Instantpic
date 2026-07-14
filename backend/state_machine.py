@@ -2,7 +2,6 @@ import asyncio
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
 from backend.logger import log
-from backend.sse_service import sse_svc
 from backend.settings import AppSettings
 from backend import jobs
 
@@ -41,16 +40,20 @@ VALID_TRANSITIONS = {
 GLOBAL_EVENTS = ["TIMEOUT", "FINISH"]
 
 class StateMachine:
-    def __init__(self):
+    """The booth's workflow. Its collaborators are handed in, never imported.
+
+    `camera` is None when no backend is usable (gphoto2 absent); FIRE_SHOT then
+    fails cleanly rather than crashing. The queue and camera report back through
+    callbacks the FSM supplies, so neither imports the FSM — the dependency points
+    one way only (Rule 18).
+    """
+
+    def __init__(self, sse, job_queue, camera=None):
         self._state = BoothState()
         self._lock = None
-        self._job_queue = None  # Injected later to avoid circular import
-        self._camera = None     # Injected at startup (set_camera), like the queue
-        # Defaults to the real singleton so the FSM works unmodified if
-        # set_sse() is never called; set_sse() exists so tests/callers can
-        # inject a double instead of monkeypatching the module import, same
-        # DI shape as set_job_queue/set_camera.
-        self._sse = sse_svc
+        self._sse = sse
+        self._job_queue = job_queue
+        self._camera = camera
         # True while a capture is between FIRE_SHOT and its terminal callback;
         # guards against double-firing the shutter.
         self._shot_in_flight = False
@@ -62,15 +65,6 @@ class StateMachine:
         if self._lock is None:
             self._lock = asyncio.Lock()
         return self._lock
-
-    def set_job_queue(self, queue):
-        self._job_queue = queue
-
-    def set_camera(self, camera):
-        self._camera = camera
-
-    def set_sse(self, sse):
-        self._sse = sse
 
     async def get_state(self) -> BoothState:
         async with self._get_lock():
@@ -350,5 +344,6 @@ class StateMachine:
             state_dict = self._state.model_dump()
         await self.broadcast_state(state_dict)
 
-# Global Singleton
-state_machine = StateMachine()
+# No module-level singleton: the FSM needs the SSE service, the job queue and the
+# camera, and the composition root (main.py's lifespan) is the one place that has
+# all three. Rule 19.

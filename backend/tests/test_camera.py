@@ -15,7 +15,7 @@ def test_camera_init_success(mock_gphoto2):
         mock_camera = mock_gphoto2.Camera.return_value
         mock_camera.init.return_value = 0
         
-        camera = CameraService()
+        camera = CameraService(MagicMock())
         camera.init()
         
         assert camera.connected is True
@@ -34,7 +34,7 @@ def test_camera_init_failure_auto_recovery(mock_gphoto2):
         # Simulate USB device claimed / failure on init
         mock_camera.init.side_effect = mock_gphoto2.GPhoto2Error("[-53] Could not claim the USB device")
         
-        camera = CameraService()
+        camera = CameraService(MagicMock())
         camera.init()
         
         assert camera.connected is False
@@ -47,7 +47,7 @@ def test_standby_mode_and_resume(mock_gphoto2):
     with patch('backend.camera_service.gp', mock_gphoto2):
         
         from backend.camera_service import CameraService
-        camera = CameraService()
+        camera = CameraService(MagicMock())
         
         # Override preview_allowed to simulate standard running state
         camera._preview_allowed.set()
@@ -67,7 +67,7 @@ def test_standby_mode_and_resume(mock_gphoto2):
 def test_enqueue_capture(mock_gphoto2):
     with patch('backend.camera_service.gp', mock_gphoto2):
         from backend.camera_service import CameraService
-        camera = CameraService()
+        camera = CameraService(MagicMock())
         
         # Test that enqueueing returns a job_id and puts it in the queue
         with patch.object(camera, 'standby') as mock_standby:
@@ -104,7 +104,7 @@ def test_execute_capture_job_success(mock_gphoto2):
         # Mock wait_for_event
         mock_camera.wait_for_event.return_value = (mock_gphoto2.GP_EVENT_TIMEOUT, None)
         
-        camera = CameraService()
+        camera = CameraService(MagicMock())
         camera.init()
         
         job_id = "test_job"
@@ -145,7 +145,7 @@ def test_execute_capture_job_retries_once_then_succeeds(mock_gphoto2):
         # First capture() call fails, second succeeds
         mock_camera.capture.side_effect = [Exception("USB busy"), MagicMock()]
 
-        camera = CameraService()
+        camera = CameraService(MagicMock())
         # The background preview worker thread also calls time.sleep() (pacing,
         # reconnect backoff) and would otherwise race with the module-level
         # time.sleep patch below, polluting mock_sleep's call list.
@@ -185,7 +185,7 @@ def test_execute_capture_job_fails_after_retry(mock_gphoto2):
         mock_camera.wait_for_event.return_value = (mock_gphoto2.GP_EVENT_TIMEOUT, None)
         mock_camera.capture.side_effect = Exception("USB busy")
 
-        camera = CameraService()
+        camera = CameraService(MagicMock())
         # The background preview worker thread also calls time.sleep() (pacing,
         # reconnect backoff) and would otherwise race with the module-level
         # time.sleep patch below, polluting mock_sleep's call list.
