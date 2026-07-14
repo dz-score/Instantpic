@@ -90,11 +90,20 @@ The backend **serves the frontend** as static files (`/frontend/dist/`). There i
 
 ### `main.py` lifespan (startup)
 ```python
-ensure_directories()          # photos/ and overlays/
-sse_svc.bind_loop()           # bind event loop so camera threads can dispatch SSE safely
-state_machine.set_job_queue() # inject job_queue into state machine
-job_queue.start()             # launch asyncio worker task
-camera_svc.init()             # connect to gphoto2 camera
+# The composition root. Construction order is the dependency order, no cycles:
+ensure_directories()                                  # photos/ and overlays/
+sse_svc      = SseService()
+settings_svc = SettingsService(); settings_svc.load()
+print_svc    = PrintService(settings_svc)
+job_queue    = JobQueue(print_svc, settings_svc)
+camera_svc   = create_camera(settings_svc.get(), sse_svc)
+state_machine = StateMachine(sse_svc, job_queue, camera_svc)   # last: needs the other three
+
+app.state.sse / .settings / .print_svc / .camera / .state_machine = ...   # routes read these
+
+sse_svc.bind_loop()   # bind event loop BEFORE camera threads start dispatching SSE
+job_queue.start()     # launch asyncio worker task
+camera_svc.init()     # connect to gphoto2 camera
 # SIGINT/SIGTERM -> graceful shutdown
 ```
 
@@ -965,14 +974,15 @@ main.py                  (composition root, Rule 19 — the lifespan constructs
   +-- print_service.py   <- settings.py, logger.py
   +-- diagnostics.py     <- settings.py, print_service.py
 
-No module below main.py holds a settings, printer, job-queue or camera singleton:
-each is built once in the lifespan and handed to whoever needs it. state_machine
-and sse_service are still module-level singletons wired by setter — a known
-remaining Rule 19 gap.
+No module below main.py holds a service singleton. Every service — SSE, settings,
+printer, job queue, camera, FSM — is constructed once in the lifespan and handed to
+whoever needs it; routes receive them via deps.py. Modules import service *classes*
+for type annotations, never instances. Importing any backend module has no side
+effects: it constructs nothing and opens nothing.
 
 state_machine <-> job_queue wiring (no import in either direction beyond
-the above): main.py injects the queue into the FSM at startup via
-set_job_queue(). The FSM enqueues jobs carrying its own bound methods as
+the above): main.py passes the queue to the FSM at construction. The FSM
+enqueues jobs carrying its own bound methods as
 on_success/on_failure callbacks; the queue invokes them blindly and
 never imports the state machine. camera_service uses the same
 inversion: enqueue_capture(on_complete, on_failure) delivers the capture

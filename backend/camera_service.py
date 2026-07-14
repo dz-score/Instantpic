@@ -10,7 +10,6 @@ from pydantic import BaseModel
 from typing import Optional
 from backend.logger import log
 from backend.storage import PHOTOS_DIR
-from backend.sse_service import sse_svc
 
 class CaptureJobState(BaseModel):
     job_id: str
@@ -29,14 +28,12 @@ class CameraService:
     backpressure can ever reach the camera.
     """
 
-    def __init__(self):
+    def __init__(self, sse):
         self.camera = None
         self.lock = threading.Lock()
-        # Defaults to the real singleton so the service works unmodified if
-        # set_sse() is never called; set_sse() exists so tests/callers can
-        # inject a double instead of monkeypatching the module import, same
-        # DI shape as StateMachine.set_camera.
-        self._sse = sse_svc
+        # Required, not defaulted to a global: an injected dependency that also falls
+        # back to a module singleton is two wiring mechanisms for one edge (Rule 19).
+        self._sse = sse
         self.connected = False
         self._capture_in_progress = False
         self._preview_generation = 0
@@ -93,9 +90,6 @@ class CameraService:
         
         # Start diagnostic monitor
         self._start_monitor()
-
-    def set_sse(self, sse):
-        self._sse = sse
 
     def _start_monitor(self):
         if self._monitor_thread and self._monitor_thread.is_alive():

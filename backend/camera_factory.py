@@ -16,21 +16,24 @@ from backend.settings import AppSettings
 from backend.logger import log
 
 
-def create_camera(settings: AppSettings) -> Optional[object]:
+def create_camera(settings: AppSettings, sse) -> Optional[object]:
     """Construct the camera backend named by `settings`.
 
     Returns None when no backend is usable — gphoto2 is not installed, e.g. on a
     Windows dev box. The camera routes turn that into a 501.
+
+    `sse` is passed to the camera because its worker threads dispatch status events;
+    it is required rather than reached for, so the caller owns that wiring.
     """
     if settings.camera_backend == "mock":
         from backend.mock_camera import MockCameraService
-        return MockCameraService()
+        return MockCameraService(sse)
 
     try:
         # camera_service imports gphoto2 at module level, so this raises ImportError
         # on machines without the library.
         from backend.camera_service import CameraService
-        return CameraService()
+        return CameraService(sse)
     except ImportError:
         log.warn(
             "system",

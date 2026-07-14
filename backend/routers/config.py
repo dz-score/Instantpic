@@ -4,9 +4,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from backend.settings import AppSettings, SettingsService
-from backend.deps import get_settings_service
+from backend.deps import get_settings_service, get_sse
 from backend.logger import log
-from backend.sse_service import sse_svc
+from backend.sse_service import SseService
 
 router = APIRouter(tags=["config"])
 
@@ -46,13 +46,14 @@ async def get_config(settings_svc: SettingsService = Depends(get_settings_servic
 async def post_config(
     updates: ConfigUpdateRequest,
     settings_svc: SettingsService = Depends(get_settings_service),
+    sse: SseService = Depends(get_sse),
 ):
     """Update configurations."""
     try:
         changed = {k: v for k, v in updates.model_dump(exclude_unset=True).items() if v is not None}
         updated = settings_svc.update(changed)
         # Push the new config to all connected clients over SSE.
-        sse_svc.dispatch_event("config_update", updated.model_dump())
+        sse.dispatch_event("config_update", updated.model_dump())
         log.info("config", "config_updated", f"Config updated: {list(changed.keys())}", data=changed)
         return updated
     except Exception as e:
@@ -64,11 +65,12 @@ async def post_config(
 async def change_pin(
     req: ChangePinRequest,
     settings_svc: SettingsService = Depends(get_settings_service),
+    sse: SseService = Depends(get_sse),
 ):
     if req.current_pin != settings_svc.get().admin_pin:
         log.warn("config", "config_pin_fail", "PIN change attempted with wrong current PIN")
         raise HTTPException(status_code=403, detail="Invalid current PIN")
     updated = settings_svc.update({"admin_pin": req.new_pin})
-    sse_svc.dispatch_event("config_update", updated.model_dump())
+    sse.dispatch_event("config_update", updated.model_dump())
     log.info("config", "config_pin_changed", "Admin PIN changed")
     return {"status": "success", "detail": "PIN updated"}

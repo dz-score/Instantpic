@@ -5,7 +5,6 @@ import uuid
 import threading
 from backend.logger import log
 from backend.storage import PHOTOS_DIR
-from backend.sse_service import sse_svc
 
 
 class MockCameraService:
@@ -15,12 +14,10 @@ class MockCameraService:
     The MJPEG generator reads from the buffer via Condition.wait().
     """
 
-    def __init__(self):
+    def __init__(self, sse):
         self.connected = False
-        # Defaults to the real singleton so the service works unmodified if
-        # set_sse() is never called; set_sse() exists so tests/callers can
-        # inject a double, same DI shape as CameraService.
-        self._sse = sse_svc
+        # Required, not defaulted to a global — same reason as CameraService (Rule 19).
+        self._sse = sse
         self._capture_in_progress = False
         self._last_error = None
         self._shutdown_event = threading.Event()
@@ -44,9 +41,6 @@ class MockCameraService:
         buf = BytesIO()
         Image.new("RGB", (640, 480), (18, 18, 22)).save(buf, format="JPEG")
         self._black_jpeg = buf.getvalue()
-
-    def set_sse(self, sse):
-        self._sse = sse
 
     def init(self):
         with self.lock:

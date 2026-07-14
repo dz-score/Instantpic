@@ -18,8 +18,6 @@ def test_event_capture_flow(client):
     injected camera. Completion is backend-owned (camera callback -> FSM,
     unit-tested in test_state_machine) — the HTTP layer only needs to prove
     the trigger seam; the browser never reports the shot."""
-    from backend.state_machine import state_machine
-
     class _Cam:
         def __init__(self):
             self.jobs = 0
@@ -28,22 +26,19 @@ def test_event_capture_flow(client):
             return "jobT"
 
     cam = _Cam()
-    state_machine.set_camera(cam)
-    try:
-        client.post("/api/events", json={"type": "TIMEOUT", "payload": {}})  # known state
-        client.post("/api/events", json={"type": "START_SESSION", "payload": {}})
-        client.post("/api/events", json={"type": "SELECT_LAYOUT", "payload": {"mode": "single"}})
+    # The lifespan builds a fresh FSM per app, so this test owns its own instance —
+    # no restoring a shared singleton afterwards, and no TIMEOUT to reset it first.
+    client.app.state.state_machine._camera = cam
 
-        response = client.post("/api/events", json={"type": "FIRE_SHOT", "payload": {}})
-        assert response.status_code == 200
-        assert cam.jobs == 1
+    client.post("/api/events", json={"type": "START_SESSION", "payload": {}})
+    client.post("/api/events", json={"type": "SELECT_LAYOUT", "payload": {"mode": "single"}})
 
-        # Still COUNTDOWN — the shot lands via the camera callback, not HTTP.
-        assert client.get("/api/state").json()["screen"] == "COUNTDOWN"
-    finally:
-        state_machine.set_camera(None)
-        state_machine._shot_in_flight = False
-        client.post("/api/events", json={"type": "TIMEOUT", "payload": {}})  # reset shared FSM
+    response = client.post("/api/events", json={"type": "FIRE_SHOT", "payload": {}})
+    assert response.status_code == 200
+    assert cam.jobs == 1
+
+    # Still COUNTDOWN — the shot lands via the camera callback, not HTTP.
+    assert client.get("/api/state").json()["screen"] == "COUNTDOWN"
 
 def test_change_pin_success(client):
     """Test changing the admin PIN with correct current PIN."""
@@ -110,6 +105,9 @@ def test_lifespan_startup_and_shutdown(temp_workspace, temp_config):
     with TestClient(app) as client:
         resp = client.get("/api/health")
         assert resp.status_code == 200
+        # The composition root ran: every service the routes depend on is on app.state.
+        assert app.state.settings.get() is not None
+        assert app.state.print_svc is not None
+        assert app.state.state_machine is not None
         # bind_loop() ran: the SSE service holds the app's event loop.
-        from backend.sse_service import sse_svc
-        assert sse_svc._loop is not None
+        assert app.state.sse._loop is not None
