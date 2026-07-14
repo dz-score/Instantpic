@@ -7,5 +7,24 @@ qrcode
 pytest
 pytest-mock
 httpx
+# MUST be built from source against the SYSTEM libgphoto2 — never the wheel.
+#
+# The python-gphoto2 wheel bundles its own libgphoto2 (2.5.34), and that build
+# stalls M50 live view: a ~3.0s dead grab every ~6s, forever. The preview worker
+# holds the camera lock across each grab, so a stalled grab blocks the shutter and
+# the guest gets a photo taken ~3s after the countdown hit zero.
+#
+# Measured on this rig, same probe, same camera, same 60s, only the library swapped
+# (backend/tools/preview_stall_probe.py --fps 0 --no-flush --no-configure):
+#     bundled 2.5.34  ->  1693 frames, 28.2 fps, 10 stalls  (every 3.00-3.07s)
+#     system  2.5.30  ->  3598 frames, 60.0 fps,  0 stalls
+# And app-shaped (--contention --gap-s 6, the spacing that used to break):
+#     bundled 2.5.34  ->  3/14 shutters blocked, mean lock wait 642 ms
+#     system  2.5.30  ->  0/15 shutters blocked, mean lock wait   3 ms
+#
+# --no-binary forces the source build, which links the system libgphoto2. Needs
+# `sudo apt install -y libgphoto2-dev pkg-config` (see Docs/DEPLOYMENT_GUIDE.md).
+# If this line is dropped, pip silently installs the wheel and the stall returns.
+--no-binary gphoto2
 gphoto2>=2.5.0
 sse-starlette

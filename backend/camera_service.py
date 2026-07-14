@@ -55,15 +55,6 @@ class CameraService:
         # be treated as a real disconnect.
         self._preview_warmup_grace = 3.0
 
-        # True while the current session's init-time warmup preview has
-        # failed — the reliable signature of a wedged live-view session
-        # (stale camera-side state left by a previous unclean process kill;
-        # config reads work but every capture_preview stalls ~3s then
-        # errors [-1]). While set, the worker fails fast into its
-        # exit+re-init heal and the idle watchdog defers resting so the
-        # heal isn't stranded until the next viewer arrives.
-        self._warmup_failed = False
-
         # --- Decoupled frame buffer ---
         # The worker thread writes the latest frame here.
         # HTTP consumers wait on _frame_condition for new frames.
@@ -86,8 +77,7 @@ class CameraService:
         # Tiny idle gap between the last preview grab and the capture trigger, so
         # the camera's live view has actually released the USB/PTP path before we
         # fire (gphoto docs: "preview may not be fully stopped when capture is
-        # triggered" — usually just milliseconds). This is NOT the old ~1s
-        # stall-dodge settle; it only covers the preview-release race.
+        # triggered" — usually just milliseconds).
         self.PREVIEW_RELEASE_SETTLE_S = 0.015
 
         # --- Diagnostics ---
@@ -197,7 +187,14 @@ class CameraService:
                 # behavior on-site (kept from the 2026-07 whine investigation).
                 try:
                     config = self.camera.get_config()
-                    for key in ['output', 'movierecordtarget', 'liveviewsize', 'eosmovieswitch', 'capturetarget']:
+                    # focusmode is here because it is the prime suspect for the
+                    # residual ~7% capture_image [-1]: the body reports "One Shot"
+                    # (AF-S), so every shutter release attempts an autofocus lock
+                    # first, and a failed lock fails the release ~0.9s in. gphoto
+                    # cannot change it (the widget offers a single choice) — MF is
+                    # a camera-menu setting. Log it so a failing session says so.
+                    for key in ['output', 'movierecordtarget', 'liveviewsize', 'eosmovieswitch',
+                                'capturetarget', 'focusmode', 'autofocusdrive']:
                         ok, widget = gp.gp_widget_get_child_by_name(config, key)
                         if ok >= gp.GP_OK:
                             choices = []
@@ -219,14 +216,13 @@ class CameraService:
                     with self._frame_condition:
                         self._latest_frame = bytes(memoryview(file_data))
                         self._frame_condition.notify_all()
-                    self._warmup_failed = False
                     log.debug("camera", "camera_warmup", "Viewfinder pre-warmed")
                 except Exception as e:
-                    self._warmup_failed = True
+                    # One-off: the worker's error handling covers it. But if this
+                    # fires on EVERY launch, the venv is on the python-gphoto2
+                    # wheel's broken libgphoto2 — see CONSTRAINTS.md.
                     log.warn("camera", "camera_warmup_fail",
-                             f"Warmup preview failed ({e}) — wedged live-view session "
-                             "(previous run took a photo; survives a clean exit, see "
-                             "CAMERA_NOTES §2); worker will fail fast to re-init")
+                             f"Warmup preview failed ({e}) — first frame may be slow")
 
                 # Start the background worker if not already running
                 self._start_worker()
@@ -265,10 +261,10 @@ class CameraService:
         """
         consecutive_errors = 0
         frame_count = 0
-        # Instrumentation for the periodic Canon [-1] preview stall: track how
-        # long the healthy run lasted (good frames + seconds) before each stall,
-        # logged on the error below so live sessions are self-describing. See
-        # backend/tools/preview_stall_probe.py for isolated, controlled runs.
+        # Canary. Logged on each preview error below, so a live session says how
+        # long it ran clean beforehand. A *recurring* ~3s-every-~6s pattern here
+        # means the venv is back on the wheel's broken libgphoto2 (CONSTRAINTS.md).
+        # Controlled runs: backend/tools/preview_stall_probe.py.
         frames_since_stall = 0
         t_last_stall = time.monotonic()
 
@@ -289,11 +285,10 @@ class CameraService:
             if self._shutdown_event.is_set():
                 break
 
-            # A capture is queued or running — do not start a preview grab. The
-            # CAPTURE job is serviced at the top of the loop; skipping the grab
-            # keeps the worker from riding a preview into the M50 stall and
-            # delaying the shutter (belt-and-suspenders with resume_preview()'s
-            # guard, in case _preview_allowed was re-armed by a race).
+            # A capture is queued or running — do not start a preview grab. Preview
+            # and capture share one camera lock, so a grab in flight makes the
+            # shutter queue behind it. (Belt-and-suspenders with resume_preview()'s
+            # guard, in case _preview_allowed was re-armed by a race.)
             if self._capture_in_progress:
                 continue
 
@@ -302,11 +297,7 @@ class CameraService:
             # a camera that's erroring intermittently (never enough
             # consecutive failures to trip a full disconnect) still gets
             # forced to rest within _preview_idle_timeout of the last viewer.
-            # Exception: while the session is wedged (_warmup_failed) the
-            # worker is mid-heal — pausing now would strand the fail-fast →
-            # re-init cascade until the next viewer arrives, so the rest is
-            # deferred until the session produces a frame again.
-            if self._preview_allowed.is_set() and not self._warmup_failed and \
+            if self._preview_allowed.is_set() and \
                     time.monotonic() - self._last_preview_request > self._preview_idle_timeout:
                 log.info("camera", "camera_watchdog", f"No preview requested for {self._preview_idle_timeout}s. Auto-pausing worker.")
                 self.standby()
@@ -337,25 +328,17 @@ class CameraService:
                     if not self._preview_allowed.is_set():
                         continue
 
-                    # Flush events to prevent camera buffer overflow during continuous preview
-                    # Without this, the Canon M50 freezes for ~3 seconds and throws [-1] Unspecified error
-                    flush_start = time.perf_counter()
-                    try:
-                        evt_type, evt_data = self.camera.wait_for_event(10)
-                        while evt_type != gp.GP_EVENT_TIMEOUT:
-                            evt_type, evt_data = self.camera.wait_for_event(5)
-                    except Exception:
-                        pass
-                    flush_time = time.perf_counter() - flush_start
-
+                    # Do NOT add a per-frame wait_for_event flush here: it costs
+                    # 12-30ms of every ~66ms frame and prevents nothing. Events are
+                    # drained around the capture instead (_attempt_capture), which
+                    # is what clears GP_EVENT_FILE_ADDED — the one event that
+                    # poisons the next preview session if left.
                     cap_start = time.perf_counter()
                     camera_file = self.camera.capture_preview()
                     file_data = camera_file.get_data_and_size()
                     frame = bytes(memoryview(file_data))
                     cap_time = time.perf_counter() - cap_start
                     consecutive_errors = 0
-                    # A real frame proves the session healed.
-                    self._warmup_failed = False
                 finally:
                     self.lock.release()
 
@@ -370,10 +353,12 @@ class CameraService:
                 self._last_cap_time = cap_time
 
                 loop_time = time.perf_counter() - loop_start
-                log.debug("camera_timing", "worker_cycle", 
-                          f"Worker cycle: cap={cap_time*1000:.1f}ms, flush={flush_time*1000:.1f}ms, lock={acq_time*1000:.1f}ms, total={loop_time*1000:.1f}ms")
+                log.debug("camera_timing", "worker_cycle",
+                          f"Worker cycle: cap={cap_time*1000:.1f}ms, lock={acq_time*1000:.1f}ms, "
+                          f"total={loop_time*1000:.1f}ms")
 
-                # Target ~15fps
+                # Target ~15fps — a CPU/bandwidth budget, not a camera limit (the
+                # camera will sustain 60). Raise it if the preview should be smoother.
                 time.sleep(0.066)
 
             except Exception as e:
@@ -388,23 +373,15 @@ class CameraService:
                 t_last_stall = now
 
                 warming_up = (time.monotonic() - self._last_init_time) < self._preview_warmup_grace
-                # A wedged live-view session (warmup already failed) clears ONLY
-                # after ~2 stalls of polling followed by an exit()+init() — polling
-                # alone never heals it, and a re-init BEFORE ~2 stalls of priming
-                # doesn't either (both proven on the M50: preview_stall_probe
-                # --heal-probe, CAMERA_NOTES §2). The init-time warmup grab is
-                # stall #1, so ONE worker stall (error_limit=1) supplies the 2
-                # stalls the re-init needs — reaching the heal ~3s sooner than
-                # waiting for 2 worker errors. Self-correcting: if the re-init's
-                # own warmup still fails, _warmup_failed stays set and the worker
-                # just runs another 2-stall cycle.
-                error_limit = 1 if self._warmup_failed else 6
-                if consecutive_errors >= error_limit and not self._capture_in_progress and not warming_up:
+                # 6 consecutive failures = a real disconnect, not a blip. Keep the
+                # threshold well above 1: a hair trigger here re-trips the disconnect
+                # on any single transient error and thrashes the re-init.
+                if consecutive_errors >= 6 and not self._capture_in_progress and not warming_up:
                     log.error("camera", "camera_preview_fail", f"Preview worker failed: {e}")
                     self.connected = False
-                    # Start the next session's error count from zero —
-                    # carrying it over gave the healed session a hair trigger
-                    # where a single transient stall re-tripped a disconnect.
+                    # Reset, so the reconnected session starts from a clean count.
+                    # Carrying it over leaves a hair trigger: one transient error
+                    # after the re-init instantly re-trips the disconnect.
                     consecutive_errors = 0
                     self._sse.dispatch_event("camera_status", self.get_status())
                 
@@ -452,9 +429,8 @@ class CameraService:
         my_generation = self._preview_generation
 
         # Auto-init if not connected (also starts the worker). Must run in a
-        # thread: init() does USB I/O under the camera lock (~1.5s, plus a
-        # ~3s warmup stall on a wedged session) and inline it would freeze
-        # the whole event loop — SSE, state machine, every endpoint.
+        # thread: init() does USB I/O under the camera lock (~1.5s) and inline it
+        # would freeze the whole event loop — SSE, state machine, every endpoint.
         if not self.connected:
             await anyio.to_thread.run_sync(self.init)
 
@@ -534,8 +510,8 @@ class CameraService:
         # queued: set the in-progress gate and standby first, so the worker can
         # neither start a new preview grab nor be re-armed by resume_preview()
         # (e.g. a preview-stream reconnect) in the window before it services the
-        # capture. Without this the worker can ride a preview grab into the M50
-        # ~3s stall and drag the shutter out with it.
+        # capture. Preview and capture share one camera lock — a grab that starts
+        # here makes the shutter wait for it.
         self._capture_in_progress = True
         self.standby()
         self._cmd_queue.put({"type": "CAPTURE", "job_id": job_id, "callbacks": callbacks})
@@ -577,7 +553,7 @@ class CameraService:
         # Preview-release settle: a few ms of idle after live view stopped and
         # before we touch the capture path, so the camera has released the
         # live-view USB/PTP state (gphoto: "preview may not be fully stopped when
-        # capture is triggered"). Distinct from the ~1s stall dodge.
+        # capture is triggered").
         time.sleep(self.PREVIEW_RELEASE_SETTLE_S)
 
         if not self.connected:
@@ -705,7 +681,8 @@ class CameraService:
         if self._capture_in_progress:
             # Never re-arm live view while a capture is pending/running — a
             # preview-stream reconnect (preview_generator calls this) must not
-            # un-park the worker mid-capture and let it ride into the M50 stall.
+            # un-park the worker mid-capture and put a preview grab in front of
+            # the shutter on the shared camera lock.
             return
         if not self._preview_allowed.is_set():
             log.info("camera", "camera_resume", "Resuming live view (waking worker)")

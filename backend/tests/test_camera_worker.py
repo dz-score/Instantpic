@@ -2,43 +2,34 @@ import time
 import pytest
 from unittest.mock import patch, MagicMock
 
-def test_worker_flushes_events(mock_gphoto2):
+def test_worker_does_not_flush_events_per_frame(mock_gphoto2):
     """
-    Test that the background worker continuously calls wait_for_event
-    to prevent camera buffer overflow during live view.
+    The preview loop grabs the frame and nothing else. A per-frame wait_for_event
+    drain costs 12-30ms of every ~66ms frame and prevents nothing — don't re-add it.
+    Events are drained around the capture instead, where they matter (see
+    test_capture_job_flushes_and_avoids_preview: that's what clears FILE_ADDED).
     """
     with patch('backend.camera_service.gp', mock_gphoto2):
-        # Ensure timeout constant is mocked
         mock_gphoto2.GP_EVENT_TIMEOUT = 2
-        mock_gphoto2.GP_EVENT_UNKNOWN = 3
-        
         mock_camera = mock_gphoto2.Camera.return_value
-        
-        # Simulate wait_for_event returning one event, then a timeout.
-        # This tests the while loop logic inside the event flush block.
-        mock_camera.wait_for_event.side_effect = [
-            (mock_gphoto2.GP_EVENT_UNKNOWN, None),
-            (mock_gphoto2.GP_EVENT_TIMEOUT, None)
-        ]
-        
+        mock_camera.wait_for_event.return_value = (mock_gphoto2.GP_EVENT_TIMEOUT, None)
+
         from backend.camera_service import CameraService
         camera = CameraService()
         camera.connected = True
         camera.camera = mock_camera
-        
+
         # Run exactly one iteration of the worker loop (is_set is called twice per loop)
         camera._shutdown_event.is_set = MagicMock(side_effect=[False, False, True])
         camera._preview_allowed.set()
-        
-        # Patch sleep to avoid slowing down tests
+
         with patch('time.sleep'):
             camera._camera_worker()
-            
-        # Verify wait_for_event was called to flush the queue
-        assert mock_camera.wait_for_event.call_count == 2
-        
-        # Verify capture_preview was called AFTER the flush
+
         mock_camera.capture_preview.assert_called_once()
+        assert mock_camera.wait_for_event.call_count == 0, \
+            "the preview loop must not flush events per frame — it costs 12-30ms/frame " \
+            "and prevents nothing"
 
 
 def test_capture_job_flushes_and_avoids_preview(mock_gphoto2):
@@ -79,16 +70,12 @@ def test_capture_job_flushes_and_avoids_preview(mock_gphoto2):
         mock_camera.capture_preview.assert_not_called()
 
 
-def test_wedged_session_fails_fast_after_one_error(mock_gphoto2):
+def test_preview_failure_disconnects_after_six_errors(mock_gphoto2):
     """
-    Regression test: a session whose init-time warmup preview failed is almost
-    certainly wedged (live-view state the M50 is left in after the previous
-    run's capture; see CAMERA_NOTES §2). The wedge clears only after ~2 stalls
-    of polling followed by an exit()+init() — and the warmup grab is stall #1,
-    so the worker needs just ONE more stall before tripping the disconnect that
-    drives the re-init heal (error_limit=1 when _warmup_failed). Failing fast
-    keeps the heal on the attract screen, not halfway through a guest's
-    countdown.
+    Six consecutive preview failures = a real disconnect (camera unplugged, USB
+    dropped), and the worker must mark itself disconnected so init()'s backoff can
+    take over. Fewer than six must NOT: a transient blip is not an outage, and a
+    hair trigger here makes a reconnected session re-trip on its first stumble.
     """
     with patch('backend.camera_service.gp', mock_gphoto2):
         mock_gphoto2.GP_EVENT_TIMEOUT = 2
@@ -100,19 +87,20 @@ def test_wedged_session_fails_fast_after_one_error(mock_gphoto2):
         camera = CameraService()
         camera.connected = True
         camera.camera = mock_camera
-        camera._warmup_failed = True
         camera._preview_allowed.set()
-        camera._last_preview_request = time.monotonic()      # viewer just asked
+        camera._last_preview_request = time.monotonic()      # viewer is attached
         camera._last_init_time = time.monotonic() - 10       # warmup grace elapsed
 
-        # Run exactly one preview attempt: one worker stall (stall #2, after the
-        # init warmup's stall #1) trips the disconnect -> re-init heal.
-        camera._shutdown_event.is_set = MagicMock(side_effect=[False, False, True])
+        # The worker checks _shutdown_event twice per iteration (loop top, then
+        # again after the _preview_allowed wait), so 12 Falses = 6 full attempts,
+        # and the 13th call exits the loop before it can re-init.
+        camera._shutdown_event.is_set = MagicMock(
+            side_effect=[False] * 12 + [True])
 
         with patch('time.sleep'):
             camera._camera_worker()
 
-        assert mock_camera.capture_preview.call_count == 1
+        assert mock_camera.capture_preview.call_count == 6
         assert camera.connected is False
 
 

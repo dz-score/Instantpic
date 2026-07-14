@@ -11,6 +11,59 @@ the startup and countdown→reveal flows, see
 
 ---
 
+## 🛑 READ THIS FIRST — the camera was never the problem (2026-07-14)
+
+**The `~3s` live-view stall and the wedged first session are NOT Canon M50
+behaviors. They are bugs in libgphoto2 2.5.34**, the build bundled inside the
+`python-gphoto2` **wheel**. On the system libgphoto2 (2.5.30, from apt) both
+symptoms vanish completely.
+
+Same probe, same code, same camera, same 60 seconds — only the library swapped
+(`preview_stall_probe.py --fps 0 --no-flush --no-configure`):
+
+| libgphoto2 | frames in 60s | rate | stalls |
+|---|---|---|---|
+| **2.5.34** (bundled in the wheel) | 1693 | 28.2 fps | **10** (each 3.00–3.07s, `[-1]`) |
+| **2.5.30** (system, apt) | 3598 | 60.0 fps | **0** |
+
+And in the shape the guest actually feels — a preview worker holding the camera
+lock while the shutter waits for it, at the 6s spacing that used to break
+(`--contention --gap-s 6`):
+
+| libgphoto2 | shutters blocked ≥1s | mean lock wait | capture failures |
+|---|---|---|---|
+| **2.5.34** | 3/14 | 642 ms | 0 |
+| **2.5.30** | **0/15** | **3 ms** | 0 |
+
+The boot wedge is gone on 2.5.30 as well (hardware-confirmed).
+
+**Therefore these claims, asserted as M50 hardware facts throughout this file,
+are FALSE:**
+
+- ❌ "Sustained live view stalls ~3s every ~6s." → It streams for 60s+ at 60fps, clean.
+- ❌ "A capture resets a ~6s clock." → There is no clock.
+- ❌ "`shot_interval_ms + countdown` must stay under ~5s." → No such constraint.
+- ❌ "A session that took a photo wedges the next boot." → It does not.
+
+**The fix is in `backend/requirements.txt`:** a `--no-binary gphoto2` line that
+forces python-gphoto2 to be built from source against the system libgphoto2.
+Do not remove it, and never `pip install gphoto2` by hand — pip will silently
+take the wheel and every symptom below returns. Verify with:
+
+```bash
+python3 -c "import gphoto2 as gp; print(gp.gp_library_version(gp.GP_VERSION_VERBOSE)[0])"
+# must NOT print 2.5.34
+```
+
+**What broke it open:** Canon's EOS Utility live-views this same body for minutes
+without stalling. Same hardware, same cable, different driver — so the stall could
+not be the camera. Everything below was measured correctly; it was all just
+measurements *of a broken library*, wrapped in a confident story about Canon
+firmware. **Sections 2 and 3 are kept as an investigation record and as an
+accurate description of 2.5.34's symptoms — but do not read them as camera facts.**
+
+---
+
 ## Table of Contents
 
 - ⭐ [Hard-Won M50 Findings (the short list)](#hard-won-m50-findings-the-short-list)
@@ -34,32 +87,17 @@ could **not** find documented anywhere public and spent hours proving on the
 hardware (probe: `backend/tools/preview_stall_probe.py`). Each links to the
 section with the evidence. If you only read one part of this file, read this.
 
-**Periodic live-view stall (§3)**
-- Sustained live view stalls **~3.0s and returns `[-1]`** on a **free-running
-  ~9s cycle** (~6s healthy → ~3s stall), then repeats. The onset is a cliff,
-  not a ramp.
-- The trigger is **elapsed live-view time (~6s), not frame count or fps** —
-  5 fps stalls exactly as often as 20 fps. Polling slower does not help.
-- The per-frame `wait_for_event` **flush does NOT prevent it** (commonly
-  assumed to; false on this body).
-- **Standby/resume does NOT reset the clock** — it free-runs on camera
-  live-view time, so you cannot dodge the stall with countdown/standby timing.
-- A real **`capture_image` DOES reset it**: it opens a guaranteed ~6s
-  stall-free window (then the cycle resumes). The reset is imperfect — ~10% of
-  even tightly-chained captures still land in a stall.
-
-**Wedged first session, caused by a capture (§2)**
-- Taking a photo leaves the camera in a state that **wedges live view on the
-  next process/boot**: config reads work, but every `capture_preview` stalls
-  ~3s `[-1]`.
-- It **survives a clean `camera.exit()` and process death** — it is caused by
-  the capture, **not** by an unclean kill. A run that took no photos boots clean.
-- It does **NOT self-clear**: neither idle time (a 5-min gap still boots
-  wedged) nor continuous polling alone (27s / 9 stalls, never healed) clears it.
-- Exactly **two** ways out: (1) a **`capture_image` clears it instantly**;
-  (2) **~2 stalls (~6s) of polling THEN an `exit()+init()`**. Both parts of (2)
-  are required — a re-init *before* ~2 stalls of priming does nothing, and the
-  priming does not carry across a re-init (each fresh session needs its own).
+**⚠️ The two headline "M50 quirks" were library bugs, not camera behavior**
+- The **periodic ~3s live-view stall (§3)** and the **wedged first session (§2)**
+  are **bugs in libgphoto2 2.5.34** (bundled in the `python-gphoto2` wheel).
+  On the system libgphoto2 2.5.30 the camera streams live view for 60s+ at 60fps
+  with **zero** stalls, and no boot wedge. See the banner at the top of this file.
+- **The only rule you need from this:** keep the `--no-binary gphoto2` line in
+  `backend/requirements.txt`. It forces the source build against the system
+  library. Drop it and every symptom in §2 and §3 comes back.
+- §2 and §3 remain accurate as a description of **2.5.34's** symptoms and as a
+  record of how they were characterized — but they are *not* facts about Canon
+  hardware, and nothing should be designed around them.
 
 **Widgets & session hygiene (§4, §1)**
 - The `output` widget reads **`MOBILE2`** and the camera manages it itself;
@@ -70,6 +108,67 @@ section with the evidence. If you only read one part of this file, read this.
 - An **in-place session rebuild** inside `init()` right after a failed warmup
   **poisons every subsequent session** — only the exit-old-handle-then-init
   heal is safe.
+
+**The one REAL camera-side defect left: capture fails ~7% of the time, and it's AF**
+- After the libgphoto2 fix, ~**7%** of `capture_image` calls still fail: the shutter
+  is triggered fine, then the call itself returns `[-1]` about **0.9s** later.
+  Measured 2/30 over a real session (3s and 5s countdowns, collage and single).
+  It is **uncorrelated with shot spacing** (failed at 38.3s and 10.4s gaps; other
+  shots at 41.8s and 13.5s were fine), which is why it hid behind the louder
+  library stall for so long — the old notes logged it as "~11%, no spacing
+  dependence" and wrongly folded it into the stall story.
+- **CAUSE: AUTOFOCUS, AND THE TRIGGER IS *MOTION* — NOT LIGHT (proven 2026-07-14).**
+  A 50-shot `--retry-probe` run with a deliberate mid-run change of condition:
+
+  | scene | captures | failures |
+  |---|---|---|
+  | empty, static room | **43** | **0** |
+  | hand moving in frame | **7** | **3 (43%)** |
+
+  43 consecutive clean captures of a static scene, then a 43% failure rate the
+  moment something moved. The body reports `focusmode = One Shot` (AF-S): every
+  shutter release attempts an autofocus lock first, **it cannot lock on a moving
+  subject, and a failed lock fails the release** → `[-1]` at ~0.8s.
+  `autofocusdrive = 0` does *not* prevent this; it only means *we* don't
+  explicitly drive AF.
+- **This is worse than the 7% headline suggests.** Guests move — they laugh,
+  adjust, lean in — right up to the shutter. AF fails *precisely* when the scene
+  is interesting. The ~7% measured in real sessions was with a fairly still
+  subject; a live event with a group mugging for the camera should be expected to
+  be worse.
+- **⚠️ The `--retry-probe` "RE-INIT was REQUIRED" verdict is CONFOUNDED — ignore
+  it.** The re-init path inserts ~3.2s (1.5s delay + ~1.7s init) before it retries,
+  while the BARE retry fires after only 0.3s — with the subject still moving. (The
+  bare retries that failed did so in 0.56s: a fast AF give-up.) "The re-init resets
+  something" and "the re-init bought 3 seconds for the scene to settle" predict
+  identical data. **Do not use that run as evidence for keeping the re-init.**
+- **gphoto2 cannot fix this.** The `focusmode` widget offers exactly one choice
+  (`One Shot`), and EF-M lenses have no AF/MF switch — **MF is a camera-menu
+  setting on the body.**
+- **THE FIX (not yet applied — a camera-body change, no code):** set the camera to
+  **MF and pre-focus on the guest mark**, stopped down (~f/8) so depth of field
+  covers a group shuffling around it, with the focus ring **taped**. MF means
+  *fixed* focus, not *no* focus, and a booth's geometry never changes — this is
+  what commercial booths do. It removes the failure class entirely and drops the
+  AF delay from every capture.
+  - The honest counter-argument, now **outweighed**: MF's failure mode is SILENT
+    (bumped ring / guests off the mark → soft photos, discovered after the event),
+    whereas AF's is loud and safe (retry-once catches it, no photo lost). That was
+    a real toss-up while AF looked like a random ~7%. It is not a toss-up now that
+    we know **AF fails *because the subject moved*** — the one thing guests are
+    guaranteed to do.
+  - **Falsifiable test before committing to it:** set MF, then re-run
+    `--retry-probe --shots 50` while waving a hand in frame for *all* 50. Zero
+    failures ⇒ AF confirmed as the sole cause and the fix is proven. Failures
+    persist ⇒ the theory is wrong; go back to the retry path.
+- **`retry-once` is LOAD-BEARING — do not remove it.** It recovered both failures;
+  no photo was lost. (An earlier note in this file suggested it might be dead
+  weight after the libgphoto2 fix. It is not.) It costs ~7.5s per failed shot
+  instead of ~1.9s, because a capture exception sets `connected = False` and forces
+  a full camera re-init before the retry. That re-init used to do real work (it
+  reset the old library's stall clock); it is probably pure cost now. **Making the
+  retry skip the re-init is the cheapest available win here** — but measure that a
+  bare retry actually recovers before changing it.
 
 **Non-camera gotcha (§5)**
 - The "camera whine near the shutter" was the **speaker amplifier** (a live Web
@@ -82,15 +181,16 @@ section with the evidence. If you only read one part of this file, read this.
 
 | Rule | Why |
 |---|---|
+| **Build python-gphoto2 from source; never install the wheel** | The wheel bundles libgphoto2 **2.5.34**, which stalls live view ~3s every ~6s and wedges the next boot. The system 2.5.30 does neither. `--no-binary gphoto2` in `backend/requirements.txt` enforces this — **do not remove it**. This one rule replaces most of the old workarounds. |
 | **Never write the `output` widget** (house rule) | Writing `'TFT'` kills every preview for the session — proven here. Upstream does sanction writing `PC`/`MOBILE`/`MOBILE2` to select a preview size, but that's untested on this body and we don't need it. `MOBILE2` as its value is **benign** — see §4. |
 | **Never set `viewfinder=0`** | Breaks the *next* preview session with persistent `[-1]` until re-init. |
-| **Don't re-init to "heal faster" *before* the session has polled ~2 stalls** | The wedged first session (§2) clears only after ~2 stalls of polling followed by an `exit()+init()` — a re-init *before* that priming doesn't heal, and polling alone never does. Re-initting after every single stall (tried and reverted in this investigation) never accumulates the priming → never heals, just adds latency. An in-place session rebuild is worse — it poisons every subsequent session (`7237e7a`/`832ab8e`, reverted `a4f4d51`). Correct = the worker-cascade heal: warmup stall (#1) → 1 worker stall (#2) → `connected=False` → re-enter `init()` (old handle exited first). |
-| **Flush events (`wait_for_event`) around every capture** | The post-trigger flush drains `GP_EVENT_FILE_ADDED`; skip it and events pile up and poison the next preview session. (Note: the per-frame flush does **not** prevent the periodic ~6s live-view stall — measured, §3.) |
-| **Chain multi-shot captures tight (`shot_interval_ms + countdown` < ~5s)** | A *capture* opens a ~6s stall-free window (§3); the next shot must fire inside it. `shot_interval_ms` is 1s for this. Standby does NOT open a window — only a capture (or a completed stall / re-init) resets the clock. |
-| **Don't rely on countdown/standby timing to dodge the stall** | The ~6s stall clock free-runs on camera time; standby/resume/rate/flush do NOT reset it (§3, disproven the earlier ≤5s idea). |
-| **Stop the booth with `stop.sh`, not a hard kill** | SIGTERM lets `camera.exit()` close the PTP session cleanly (verified: `camera_exit` logs on every stop). Good hygiene — but it does **not** prevent the wedged first session after a run that took photos; that wedge survives a clean exit; the worker heals it in ~9s (§2). |
-| **Prefer letting the camera rest (standby/watchdog) over always-on polling** | Sustained polling exposes the periodic stall (§3); resting resets the clock for the next shot. |
+| **Flush events (`wait_for_event`) around every capture** | The post-trigger flush drains `GP_EVENT_FILE_ADDED`; skip it and events pile up and poison the next preview session. (It never had anything to do with the ~6s stall — that was the library.) |
+| **Only the worker thread touches the camera object** | `python-gphoto2` is not thread-safe; the lock is real and still required. Unrelated to the stall — see CONSTRAINTS.md. |
+| **Stop the booth with `stop.sh`, not a hard kill** | SIGTERM lets `camera.exit()` close the PTP session cleanly (verified: `camera_exit` logs on every stop). Good hygiene. (It was never the cause of the boot wedge either — that was the library.) |
 | **Mistrust ear-based localization of noises near the camera** | The famous "camera whine" came from the speaker amplifier (§5). |
+| ~~Chain multi-shot captures tight (`interval + countdown` < ~5s)~~ | **DEAD (2026-07-14).** There is no ~6s window and no clock to chain inside. Shot spacing is now a free design choice. |
+| ~~Don't re-init to "heal faster" before ~2 stalls~~ | **DEAD (2026-07-14).** There is no boot wedge to heal on 2.5.30. |
+| ~~Prefer letting the camera rest over always-on polling~~ | **DEAD as stall mitigation (2026-07-14).** Standby is fine for power/heat if you want it, but it buys nothing against a stall that no longer exists. |
 
 Priorities when trading off (per operator): **shutter latency and capture
 reliability outweigh idle-time niceties.**
@@ -98,6 +198,14 @@ reliability outweigh idle-time niceties.**
 ---
 
 ## 2. The Wedged First Session
+
+> ### ⚠️ SUPERSEDED — this is a libgphoto2 2.5.34 bug, not an M50 behavior
+> On the system libgphoto2 2.5.30 there is **no boot wedge** (hardware-confirmed
+> 2026-07-14). Everything below accurately describes the symptom and how it was
+> characterized, and it is all reproducible *on 2.5.34* — but the camera does not
+> do this, and no code should be written to work around it. The fix is the
+> `--no-binary gphoto2` line in `backend/requirements.txt`. See the banner at the
+> top of this file. Kept as an investigation record.
 
 **Symptom:** on app launch, the first PTP session has broken live view —
 `camera.init()` succeeds, config reads work fine (widget dump prints), but
@@ -180,6 +288,18 @@ session) — it just does not prevent the post-capture wedge.
 ---
 
 ## 3. Live-View Behavior Under Sustained Polling
+
+> ### ⚠️ SUPERSEDED — this is a libgphoto2 2.5.34 bug, not an M50 behavior
+> On the system libgphoto2 2.5.30, sustained live view runs **60s+ at 60fps with
+> zero stalls** (and the gphoto2 CLI, which links 2.5.30, managed a 39.9s unbroken
+> stretch — flatly impossible under the model described below). There is no ~6s
+> clock, no ~3s stall, and nothing for a capture to "reset".
+>
+> Every measurement below is real and was made carefully. They were all
+> measurements *of a broken library*. The tell that unmasked it: Canon's EOS
+> Utility live-views this same body for minutes without trouble — same hardware,
+> different driver. Fix = `--no-binary gphoto2` in `backend/requirements.txt`.
+> Kept as an investigation record, and as an accurate account of 2.5.34's symptoms.
 
 Characterized precisely with `backend/tools/preview_stall_probe.py`
 (2026-07-10 — a controlled fps sweep + standby/resume cycle test on the booth
@@ -448,19 +568,28 @@ timings, DEBUG), `capture_trigger`/`capture_download` timings,
 (`… (healthy run before stall: N frames / N.Ns; stalled cycle Nms)`) — in a
 healthy session the first stall after each `resume` should read ~6s.
 
-**Controlled measurement — `backend/tools/preview_stall_probe.py`:** a
-standalone probe (not imported by the app) that isolates continuous
-`capture_preview()` polling, free of the standby/capture/re-init noise of a
-real session. Run it **on the Pi with the booth stopped** (one process owns
-the camera); it heals a wedged first session before measuring, and always
-releases the camera cleanly (try/finally + SIGTERM handling) so it never
-wedges the next run. Flags: `--fps N` (rate sweep — proves the stall is
-time- not frame-triggered), `--no-flush` (does the flush help — it doesn't),
-`--standby-cycle [--work-s N]` (does standby/resume reset the clock — **NO**;
-a mid-window standby leaves it running), `--capture-cycle` (does a real
-capture reset it — **YES**, ~6s window after), `--rapid-capture --gap-s N`
-(do tightly-chained captures stay clean — mostly, ~10% still fail). This is
-how §3 was characterized.
+**Controlled measurement — `backend/tools/preview_stall_probe.py`:** a standalone
+probe (not imported by the app). Run it **on the Pi with the booth stopped** — one
+process owns the camera. It prints the loaded libgphoto2 version first (the whole
+stall saga was a version bug, so that line is usually the answer) and always
+releases the camera cleanly. Two modes:
+
+| Command | Question it answers |
+|---|---|
+| `preview_stall_probe.py --duration 60` | **Is live view clean?** Zero stalls = a correct install. ~3.0s stalls every ~6s = the venv is on the python-gphoto2 **wheel** (libgphoto2 2.5.34); reinstall with `--no-binary`. This is the regression canary. |
+| `preview_stall_probe.py --retry-probe --shots 50` | **The ~7% capture failure.** Fires real captures and, on each failure, tries a BARE retry before falling back to the app's re-init — so we learn whether that expensive re-init is needed. Also the harness for the pending MF test. |
+
+**Companion — `backend/tools/trace_wall.py`:** finds THE WALL (the longest silence)
+in a `gphoto2 --debug` log. This is what caught the library:
+`gphoto2 --debug --debug-logfile=/dev/shm/lv.log --capture-movie=60s`, then
+`trace_wall.py /dev/shm/lv.log`.
+
+> The probe once ran to ~1,700 lines across ten modes (`--contention`,
+> `--heal-probe`, `--capture-cycle`, `--standby-cycle`, `--rapid-capture`,
+> `--trace`, …) built to characterize the stall described in §3. Those questions
+> are settled and the modes are gone; `git log` has them if a claim ever needs
+> re-checking. Commands quoted elsewhere in this file are recorded as history —
+> most no longer exist.
 
 ---
 

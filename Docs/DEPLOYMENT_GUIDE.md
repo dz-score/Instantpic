@@ -19,8 +19,39 @@ sudo apt install -y git python3 python3-pip python3-venv nodejs npm build-essent
 sudo apt install -y cups
 # Add pi to the lpadmin group so it can print
 sudo usermod -aG lpadmin $(whoami)
+# REQUIRED: headers to build python-gphoto2 against the SYSTEM libgphoto2.
+# Without these, pip falls back to the wheel — see the warning below.
+sudo apt install -y libgphoto2-dev pkg-config
 ```
 > **Note**: The Pi will need a USB printer that supports CUPS.
+
+> ### ⚠️ python-gphoto2 must be built from source, not installed as a wheel
+> The wheel bundles its own **libgphoto2 2.5.34**, and that build stalls M50 live
+> view — a ~3.0s dead preview grab every ~6s, permanently. The preview worker holds
+> the camera lock across each grab, so a stalled grab blocks the shutter and the
+> guest's photo fires ~3s after the countdown hits zero.
+>
+> Measured on this rig — same code, same camera, same 60s, only the library swapped:
+>
+> | libgphoto2 | frames in 60s | rate | stalls | shutters blocked (6s spacing) |
+> |---|---|---|---|---|
+> | 2.5.34 (bundled in the wheel) | 1693 | 28.2 fps | **10** | **3/14**, mean lock wait 642 ms |
+> | 2.5.30 (system, apt) | 3598 | 60.0 fps | **0** | **0/15**, mean lock wait 3 ms |
+>
+> `backend/requirements.txt` carries a `--no-binary gphoto2` line that forces the
+> source build. **Do not remove it**, and do not `pip install gphoto2` by hand — pip
+> will silently pick the wheel and the stall comes straight back. Verify after
+> install:
+> ```bash
+> python3 -c "import gphoto2 as gp; print(gp.gp_library_version(gp.GP_VERSION_VERBOSE)[0])"
+> # must NOT print 2.5.34
+> ```
+> Re-check any of this on the Pi (booth stopped) with:
+> ```bash
+> python3 backend/tools/preview_stall_probe.py --duration 60
+> ```
+> It prints the loaded libgphoto2 version, then polls live view. Zero stalls = a
+> correct install. ~3.0s stalls arriving every ~6s = you are on the wheel.
 
 ## 3️⃣ Clone the Repository
 ```bash
