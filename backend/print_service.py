@@ -21,7 +21,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, asdict
 from typing import Optional
 
-from backend.config import get_settings
+from backend.config import SettingsService
 from backend.logger import log
 
 
@@ -279,16 +279,20 @@ class PrintService:
     RETRY_DELAY_S = 3
     STATUS_CACHE_TTL_S = 5
 
-    def __init__(self):
+    def __init__(self, settings: SettingsService):
+        # Holds the SettingsService, not an AppSettings snapshot: _reload_driver runs
+        # on every job so that swapping the printer in the admin panel takes effect
+        # without a restart. A boot-time snapshot would freeze the printer choice.
+        self._settings = settings
         self._driver: Optional[PrinterDriver] = None
         self._cached_status: Optional[PrinterStatus] = None
         self._status_cache_time: float = 0
-        self._reload_driver()
+        # No driver built here — Rule 19 forbids work in a constructor. Every public
+        # entry point (print/get_status/cancel_all) calls _reload_driver() anyway.
 
     def _reload_driver(self):
         """Load (or reload) the correct driver from config."""
-        settings = get_settings()
-        name = settings.printer_name
+        name = self._settings.get().printer_name
 
         if name == "mock" or sys.platform == "win32":
             self._driver = MockPrinterDriver(name)
@@ -307,7 +311,7 @@ class PrintService:
         # Reload driver in case config changed (printer swapped)
         self._reload_driver()
 
-        settings = get_settings()
+        settings = self._settings.get()
         options = settings.printer_options
 
         # Validate file
@@ -384,7 +388,6 @@ class PrintService:
         log.info("printer", "printer_shutdown", "Shutting down print service...")
         # (Could cancel pending jobs here if we were tracking them, but we just let cups handle it)
 
-
-# ── Global singleton ──────────────────────────────────────────────────────────
-
-print_svc = PrintService()
+# No module-level singleton: PrintService needs settings, and the composition root
+# (main.py's lifespan) is the one place that has them. It builds the service and
+# hands it to the job queue and the routes.

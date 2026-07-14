@@ -3,21 +3,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from backend.camera_provider import get_camera
+from backend.deps import get_camera, require_camera
 
 router = APIRouter(prefix="/api/camera", tags=["camera"])
 
 
 class CameraSettingsRequest(BaseModel):
     settings: dict
-
-
-def require_camera():
-    """Dependency for routes that cannot work without a camera backend."""
-    camera = get_camera()
-    if camera is None:
-        raise HTTPException(status_code=501, detail="gphoto2 not installed")
-    return camera
 
 
 @router.get("/preview")
@@ -79,10 +71,9 @@ async def camera_config_set(req: CameraSettingsRequest, camera=Depends(require_c
 
 
 @router.get("/status")
-async def camera_status():
+async def camera_status(camera=Depends(get_camera)):
     # Unlike the routes above, an absent camera is a reportable status here,
     # not a 501 — the frontend polls this to render the disconnected state.
-    camera = get_camera()
     if camera is None:
         return {"connected": False, "is_capturing": False, "error": "gphoto2 not installed"}
     return camera.get_status()

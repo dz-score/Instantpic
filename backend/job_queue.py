@@ -1,8 +1,9 @@
 import asyncio
 import os
+from backend.config import SettingsService
 from backend.logger import log
 from backend.photo_processor import process_photo_layout
-from backend.print_service import print_svc
+from backend.print_service import PrintService
 from backend import storage
 from backend.storage import enforce_circular_storage
 
@@ -13,9 +14,14 @@ class JobQueue:
     coroutines supplied by the submitter. It does not know or import whoever
     consumes those results, so there is no dependency back onto the state
     machine (the submitter owns that wiring).
+
+    The printer and settings are handed in by the composition root rather than
+    imported, so a test can drive the queue against doubles.
     """
 
-    def __init__(self):
+    def __init__(self, print_svc: PrintService, settings: SettingsService):
+        self._print_svc = print_svc
+        self._settings = settings
         self._queue = None
         self._worker_task = None
         self._shutdown = False
@@ -57,7 +63,8 @@ class JobQueue:
                         filename = await loop.run_in_executor(
                             None,
                             process_photo_layout,
-                            images, layout, text, overlay_id
+                            images, layout, text, overlay_id,
+                            self._settings.get().overlays,
                         )
 
                         # Cleanup storage in background
@@ -77,7 +84,7 @@ class JobQueue:
                         filepath = os.path.join(storage.PHOTOS_DIR, filename)
 
                         loop = asyncio.get_running_loop()
-                        result = await loop.run_in_executor(None, print_svc.print, filepath)
+                        result = await loop.run_in_executor(None, self._print_svc.print, filepath)
 
                         if result.success:
                             if on_success:
@@ -105,7 +112,7 @@ class JobQueue:
 
     async def _run_cleanup(self):
         loop = asyncio.get_running_loop()
-        await loop.run_in_executor(None, enforce_circular_storage)
+        await loop.run_in_executor(None, enforce_circular_storage, self._settings.get())
 
     def start(self):
         self._shutdown = False
@@ -123,6 +130,3 @@ class JobQueue:
                 
         if self._background_tasks:
             await asyncio.gather(*self._background_tasks, return_exceptions=True)
-
-# Global Singleton
-job_queue = JobQueue()

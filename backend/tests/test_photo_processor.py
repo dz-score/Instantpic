@@ -1,6 +1,10 @@
 import os
 from PIL import Image
+from backend.config import AppSettings
 from backend.photo_processor import process_photo_layout
+
+# The overlay catalogue is passed in now rather than read from a global.
+OVERLAYS = AppSettings().overlays
 
 def test_process_photo_layout_single(temp_workspace, temp_config, mock_base64_image):
     """It should correctly process a single image layout and save a jpeg."""
@@ -8,7 +12,8 @@ def test_process_photo_layout_single(temp_workspace, temp_config, mock_base64_im
         images_base64=[mock_base64_image],
         layout_type="single",
         text="Test Wedding 2026",
-        overlay_id="none"
+        overlay_id="none",
+        overlays=OVERLAYS,
     )
     
     assert filename.endswith(".jpg")
@@ -30,7 +35,8 @@ def test_process_photo_layout_collage(temp_workspace, temp_config, mock_base64_i
         images_base64=images,
         layout_type="collage",
         text="Test Collage",
-        overlay_id="none"
+        overlay_id="none",
+        overlays=OVERLAYS,
     )
     
     filepath = os.path.join(temp_workspace["photos_dir"], filename)
@@ -45,7 +51,8 @@ def test_process_photo_layout_overlay_resilience(temp_workspace, temp_config, mo
         images_base64=[mock_base64_image],
         layout_type="single",
         text="",
-        overlay_id="this_overlay_does_not_exist"
+        overlay_id="this_overlay_does_not_exist",
+        overlays=OVERLAYS,
     )
     
     filepath = os.path.join(temp_workspace["photos_dir"], filename)

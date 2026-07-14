@@ -1,11 +1,12 @@
 import socket
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
-from backend.config import get_settings
+from backend.config import AppSettings
+from backend.deps import get_print_service, get_settings
 from backend.logger import log
-from backend.print_service import print_svc
+from backend.print_service import PrintService
 
 router = APIRouter(tags=["system"])
 
@@ -21,16 +22,19 @@ async def health_check():
 
 
 @router.get("/api/printer/status")
-async def printer_status():
+async def printer_status(print_svc: PrintService = Depends(get_print_service)):
     """Get current printer status (connected, ready, errors)."""
     status = print_svc.get_status()
     return status.to_dict()
 
 
 @router.get("/api/diagnostics")
-async def get_diagnostics():
+async def get_diagnostics(
+    settings: AppSettings = Depends(get_settings),
+    print_svc: PrintService = Depends(get_print_service),
+):
     from backend.diagnostics import get_diagnostics
-    return get_diagnostics()
+    return get_diagnostics(settings, print_svc)
 
 
 @router.post("/api/emergency")
@@ -56,9 +60,8 @@ def _get_lan_ip():
 
 
 @router.get("/api/network-info")
-async def get_network_info():
+async def get_network_info(settings: AppSettings = Depends(get_settings)):
     """Return the booth's LAN IP and port for QR code URL generation."""
-    settings = get_settings()
     ip = _get_lan_ip()
     port = getattr(settings, "port", 8000)
     return {

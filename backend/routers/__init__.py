@@ -1,5 +1,6 @@
 """HTTP surface, one module per domain.
 
-Routers import services (camera_provider, state_machine, print_svc, ...) but
-never import backend.main — main.py assembles them onto the app.
+Routers receive their services through backend.deps (settings, printer, camera),
+which reads what main.py's lifespan built onto app.state — they never import a
+service singleton to reach it, and never import backend.main.
 """

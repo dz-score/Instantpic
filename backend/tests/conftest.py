@@ -46,16 +46,14 @@ def temp_workspace(tmp_path, monkeypatch):
 
 @pytest.fixture(autouse=True)
 def isolate_config(tmp_path, monkeypatch):
-    """Give every test its own config.json and a cleared settings cache.
+    """Point every test's config at a throwaway file, never the developer's real one.
 
-    autouse, because the alternative is opt-in isolation and that fails quietly.
-    Settings live in a module-level cache (backend.config._settings), so a test that
-    forgot to request this fixture would read the developer's real config.json, and a
-    test that mutated settings would leak them into whichever test ran next. Neither
-    failure announces itself — you get a pass locally and a mystery in CI.
+    autouse, because the alternative is opt-in isolation and that fails quietly: a
+    test that forgot to ask would read (and an admin-route test would *write*) the
+    real config.json.
 
-    Both halves are required: redirecting CONFIG_PATH alone does nothing once the
-    cache is warm, and clearing the cache alone would just re-read the real file.
+    There is no cache to clear any more. Settings now live on a SettingsService that
+    the lifespan builds per app, so the only thing to redirect is the path it reads.
     """
     config_file = tmp_path / "config.json"
     # Empty config: exercises the fresh-install / missing-values path by default.
@@ -63,16 +61,21 @@ def isolate_config(tmp_path, monkeypatch):
 
     import backend.config as config
     monkeypatch.setattr(config, "CONFIG_PATH", str(config_file))
-    config.reset_cache()
 
-    yield str(config_file)
-
-    config.reset_cache()
+    return str(config_file)
 
 @pytest.fixture
 def temp_config(isolate_config):
     """Path to this test's isolated config.json, for tests that read or write it."""
     return isolate_config
+
+@pytest.fixture
+def settings_svc(isolate_config):
+    """A loaded SettingsService on this test's config, for services that need one."""
+    from backend.config import SettingsService
+    svc = SettingsService(isolate_config)
+    svc.load()
+    return svc
 
 @pytest.fixture
 def mock_base64_image():
@@ -85,10 +88,17 @@ def mock_base64_image():
 
 @pytest.fixture
 def client(temp_workspace, temp_config):
-    """Provides a TestClient connected to the FastAPI app with isolated storage."""
+    """A TestClient over the real app, with isolated storage and config.
+
+    Used as a context manager so the lifespan actually runs. That is not optional
+    any more: the lifespan IS the composition root, so without it app.state has no
+    settings, no printer and no camera, and every route 500s. It also means startup
+    bugs now surface in the suite instead of only on a real boot.
+    """
     from fastapi.testclient import TestClient
     from backend.main import app
-    return TestClient(app)
+    with TestClient(app) as c:
+        yield c
 
 @pytest.fixture
 def mock_gphoto2(monkeypatch):

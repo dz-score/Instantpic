@@ -1,8 +1,9 @@
 import os
 import base64
+from typing import List
 from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont, ImageOps
-from backend.config import get_settings
+from backend.config import OverlayConfig
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PHOTOS_DIR = os.path.join(BASE_DIR, "backend", "photos")
@@ -67,11 +68,15 @@ def create_mock_overlay_png(filename: str, overlay_id: str):
         
     overlay.save(filepath, "PNG")
 
-def process_photo_layout(images_base64: list, layout_type: str, text: str, overlay_id: str) -> str:
+def process_photo_layout(images_base64: list, layout_type: str, text: str, overlay_id: str,
+                         overlays: List[OverlayConfig]) -> str:
     """
     Process single or multi-photo layouts into an 1800x1200 canvas,
     overlay selected template and draw custom branding text.
     Returns the filename of the saved image.
+
+    `overlays` is the configured catalogue, passed in rather than read from a global
+    so this stays a pure function of its arguments.
     """
     os.makedirs(PHOTOS_DIR, exist_ok=True)
     os.makedirs(OVERLAYS_DIR, exist_ok=True)
@@ -105,9 +110,8 @@ def process_photo_layout(images_base64: list, layout_type: str, text: str, overl
             canvas.paste(cropped_img, (x_pos, y_pos)) # Bottom is 800
             
     # 3. Apply Overlay Template
-    settings = get_settings()
     overlay_filename = ""
-    for o in settings.overlays:
+    for o in overlays:
         if o.id == overlay_id:
             overlay_filename = o.filename
             break

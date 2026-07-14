@@ -10,25 +10,37 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 
 from backend.storage import ensure_directories, PHOTOS_DIR, OVERLAYS_DIR, BASE_DIR
-from backend.print_service import print_svc
+from backend.config import SettingsService
+from backend.print_service import PrintService
 from backend.sse_service import sse_svc
 from backend.logger import log
 from backend.state_machine import state_machine
-from backend.job_queue import job_queue
-from backend.camera_provider import get_camera
+from backend.job_queue import JobQueue
+from backend.camera_provider import create_camera
 
 from backend.routers import booth, camera, config, logs, photos, sse, system
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Ensure folders exist
+    # ── Composition root (Rule 19) ────────────────────────────────────────────
+    # Every service is constructed here and handed its collaborators. Nothing below
+    # this point reaches for a module global to find a dependency; routes receive
+    # what they need via backend/deps.py, which reads app.state.
     ensure_directories()
 
-    # Log startup
     log.info("system", "system_boot", f"Backend started", data={"version": "1.0.0"})
 
-    camera_svc = get_camera()
+    settings_svc = SettingsService()
+    settings_svc.load()
+
+    print_svc = PrintService(settings_svc)
+    job_queue = JobQueue(print_svc, settings_svc)
+    camera_svc = create_camera(settings_svc.get())
+
+    app.state.settings = settings_svc
+    app.state.print_svc = print_svc
+    app.state.camera = camera_svc
 
     # Bind the event loop so camera threads can dispatch SSE events safely.
     # Must happen before camera_svc.init() starts emitting from its threads.

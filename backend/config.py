@@ -1,4 +1,9 @@
-"""Application settings, held in memory and mirrored to config.json.
+"""Application settings.
+
+`AppSettings` is the schema. `SettingsService` owns the live instance for one
+process and is constructed at the composition root (main.py's lifespan) — per
+Rule 19, nothing below the entrypoint reaches for settings through a module
+global; it receives a SettingsService or a plain AppSettings snapshot.
 
 Memory is the source of truth. config.json is where that memory is persisted so it
 survives a restart — it is an output, not an input, once the process is running. The
@@ -68,37 +73,35 @@ class AppSettings(BaseModel):
         OverlayConfig(id="gold_glitter", name="Elegant Gold Frame", filename="gold_glitter.png")
     ]
 
-def _quarantine_bad_config() -> str:
+def _quarantine_bad_config(path: str) -> str:
     """Move an unreadable config.json aside so the next boot starts clean.
 
     Returns the backup path, or "" if the file could not be moved.
     """
     backup = os.path.join(
-        os.path.dirname(CONFIG_PATH), f"config.corrupt-{int(time.time())}.json"
+        os.path.dirname(path), f"config.corrupt-{int(time.time())}.json"
     )
     try:
-        os.replace(CONFIG_PATH, backup)
+        os.replace(path, backup)
         return backup
     except OSError:
         return ""
 
-def _read_from_disk() -> AppSettings:
-    """Read settings from config.json, falling back to defaults if it is unusable.
+def read_settings(path: str) -> AppSettings:
+    """Read settings from disk, falling back to defaults if the file is unusable.
 
-    MUST NOT raise. camera_provider reaches this via get_settings() at module scope,
-    so an exception here is not a bad config — it is a booth that will not boot. A
-    file we cannot parse is quarantined and we carry on with defaults.
-
-    Prefer get_settings(); this is the uncached read behind it.
+    MUST NOT raise. This runs during startup, so an exception here is not a bad
+    config — it is a booth that will not boot. A file we cannot parse is quarantined
+    and we carry on with defaults.
     """
-    if not os.path.exists(CONFIG_PATH):
+    if not os.path.exists(path):
         return AppSettings()
 
     try:
-        with open(CONFIG_PATH, "r") as f:
+        with open(path, "r") as f:
             return AppSettings(**json.load(f))
     except (json.JSONDecodeError, ValidationError, OSError, TypeError) as e:
-        backup = _quarantine_bad_config()
+        backup = _quarantine_bad_config(path)
         log.error(
             "config",
             "config_load_corrupt",
@@ -107,22 +110,22 @@ def _read_from_disk() -> AppSettings:
         )
         return AppSettings()
 
-def save_settings(settings: AppSettings):
-    """Write settings to config.json atomically.
+def write_settings(path: str, settings: AppSettings):
+    """Write settings to disk atomically.
 
     Write-in-place would truncate the file first, so a crash mid-write leaves a
-    half-written config that _read_from_disk then has to quarantine. Instead we write
+    half-written config that read_settings then has to quarantine. Instead we write
     a temp file alongside it and os.replace() — atomic on both Windows and POSIX.
     The temp file must share a directory with the target: os.replace across volumes
     is not atomic.
     """
-    tmp = f"{CONFIG_PATH}.tmp"
+    tmp = f"{path}.tmp"
     try:
         with open(tmp, "w") as f:
             json.dump(settings.model_dump(), f, indent=2)
             f.flush()
             os.fsync(f.fileno())
-        os.replace(tmp, CONFIG_PATH)
+        os.replace(tmp, path)
     except OSError:
         # Leave the existing config.json untouched, and don't litter a partial temp.
         try:
@@ -131,40 +134,61 @@ def save_settings(settings: AppSettings):
             pass
         raise
 
-# ── In-memory settings ──
-# Guards _settings against two admin POSTs racing: the read-modify-write in
-# update_settings would otherwise let the later write clobber the earlier one.
-_lock = threading.RLock()
-_settings: Optional[AppSettings] = None
 
-def get_settings() -> AppSettings:
-    """The current settings. Reads memory; touches disk only on the first call."""
-    global _settings
-    with _lock:
-        if _settings is None:
-            _settings = _read_from_disk()
-        return _settings
+class SettingsService:
+    """Owns the live settings for one process.
 
-def update_settings(updates: Dict) -> AppSettings:
-    """Apply a dict of changes, publish them, and persist to disk."""
-    global _settings
-    with _lock:
-        updated_data = get_settings().model_dump()
-        for key, value in updates.items():
-            if key in updated_data:
-                updated_data[key] = value
+    Constructed and loaded at the composition root, then handed to whoever needs it.
+    Hold the service (not the AppSettings it returns) when you need to see later
+    edits — print_service reloads its driver per job so a printer swap takes effect.
+    Hold the AppSettings snapshot when you need a consistent view for the duration of
+    some work, which is what the FSM does across a capture sequence.
+    """
 
-        # REBIND, never mutate in place. The FSM takes settings as a parameter and
-        # holds that object across a whole capture sequence (state_machine.py, the
-        # shot_completed closure). Mutating the cached instance would reach into
-        # sequences already in flight and change the pacing of shots mid-session;
-        # rebinding leaves every existing holder on the snapshot it started with.
-        _settings = AppSettings(**updated_data)
-        save_settings(_settings)
-        return _settings
+    def __init__(self, path: Optional[str] = None):
+        # No I/O here, per Rule 19 — call load(). A constructor that reads a file
+        # can't be built in a test without that file existing.
+        #
+        # CONFIG_PATH is resolved here rather than as a default argument, because a
+        # default binds once at import and would ignore a monkeypatched path.
+        self._path = path if path is not None else CONFIG_PATH
+        self._lock = threading.RLock()
+        self._settings: Optional[AppSettings] = None
 
-def reset_cache():
-    """Drop the cached settings so the next get_settings() re-reads disk. For tests."""
-    global _settings
-    with _lock:
-        _settings = None
+    def load(self) -> AppSettings:
+        """Read the config file into memory. The composition root calls this once."""
+        with self._lock:
+            self._settings = read_settings(self._path)
+            return self._settings
+
+    def get(self) -> AppSettings:
+        """The current settings. Memory only — never touches disk."""
+        with self._lock:
+            if self._settings is None:
+                # Loudly, rather than lazily reading the file: a silent fallback here
+                # is a second wiring mechanism, and it is what let tests quietly read
+                # the developer's real config.json.
+                raise RuntimeError(
+                    "SettingsService.load() was never called. Settings are wired at "
+                    "the composition root (main.py lifespan)."
+                )
+            return self._settings
+
+    def update(self, updates: Dict) -> AppSettings:
+        """Apply a dict of changes and persist them."""
+        # The lock closes the read-modify-write race between two concurrent admin
+        # POSTs, where the later write would otherwise clobber the earlier one.
+        with self._lock:
+            updated_data = self.get().model_dump()
+            for key, value in updates.items():
+                if key in updated_data:
+                    updated_data[key] = value
+
+            # REBIND, never mutate in place. The FSM takes an AppSettings snapshot and
+            # holds it across a whole capture sequence (state_machine.py, the
+            # shot_completed closure). Mutating the instance would reach into sequences
+            # already in flight and change the pacing of shots mid-session; rebinding
+            # leaves every existing holder on the snapshot it started with.
+            self._settings = AppSettings(**updated_data)
+            write_settings(self._path, self._settings)
+            return self._settings

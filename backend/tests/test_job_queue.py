@@ -1,17 +1,25 @@
 import pytest
 import asyncio
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
+
+from backend.config import AppSettings
+from backend.job_queue import JobQueue
 
 @pytest.fixture
 def anyio_backend():
     return 'asyncio'
 
+@pytest.fixture
+def queue():
+    """A JobQueue with its collaborators handed in, the way the lifespan builds it."""
+    settings_svc = MagicMock()
+    settings_svc.get.return_value = AppSettings()
+    return JobQueue(print_svc=MagicMock(), settings=settings_svc)
+
 @pytest.mark.anyio
-async def test_job_queue_photo_processing():
+async def test_job_queue_photo_processing(queue):
     with patch("backend.job_queue.process_photo_layout") as mock_process:
         with patch("backend.job_queue.enforce_circular_storage"):
-            from backend.job_queue import job_queue
-
             # Mock process_photo_layout
             mock_process.return_value = "final_photo.jpg"
 
@@ -20,10 +28,10 @@ async def test_job_queue_photo_processing():
             on_success = AsyncMock()
             on_failure = AsyncMock()
 
-            job_queue.start()
+            queue.start()
 
             # Enqueue a photo processing job
-            await job_queue.enqueue({
+            await queue.enqueue({
                 "type": "PROCESS_PHOTO",
                 "images": ["raw1.jpg"],
                 "layout": "single",
@@ -34,49 +42,48 @@ async def test_job_queue_photo_processing():
             })
 
             # Wait for the worker to process the job
-            await job_queue._get_queue().join()
+            await queue._get_queue().join()
 
-            # Verify processing was called
-            mock_process.assert_called_once_with(["raw1.jpg"], "single", "Hello", "none")
+            # Verify processing was called, including the overlay catalogue the queue
+            # now reads off its injected settings rather than a module global.
+            mock_process.assert_called_once_with(
+                ["raw1.jpg"], "single", "Hello", "none", AppSettings().overlays
+            )
 
             # Verify the success callback received the result; failure untouched
             on_success.assert_awaited_once_with("final_photo.jpg")
             on_failure.assert_not_awaited()
 
-            await job_queue.stop()
+            await queue.stop()
 
 @pytest.mark.anyio
-async def test_job_queue_unknown_job():
+async def test_job_queue_unknown_job(queue):
     with patch("backend.job_queue.log.warn") as mock_warn:
-        from backend.job_queue import job_queue
+        queue.start()
 
-        job_queue.start()
-
-        await job_queue.enqueue({
+        await queue.enqueue({
             "type": "UNKNOWN_GARBAGE"
         })
 
-        await job_queue._get_queue().join()
+        await queue._get_queue().join()
 
         mock_warn.assert_called_with("job_queue", "unknown_job", "Unknown job type: UNKNOWN_GARBAGE")
 
-        await job_queue.stop()
+        await queue.stop()
 
 @pytest.mark.anyio
-async def test_job_queue_error_handling():
+async def test_job_queue_error_handling(queue):
     with patch("backend.job_queue.process_photo_layout") as mock_process:
         with patch("backend.job_queue.enforce_circular_storage"):
-            from backend.job_queue import job_queue
-
             # Simulate a crash during processing
             mock_process.side_effect = Exception("Out of memory!")
 
             on_success = AsyncMock()
             on_failure = AsyncMock()
 
-            job_queue.start()
+            queue.start()
 
-            await job_queue.enqueue({
+            await queue.enqueue({
                 "type": "PROCESS_PHOTO",
                 "images": ["raw1.jpg"],
                 "layout": "single",
@@ -86,10 +93,10 @@ async def test_job_queue_error_handling():
                 "on_failure": on_failure,
             })
 
-            await job_queue._get_queue().join()
+            await queue._get_queue().join()
 
             # Verify the failure callback caught the error; success untouched
             on_failure.assert_awaited_once_with("Out of memory!")
             on_success.assert_not_awaited()
 
-            await job_queue.stop()
+            await queue.stop()
