@@ -1,7 +1,10 @@
 import os
 import json
-from pydantic import BaseModel
+import time
+from pydantic import BaseModel, ValidationError
 from typing import List, Dict, Literal
+
+from backend.logger import log
 
 # Paths
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -56,20 +59,66 @@ class AppSettings(BaseModel):
         OverlayConfig(id="gold_glitter", name="Elegant Gold Frame", filename="gold_glitter.png")
     ]
 
+def _quarantine_bad_config() -> str:
+    """Move an unreadable config.json aside so the next boot starts clean.
+
+    Returns the backup path, or "" if the file could not be moved.
+    """
+    backup = os.path.join(
+        os.path.dirname(CONFIG_PATH), f"config.corrupt-{int(time.time())}.json"
+    )
+    try:
+        os.replace(CONFIG_PATH, backup)
+        return backup
+    except OSError:
+        return ""
+
 def load_settings() -> AppSettings:
-    """Load settings from config.json."""
+    """Read settings from config.json, falling back to defaults if it is unusable.
+
+    MUST NOT raise. camera_provider imports at module scope and calls this, so an
+    exception here is not a bad config — it is a booth that will not boot. A file
+    we cannot parse is quarantined and we carry on with defaults.
+    """
     if not os.path.exists(CONFIG_PATH):
-        # Fallback default values
         return AppSettings()
 
-    with open(CONFIG_PATH, "r") as f:
-        data = json.load(f)
-        return AppSettings(**data)
+    try:
+        with open(CONFIG_PATH, "r") as f:
+            return AppSettings(**json.load(f))
+    except (json.JSONDecodeError, ValidationError, OSError, TypeError) as e:
+        backup = _quarantine_bad_config()
+        log.error(
+            "config",
+            "config_load_corrupt",
+            f"config.json is unusable ({type(e).__name__}); starting from defaults",
+            data={"error": str(e), "backup": backup or None},
+        )
+        return AppSettings()
 
 def save_settings(settings: AppSettings):
-    """Save settings back to config.json."""
-    with open(CONFIG_PATH, "w") as f:
-        json.dump(settings.model_dump(), f, indent=2)
+    """Write settings to config.json atomically.
+
+    Write-in-place would truncate the file first, so a crash mid-write leaves a
+    half-written config that load_settings then has to quarantine. Instead we write
+    a temp file alongside it and os.replace() — atomic on both Windows and POSIX.
+    The temp file must share a directory with the target: os.replace across volumes
+    is not atomic.
+    """
+    tmp = f"{CONFIG_PATH}.tmp"
+    try:
+        with open(tmp, "w") as f:
+            json.dump(settings.model_dump(), f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, CONFIG_PATH)
+    except OSError:
+        # Leave the existing config.json untouched, and don't litter a partial temp.
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
 
 def update_settings(updates: Dict) -> AppSettings:
     """Update settings with a dictionary of changes and save."""
