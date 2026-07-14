@@ -2,9 +2,8 @@ import React from 'react';
 import ToggleSwitch from '../controls/ToggleSwitch';
 import './BoothTab.css';
 
-// Only 3s and 5s: a longer countdown pushes the shutter past the camera's
-// fresh ~6s live-view window into the periodic stall (Docs/CAMERA_NOTES.md §3).
-const COUNTDOWN_OPTIONS = [3, 5];
+// 10 is the ceiling: the countdown ring video is 10s long (CountdownScreen.jsx).
+const COUNTDOWN_OPTIONS = [3, 5, 10];
 const SESSION_TIMEOUT_OPTIONS = [60, 90, 120, 180, 300];
 
 /**

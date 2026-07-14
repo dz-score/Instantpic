@@ -22,6 +22,13 @@ caused by the capture and happens even after a clean `stop.sh`). Either way the
 camera ends up resting in standby until a guest reaches a screen that needs
 live view.
 
+> **Note (2026-07-14):** this diagram used to branch here — "previous run took a
+> photo → session wedged", followed by a stall-priming + `exit()+init()` heal that
+> took ~9s. That wedge was a **libgphoto2 2.5.34 bug** (bundled in the
+> python-gphoto2 wheel), not M50 behavior. On the system libgphoto2 the warmup just
+> works, so the branch and the heal are both gone. See CAMERA_NOTES §2 and the
+> `--no-binary gphoto2` rule in CONSTRAINTS.md.
+
 ```mermaid
 sequenceDiagram
     autonumber
@@ -42,26 +49,9 @@ sequenceDiagram
     Note over C: camera_widget_info ×5 (DEBUG)
     C->>M: warmup capture_preview()
 
-    alt previous run took no photos
-        M-->>C: JPEG frame (~10ms)
-        Note over C: camera_warmup ("Viewfinder pre-warmed")
-        C->>W: start worker
-    else previous run took a photo → session wedged (even after clean stop.sh)
-        M-->>C: ~3s stall, then [-1] error
-        Note over C: camera_warmup_fail (WARN)<br/>_warmup_failed = True
-        C->>W: start worker
-        Note over W: prime with ~2 stalls, THEN re-init (the cure)
-        loop 1 more stall (warmup grab was stall #1; error_limit=1)
-            W->>M: flush events + capture_preview()
-            M-->>W: ~3s stall, [-1]
-            Note over W: worker_preview_err → connected=False
-        end
-        Note over W: (watchdog standby is DEFERRED while _warmup_failed)
-        W->>C: init()  [exit old handle + fresh init]
-        C->>M: capture_preview()
-        M-->>C: JPEG frame (instant) — wedge cleared
-        Note over C: camera_warmup OK, _warmup_failed=False<br/>~9s after boot, guest hasn't tapped yet
-    end
+    M-->>C: JPEG frame (~10ms)
+    Note over C: camera_warmup ("Viewfinder pre-warmed")
+    C->>W: start worker
 
     W->>M: preview polling (~15fps, nobody watching)
     Note over W: 10s with no preview request

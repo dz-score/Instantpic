@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { logger } from '../utils/logger';
 
 const SSE_URL = '/api/sse';
 
@@ -26,6 +27,7 @@ export default function useSse() {
 
       eventSource.onopen = () => {
         console.log('SSE connection opened');
+        logger.info('sse', 'sse_open', 'SSE connection opened');
         setIsOnline(true);
       };
 
@@ -38,12 +40,23 @@ export default function useSse() {
         }
       });
 
+      // Logged on arrival, before setBackendState, so the log distinguishes
+      // "the update never reached the browser" from "it reached the browser
+      // but the UI never rendered it" — the two look identical otherwise, and
+      // that ambiguity is what made the 2026-07-13 reveal freeze undiagnosable.
       eventSource.addEventListener('state_update', (e) => {
         try {
           const data = JSON.parse(e.data);
+          logger.info('sse', 'sse_state_update', `Received state_update: ${data.screen}`, {
+            screen: data.screen,
+            finalPhoto: data.finalPhoto,
+            isProcessing: data.isProcessing,
+            printStatus: data.printStatus,
+          });
           setBackendState(data);
         } catch (err) {
           console.error('Failed to parse state_update SSE:', err);
+          logger.error('sse', 'sse_state_parse_fail', `Failed to parse state_update: ${err.message}`);
         }
       });
 
@@ -78,6 +91,12 @@ export default function useSse() {
 
       eventSource.onerror = (e) => {
         console.error('SSE connection error, attempting to reconnect...', e);
+        // ERROR level flushes the log buffer immediately rather than waiting
+        // for the 10s timer — a dropped stream is exactly when we can least
+        // afford to lose the buffered lines explaining what led up to it.
+        logger.error('sse', 'sse_error', 'SSE connection error, reconnecting in 3s', {
+          readyState: eventSource.readyState,
+        });
         setIsOnline(false);
         eventSource.close();
         reconnectTimer = setTimeout(connect, 3000); // Try to reconnect in 3s

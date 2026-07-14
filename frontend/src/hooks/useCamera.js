@@ -20,14 +20,11 @@ export default function useCamera(cameraStatus) {
     }
   }, []);
 
-  const standbyPreview = useCallback(async () => {
-    try {
-      logger.info('camera', 'standby_start', 'Pausing backend camera worker (pre-capture)');
-      await fetch('/api/camera/standby', { method: 'POST' });
-    } catch (err) {
-      logger.error('camera', 'standby_fail', `Failed to standby camera: ${err.message}`);
-    }
-  }, []);
+  // No standbyPreview: the frontend used to pause live view just before firing,
+  // but the backend is capture-authoritative now (camera_service gates the
+  // preview worker at enqueue). Calling it from here only froze the preview
+  // early and widened the shot-to-shot gap. The /api/camera/standby endpoint
+  // still exists; the booth's own watchdog is its only caller.
 
-  return { previewUrl, resumePreview, standbyPreview, mode, cameraStatus };
+  return { previewUrl, resumePreview, mode, cameraStatus };
 }

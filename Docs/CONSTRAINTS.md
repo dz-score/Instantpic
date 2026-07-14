@@ -118,14 +118,23 @@ The frame buffer (`_latest_frame`) is a **single slot** that the worker thread o
 
 ---
 
-### Rule: The capture is authoritative over live view; chain multi-shot captures tight
-`enqueue_capture()` sets `_capture_in_progress` **and** calls `standby()` **before** queuing the CAPTURE job. While that flag is set the worker starts no new preview grabs and `resume_preview()` is a no-op, so nothing can re-arm live-view polling between enqueue and the shutter. Do **not** "simplify" this back to a bare `standby()` — that flag is only advisory: `preview_generator()` calls `resume_preview()` on every preview-stream (re)connect and can un-park the worker, which let it ride a preview grab into the M50's periodic ~3s stall and delay the shutter (the "3rd-collage-shot delay").
+### Rule: Build python-gphoto2 from source — never install the wheel
+`backend/requirements.txt` carries a **`--no-binary gphoto2`** line. Keep it. The python-gphoto2 **wheel** bundles its own **libgphoto2 2.5.34**, and that build stalls M50 live view: a ~3.0s dead preview grab every ~6s, forever. The preview worker holds the camera lock across each grab, so a stalled grab **blocks the shutter** and the guest's photo fires ~3s after the countdown hits zero. The system libgphoto2 (2.5.30, apt) has neither problem.
 
-The M50's ~3s live-view stall runs on a **free-running ~6s clock that nothing we do to polling resets** — standby, resume, rate, and flush have no effect (CAMERA_NOTES §3). The **only** app-controllable reset is a **real capture**, which opens a ~6s stall-free window. So multi-shot captures are chained tight: `shot_interval_ms` (1s) `+ countdown_duration` must stay **< ~5s** so shot N+1 fires inside the window shot N opened.
+> **Why:** measured on this rig — same code, same camera, same 60s, only the library swapped. Bundled 2.5.34: 1693 frames, 28.2 fps, **10 stalls**. System 2.5.30: 3598 frames, 60.0 fps, **0 stalls**. App-shaped (`--contention --gap-s 6`): 2.5.34 blocked **3/14** shutters (mean lock wait 642 ms); 2.5.30 blocked **0/15** (mean 3 ms). The boot wedge is a 2.5.34 artifact too.
 
-> **Why:** live view and capture share one PTP/USB session; a capture that coincides with a stall runs slow or fails. Tight chaining keeps follow-on shots in the healthy window (~44% → ~10% stalled).
+> **What breaks:** `pip install gphoto2` by hand, or dropping the `--no-binary` line, silently installs the wheel and every symptom returns — invisibly, until someone measures millisecond timings on real hardware. Verify with `python3 -c "import gphoto2 as gp; print(gp.gp_library_version(gp.GP_VERSION_VERBOSE)[0])"` — it must **not** print 2.5.34. Requires `libgphoto2-dev` + `pkg-config` (see DEPLOYMENT_GUIDE).
 
-> **What breaks:** Removing the `_capture_in_progress` gate reintroduces the pre-shutter delay. Raising `shot_interval_ms` (or the countdown) so `interval + countdown` > ~6s pushes the next capture past the prior capture's window into a stall. It's a mitigation, not a cure — the residual ~10% (and first/single/retake shots, which have no preceding capture) rely on the retry-once policy; ~100% would require decoupling live view.
+---
+
+### Rule: The capture is authoritative over live view
+`enqueue_capture()` sets `_capture_in_progress` **and** calls `standby()` **before** queuing the CAPTURE job. While that flag is set the worker starts no new preview grabs and `resume_preview()` is a no-op, so nothing can re-arm live-view polling between enqueue and the shutter. Do **not** "simplify" this back to a bare `standby()` — that flag is only advisory: `preview_generator()` calls `resume_preview()` on every preview-stream (re)connect and can un-park the worker.
+
+> **Why:** live view and capture share one PTP/USB session and one lock. Keeping the worker parked across a capture means the shutter never queues behind an in-flight preview grab. This stands on its own — it is correct regardless of the (now-fixed) library stall.
+
+> **What breaks:** Removing the gate lets a preview grab re-arm between enqueue and shutter, so the capture waits on the lock.
+
+> **⚠️ SUPERSEDED (2026-07-14) — the shot-spacing half of this rule is DEAD.** This rule used to also mandate `shot_interval_ms + countdown_duration < ~5s`, on the theory that the M50 ran a free-running ~6s stall clock that only a real capture could reset, so shot N+1 had to fire inside the window shot N opened. **There is no such clock.** That was libgphoto2 2.5.34 (see the rule above). On 2.5.30 live view runs 60s+ at 60fps clean, and captures at 6s spacing block **0/15** shutters. **Shot spacing is now a free design choice** — set the countdown and the interval to whatever reads best.
 
 ---
 

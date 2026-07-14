@@ -1,0 +1,69 @@
+from typing import Optional
+
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, Field
+
+from backend.config import load_settings, update_settings, AppSettings
+from backend.logger import log
+from backend.sse_service import sse_svc
+
+router = APIRouter(tags=["config"])
+
+
+class ConfigUpdateRequest(BaseModel):
+    printer_name: Optional[str] = None
+    max_photos: Optional[int] = None
+    disk_min_free_gb: Optional[float] = None
+    couple_names: Optional[str] = None
+    event_date: Optional[str] = None
+    default_text: Optional[str] = None
+    selected_overlay: Optional[str] = None
+    welcome_message: Optional[str] = None
+    thank_you_message: Optional[str] = None
+    countdown_duration: Optional[int] = None
+    countdown_speed: Optional[float] = None
+    shot_interval_ms: Optional[int] = None
+    flash_enabled: Optional[bool] = None
+    max_photos_per_session: Optional[int] = None
+    session_timeout: Optional[int] = None
+    show_names_on_photo: Optional[bool] = None
+    wifi_network_name: Optional[str] = None
+
+
+class ChangePinRequest(BaseModel):
+    current_pin: str
+    new_pin: str = Field(min_length=6)
+
+
+@router.get("/api/config", response_model=AppSettings)
+async def get_config():
+    """Retrieve current application settings."""
+    settings = load_settings()
+    return settings
+
+
+@router.post("/api/config", response_model=AppSettings)
+async def post_config(updates: ConfigUpdateRequest):
+    """Update configurations."""
+    try:
+        changed = {k: v for k, v in updates.model_dump(exclude_unset=True).items() if v is not None}
+        updated = update_settings(changed)
+        # Push the new config to all connected clients over SSE.
+        sse_svc.dispatch_event("config_update", updated.model_dump())
+        log.info("config", "config_updated", f"Config updated: {list(changed.keys())}", data=changed)
+        return updated
+    except Exception as e:
+        log.error("config", "config_update_fail", f"Config update failed: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/api/change-pin")
+async def change_pin(req: ChangePinRequest):
+    settings = load_settings()
+    if req.current_pin != settings.admin_pin:
+        log.warn("config", "config_pin_fail", "PIN change attempted with wrong current PIN")
+        raise HTTPException(status_code=403, detail="Invalid current PIN")
+    updated = update_settings({"admin_pin": req.new_pin})
+    sse_svc.dispatch_event("config_update", updated.model_dump())
+    log.info("config", "config_pin_changed", "Admin PIN changed")
+    return {"status": "success", "detail": "PIN updated"}

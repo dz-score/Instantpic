@@ -56,6 +56,22 @@ export default function App() {
 
   const currentScreen = downloadFilename ? 'DOWNLOAD' : (appState?.screen || 'LOADING');
 
+  // ─── Screen Transition Logging ───
+  // Pairs with sse_state_update in useSse: that records what the backend sent,
+  // this records what the UI actually rendered. A state_update with no matching
+  // screen_change means React received the update but never painted it.
+  const prevScreenRef = useRef(null);
+  useEffect(() => {
+    if (prevScreenRef.current === currentScreen) return;
+    const from = prevScreenRef.current;
+    prevScreenRef.current = currentScreen;
+    logger.info('ui', 'screen_change', `Screen: ${from ?? '(none)'} → ${currentScreen}`, {
+      from,
+      to: currentScreen,
+      finalPhoto: appState?.finalPhoto ?? null,
+    });
+  }, [currentScreen, appState?.finalPhoto]);
+
   // ─── Inactivity Timeout ───
   const resetInactivityTimer = useCallback(() => {
     if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
@@ -199,7 +215,6 @@ export default function App() {
           capturedCount={appState?.capturedImages?.length || 0}
           fireShot={handleFireShot}
           resumePreview={camera.resumePreview}
-          standbyPreview={camera.standbyPreview}
           cameraJob={sse.cameraJob}
           cameraStatus={camera.cameraStatus}
           onCancel={() => api.sendEvent('FINISH')}

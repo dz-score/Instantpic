@@ -32,5 +32,7 @@
       "name": "Elegant Gold Frame",
       "filename": "frame_gold_elegant.png"
     }
-  ]
+  ],
+  "countdown_speed": 1.0,
+  "shot_interval_ms": 1500
 }
