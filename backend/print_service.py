@@ -21,7 +21,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, asdict
 from typing import Optional
 
-from backend.config import load_settings
+from backend.config import get_settings
 from backend.logger import log
 
 
@@ -287,7 +287,7 @@ class PrintService:
 
     def _reload_driver(self):
         """Load (or reload) the correct driver from config."""
-        settings = load_settings()
+        settings = get_settings()
         name = settings.printer_name
 
         if name == "mock" or sys.platform == "win32":
@@ -307,7 +307,7 @@ class PrintService:
         # Reload driver in case config changed (printer swapped)
         self._reload_driver()
 
-        settings = load_settings()
+        settings = get_settings()
         options = settings.printer_options
 
         # Validate file

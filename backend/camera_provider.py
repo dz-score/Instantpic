@@ -10,12 +10,12 @@ backend without monkeypatching the entrypoint.
 camera routes turn that into a 501.
 """
 
-from backend.config import load_settings
+from backend.config import get_settings
 from backend.logger import log
 
 
 def _select_backend():
-    settings = load_settings()
+    settings = get_settings()
 
     if settings.camera_backend == "mock":
         from backend.mock_camera import MockCameraService

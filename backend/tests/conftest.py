@@ -49,15 +49,23 @@ def temp_config(tmp_path, monkeypatch):
     """
     Creates an isolated temporary config file and patches the config module
     to prevent overwriting the real config.json.
+
+    Settings are cached in memory after the first read, so redirecting CONFIG_PATH
+    is not enough on its own — the cache has to be dropped on the way in (so this
+    test reads the temp file) and on the way out (so the next test doesn't inherit
+    this test's settings). Without that, this fixture is a silent no-op.
     """
     config_file = tmp_path / "config.json"
     # Write empty config to simulate fresh install or missing values
     config_file.write_text("{}")
-    
+
     import backend.config as config
     monkeypatch.setattr(config, "CONFIG_PATH", str(config_file))
-    
-    return str(config_file)
+    config.reset_cache()
+
+    yield str(config_file)
+
+    config.reset_cache()
 
 @pytest.fixture
 def mock_base64_image():

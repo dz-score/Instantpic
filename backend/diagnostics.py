@@ -3,7 +3,7 @@ import sys
 import shutil
 import subprocess
 import glob
-from backend.config import load_settings
+from backend.config import get_settings
 from backend.print_service import print_svc
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -28,7 +28,7 @@ def check_storage():
     pattern = os.path.join(PHOTOS_DIR, "*.[jJ][pP][gG]")
     photo_count = len(glob.glob(pattern))
     
-    settings = load_settings()
+    settings = get_settings()
     
     return {
         "total_gb": round(total / (1024**3), 1),

@@ -3,7 +3,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from backend.config import load_settings, update_settings, AppSettings
+from backend.config import get_settings, update_settings, AppSettings
 from backend.logger import log
 from backend.sse_service import sse_svc
 
@@ -38,7 +38,7 @@ class ChangePinRequest(BaseModel):
 @router.get("/api/config", response_model=AppSettings)
 async def get_config():
     """Retrieve current application settings."""
-    settings = load_settings()
+    settings = get_settings()
     return settings
 
 
@@ -59,7 +59,7 @@ async def post_config(updates: ConfigUpdateRequest):
 
 @router.post("/api/change-pin")
 async def change_pin(req: ChangePinRequest):
-    settings = load_settings()
+    settings = get_settings()
     if req.current_pin != settings.admin_pin:
         log.warn("config", "config_pin_fail", "PIN change attempted with wrong current PIN")
         raise HTTPException(status_code=403, detail="Invalid current PIN")

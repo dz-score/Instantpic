@@ -5,7 +5,7 @@ from backend.storage import enforce_circular_storage, get_all_photos
 def test_circular_storage_max_photos(temp_workspace, temp_config, mocker):
     """If we exceed max_photos, it should delete the oldest ones."""
     # Mock settings to have a very low limit
-    mocker.patch("backend.storage.load_settings", return_value=mocker.Mock(max_photos=3, disk_min_free_gb=0.1))
+    mocker.patch("backend.storage.get_settings", return_value=mocker.Mock(max_photos=3, disk_min_free_gb=0.1))
     
     # Mock disk_usage to return plenty of space so space check doesn't trigger
     mocker.patch("shutil.disk_usage", return_value=(100*(1024**3), 50*(1024**3), 50*(1024**3)))
@@ -37,7 +37,7 @@ def test_circular_storage_max_photos(temp_workspace, temp_config, mocker):
 def test_circular_storage_disk_space(temp_workspace, temp_config, mocker):
     """If free disk space is below threshold, it should delete the oldest files to recover space."""
     # High photo limit so it doesn't trigger
-    mocker.patch("backend.storage.load_settings", return_value=mocker.Mock(max_photos=100, disk_min_free_gb=1.0))
+    mocker.patch("backend.storage.get_settings", return_value=mocker.Mock(max_photos=100, disk_min_free_gb=1.0))
     
     photos_dir = temp_workspace["photos_dir"]
     

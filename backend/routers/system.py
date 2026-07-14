@@ -3,7 +3,7 @@ import socket
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from backend.config import load_settings
+from backend.config import get_settings
 from backend.logger import log
 from backend.print_service import print_svc
 
@@ -58,7 +58,7 @@ def _get_lan_ip():
 @router.get("/api/network-info")
 async def get_network_info():
     """Return the booth's LAN IP and port for QR code URL generation."""
-    settings = load_settings()
+    settings = get_settings()
     ip = _get_lan_ip()
     port = getattr(settings, "port", 8000)
     return {

@@ -2,7 +2,7 @@ import os
 import base64
 from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont, ImageOps
-from backend.config import load_settings
+from backend.config import get_settings
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PHOTOS_DIR = os.path.join(BASE_DIR, "backend", "photos")
@@ -105,7 +105,7 @@ def process_photo_layout(images_base64: list, layout_type: str, text: str, overl
             canvas.paste(cropped_img, (x_pos, y_pos)) # Bottom is 800
             
     # 3. Apply Overlay Template
-    settings = load_settings()
+    settings = get_settings()
     overlay_filename = ""
     for o in settings.overlays:
         if o.id == overlay_id:

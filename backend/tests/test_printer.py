@@ -108,7 +108,7 @@ def test_cups_driver_status_not_found(mocker):
 
 def test_print_service_file_not_found(mocker):
     """PrintService.print() should return failure if file doesn't exist."""
-    mocker.patch("backend.print_service.load_settings", return_value=mocker.Mock(
+    mocker.patch("backend.print_service.get_settings", return_value=mocker.Mock(
         printer_name="mock", printer_options="fit-to-page"
     ))
     svc = PrintService()

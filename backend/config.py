@@ -1,8 +1,17 @@
+"""Application settings, held in memory and mirrored to config.json.
+
+Memory is the source of truth. config.json is where that memory is persisted so it
+survives a restart — it is an output, not an input, once the process is running. The
+admin panel is the only writer; editing config.json by hand while the booth is running
+will be silently overwritten by the next admin save, so hand-edits need a restart.
+"""
+
 import os
 import json
+import threading
 import time
 from pydantic import BaseModel, ValidationError
-from typing import List, Dict, Literal
+from typing import List, Dict, Literal, Optional
 
 from backend.logger import log
 
@@ -73,12 +82,14 @@ def _quarantine_bad_config() -> str:
     except OSError:
         return ""
 
-def load_settings() -> AppSettings:
+def _read_from_disk() -> AppSettings:
     """Read settings from config.json, falling back to defaults if it is unusable.
 
-    MUST NOT raise. camera_provider imports at module scope and calls this, so an
-    exception here is not a bad config — it is a booth that will not boot. A file
-    we cannot parse is quarantined and we carry on with defaults.
+    MUST NOT raise. camera_provider reaches this via get_settings() at module scope,
+    so an exception here is not a bad config — it is a booth that will not boot. A
+    file we cannot parse is quarantined and we carry on with defaults.
+
+    Prefer get_settings(); this is the uncached read behind it.
     """
     if not os.path.exists(CONFIG_PATH):
         return AppSettings()
@@ -100,7 +111,7 @@ def save_settings(settings: AppSettings):
     """Write settings to config.json atomically.
 
     Write-in-place would truncate the file first, so a crash mid-write leaves a
-    half-written config that load_settings then has to quarantine. Instead we write
+    half-written config that _read_from_disk then has to quarantine. Instead we write
     a temp file alongside it and os.replace() — atomic on both Windows and POSIX.
     The temp file must share a directory with the target: os.replace across volumes
     is not atomic.
@@ -120,14 +131,40 @@ def save_settings(settings: AppSettings):
             pass
         raise
 
+# ── In-memory settings ──
+# Guards _settings against two admin POSTs racing: the read-modify-write in
+# update_settings would otherwise let the later write clobber the earlier one.
+_lock = threading.RLock()
+_settings: Optional[AppSettings] = None
+
+def get_settings() -> AppSettings:
+    """The current settings. Reads memory; touches disk only on the first call."""
+    global _settings
+    with _lock:
+        if _settings is None:
+            _settings = _read_from_disk()
+        return _settings
+
 def update_settings(updates: Dict) -> AppSettings:
-    """Update settings with a dictionary of changes and save."""
-    current = load_settings()
-    updated_data = current.model_dump()
-    for key, value in updates.items():
-        if key in updated_data:
-            updated_data[key] = value
-    
-    updated_settings = AppSettings(**updated_data)
-    save_settings(updated_settings)
-    return updated_settings
+    """Apply a dict of changes, publish them, and persist to disk."""
+    global _settings
+    with _lock:
+        updated_data = get_settings().model_dump()
+        for key, value in updates.items():
+            if key in updated_data:
+                updated_data[key] = value
+
+        # REBIND, never mutate in place. The FSM takes settings as a parameter and
+        # holds that object across a whole capture sequence (state_machine.py, the
+        # shot_completed closure). Mutating the cached instance would reach into
+        # sequences already in flight and change the pacing of shots mid-session;
+        # rebinding leaves every existing holder on the snapshot it started with.
+        _settings = AppSettings(**updated_data)
+        save_settings(_settings)
+        return _settings
+
+def reset_cache():
+    """Drop the cached settings so the next get_settings() re-reads disk. For tests."""
+    global _settings
+    with _lock:
+        _settings = None
