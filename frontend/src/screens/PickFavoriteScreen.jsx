@@ -40,18 +40,7 @@ export default function PickFavoriteScreen({
         </button>
       )}
 
-      {/* ── Decorative flourish ── */}
-      <div className="pick-fav__flourish" aria-hidden="true">
-        <span className="pick-fav__flourish-hearts">♡♡</span>
-        <div className="pick-fav__flourish-line">
-          <span className="pick-fav__flourish-curl">❧</span>
-          <span className="pick-fav__flourish-dash" />
-          <span className="pick-fav__flourish-curl pick-fav__flourish-curl--flip">❧</span>
-        </div>
-      </div>
-
       {/* ── Heading ── */}
-      <p className="pick-fav__kicker">{t('pickFavorite.kicker', language)}</p>
       <h1 className="pick-fav__title">{t('pickFavorite.title', language)}</h1>
       <span className="pick-fav__heart" aria-hidden="true">♥</span>
 

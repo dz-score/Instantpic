@@ -91,12 +91,6 @@ export default function RevealScreen({
             </button>
           </div>
 
-          {/* Retake indicator */}
-          {canRetake && (
-            <p className="reveal-retake-info">
-              {t('reveal.retakeInfo', language).replace('{count}', retakeCount).replace('{max}', maxRetakes)}
-            </p>
-          )}
         </div>
       ) : (
         /* ── Error State ── */

@@ -4,7 +4,7 @@
 
 .pick-fav-screen {
   position: relative;
-  padding: var(--space-md) var(--space-lg);
+  padding: clamp(var(--space-md), 4vh, var(--space-xl)) var(--space-lg);
   gap: 0;
 }
 
@@ -127,11 +127,11 @@
 /* ═══ Photo Grid ═══ */
 .pick-fav__grid {
   display: flex;
-  gap: clamp(var(--space-sm), 2vw, var(--space-lg));
+  gap: clamp(var(--space-sm), 2vw, var(--space-xl));
   width: 100%;
-  max-width: min(92vw, 1600px);
+  max-width: min(94vw, 1780px);
   justify-content: center;
-  margin-bottom: clamp(var(--space-sm), 3vh, var(--space-lg));
+  margin-bottom: clamp(var(--space-md), 4vh, var(--space-xl));
   padding: 0 var(--space-sm);
 }
 
@@ -139,10 +139,10 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--space-xs);
+  gap: var(--space-sm);
   flex: 1;
   min-width: 0;
-  max-width: min(28vw, 440px);
+  max-width: min(31vw, 560px);
 }
 
 .pick-fav__card {

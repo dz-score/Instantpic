@@ -109,11 +109,6 @@ export default function PrintingScreen({
             </>
           )}
 
-          {/* Thank you */}
-          <p className="print-done__thankyou">
-            {config?.thank_you_message || 'Thank you for celebrating with us!'}
-          </p>
-
           {/* Photo + QR side by side */}
           <div className="print-done__body">
             {/* Photo preview */}
