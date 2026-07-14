@@ -762,6 +762,6 @@ class CameraService:
             self._sse.dispatch_event("camera_status", self.get_status())
 
 
-# No module-level singleton: camera_provider.create_camera() constructs this, and
+# No module-level singleton: camera_factory.create_camera() constructs this, and
 # the composition root owns the instance. Importing this module must not pick a
 # camera (Rule 19).

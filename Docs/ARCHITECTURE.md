@@ -957,7 +957,7 @@ main.py                  (composition root, Rule 19 — the lifespan constructs
   |                         FSM<->job_queue payload schema in one place)
   +-- job_queue.py       <- logger.py, settings.py, photo_processor.py,
   |                         storage.py, print_service.py
-  +-- camera_provider.py <- settings.py, logger.py  (create_camera() factory;
+  +-- camera_factory.py  <- settings.py, logger.py  (create_camera() factory;
   |                         importing it must not pick or open a camera)
   +-- camera_service.py  <- logger.py, storage.py, sse_service.py
   +-- mock_camera.py     <- logger.py, storage.py, sse_service.py
