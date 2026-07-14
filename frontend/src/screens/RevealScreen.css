@@ -93,17 +93,17 @@
 
 .reveal-title {
   font-family: var(--font-script);
-  font-size: clamp(2.5rem, 5.5vw, var(--text-hero));
+  font-size: clamp(3rem, 6.5vw, 6rem);
   font-weight: 400;
   line-height: 1.4;
-  margin-bottom: var(--space-sm);
+  margin-bottom: clamp(var(--space-sm), 2.5vh, var(--space-lg));
   padding: var(--space-md);
   color: var(--gold);
 }
 
 /* ═══ Photo ═══ */
 .reveal-photo-wrap {
-  margin-bottom: var(--space-sm);
+  margin-bottom: clamp(var(--space-sm), 3vh, var(--space-lg));
 }
 
 .reveal-photo-wrap .photo-frame--reveal {
@@ -133,12 +133,12 @@
 /* ═══ Compliment ═══ */
 .reveal-compliment {
   font-family: var(--font-display);
-  font-size: var(--text-h3);
+  font-size: clamp(var(--text-h3), 2.4vw, var(--text-h2));
   font-weight: 500;
   font-style: italic;
   color: var(--gold);
   letter-spacing: var(--tracking-hairline);
-  margin-bottom: var(--space-md);
+  margin-bottom: clamp(var(--space-md), 3vh, var(--space-xl));
   animation: fade-up var(--duration-slower) var(--ease-out) 0.4s both;
 }
 
@@ -148,7 +148,7 @@
   gap: var(--space-md);
   align-items: center;
   animation: fade-up var(--duration-slower) var(--ease-out) 0.6s both;
-  margin-bottom: var(--space-xs);
+  margin-bottom: var(--space-sm);
 }
 
 /* Gold "Love It!" button */
@@ -157,8 +157,8 @@
   align-items: center;
   justify-content: center;
   gap: var(--space-sm);
-  min-width: var(--cta-min-width-sm);
-  height: var(--cta-height-sm);
+  min-width: min(26vw, 380px);
+  height: clamp(var(--cta-height-sm), 8vh, var(--cta-height-lg));
   padding: 0 var(--space-lg);
   border-radius: var(--radius-button);
   border: 2px solid transparent;
@@ -180,7 +180,7 @@
 
 .reveal-btn-print__main {
   font-family: var(--font-body);
-  font-size: var(--text-caption);
+  font-size: clamp(var(--text-caption), 1.4vw, var(--text-h3));
   font-weight: 700;
   letter-spacing: var(--tracking-md);
   text-transform: uppercase;
@@ -192,8 +192,8 @@
   align-items: center;
   justify-content: center;
   gap: var(--space-sm);
-  min-width: var(--cta-min-width-sm);
-  height: var(--cta-height-sm);
+  min-width: min(22vw, 320px);
+  height: clamp(var(--cta-height-sm), 8vh, var(--cta-height-lg));
   padding: 0 var(--space-md);
   border-radius: var(--radius-full);
   border: 1px solid var(--gold);
@@ -215,7 +215,7 @@
 
 .reveal-btn-retake__main {
   font-family: var(--font-body);
-  font-size: var(--text-label);
+  font-size: clamp(var(--text-label), 1.2vw, var(--text-body));
   font-weight: 700;
   letter-spacing: var(--tracking-sm);
   text-transform: uppercase;

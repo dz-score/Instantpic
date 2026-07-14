@@ -59,7 +59,7 @@
 
 .print-loading__title {
   font-family: var(--font-script);
-  font-size: clamp(2.5rem, 5.5vw, 4rem);
+  font-size: clamp(2.5rem, 6vw, 5.5rem);
   font-weight: 400;
   line-height: 1.4;
   padding: var(--space-md);
@@ -68,7 +68,7 @@
 
 .print-loading__sub {
   font-family: var(--font-body);
-  font-size: var(--text-label);
+  font-size: clamp(var(--text-label), 1.3vw, var(--text-body));
   font-weight: 400;
   letter-spacing: var(--tracking-md);
   text-transform: uppercase;
@@ -168,7 +168,7 @@
 
 .print-done__title {
   font-family: var(--font-script);
-  font-size: clamp(2.5rem, 5vw, 4rem);
+  font-size: clamp(2.5rem, 6vw, 5.5rem);
   font-weight: 400;
   line-height: 1.4;
   margin-bottom: var(--space-2xs);
@@ -179,29 +179,29 @@
 /* Thank you */
 .print-done__thankyou {
   font-family: var(--font-display);
-  font-size: 1.15rem;
+  font-size: clamp(1.15rem, 1.8vw, var(--text-h2));
   font-weight: 400;
   font-style: italic;
   color: var(--dusty-rose);
   text-align: center;
-  margin-bottom: var(--space-md);
+  margin-bottom: clamp(var(--space-md), 3vh, var(--space-xl));
 }
 
 /* ── Body: Photo + QR side by side ── */
 .print-done__body {
   display: flex;
-  gap: var(--space-lg);
+  gap: clamp(var(--space-lg), 4vw, var(--space-2xl));
   align-items: center;
   justify-content: center;
   width: 100%;
-  max-width: 800px;
-  margin-bottom: var(--space-sm);
+  max-width: min(90vw, 1500px);
+  margin-bottom: clamp(var(--space-sm), 3vh, var(--space-lg));
 }
 
 /* Photo preview */
 .print-done__photo-wrap {
   flex: 1;
-  max-width: 360px;
+  max-width: min(44vw, 640px);
   border-radius: var(--radius-md);
   overflow: hidden;
   border: 3px solid var(--gold);
@@ -220,7 +220,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-md);
-  min-width: 280px;
+  min-width: min(30vw, 420px);
 }
 
 .print-done__inst-card {
@@ -259,7 +259,7 @@
 
 .print-done__inst-title {
   font-family: var(--font-body);
-  font-size: var(--text-label);
+  font-size: clamp(var(--text-label), 1.1vw, var(--text-body));
   font-weight: 700;
   letter-spacing: var(--tracking-sm);
   text-transform: uppercase;
@@ -281,8 +281,8 @@
 }
 
 .print-done__qr-img {
-  width: 140px;
-  height: 140px;
+  width: clamp(140px, 12vw, 220px);
+  height: clamp(140px, 12vw, 220px);
   display: block;
 }
 
@@ -322,8 +322,8 @@
   align-items: center;
   justify-content: center;
   gap: var(--space-sm);
-  min-width: var(--cta-min-width-sm);
-  height: var(--cta-height-sm);
+  min-width: min(28vw, 420px);
+  height: clamp(var(--cta-height-sm), 8vh, var(--cta-height-lg));
   padding: 0 var(--space-lg);
   border-radius: var(--radius-button);
   border: 2px solid transparent;
@@ -345,7 +345,7 @@
 
 .print-done__btn-main {
   font-family: var(--font-body);
-  font-size: var(--text-caption);
+  font-size: clamp(var(--text-caption), 1.5vw, var(--text-h3));
   font-weight: 700;
   letter-spacing: var(--tracking-sm);
   text-transform: uppercase;
