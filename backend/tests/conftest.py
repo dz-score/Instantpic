@@ -44,19 +44,21 @@ def temp_workspace(tmp_path, monkeypatch):
         "overlays_dir": str(overlays_dir)
     }
 
-@pytest.fixture
-def temp_config(tmp_path, monkeypatch):
-    """
-    Creates an isolated temporary config file and patches the config module
-    to prevent overwriting the real config.json.
+@pytest.fixture(autouse=True)
+def isolate_config(tmp_path, monkeypatch):
+    """Give every test its own config.json and a cleared settings cache.
 
-    Settings are cached in memory after the first read, so redirecting CONFIG_PATH
-    is not enough on its own — the cache has to be dropped on the way in (so this
-    test reads the temp file) and on the way out (so the next test doesn't inherit
-    this test's settings). Without that, this fixture is a silent no-op.
+    autouse, because the alternative is opt-in isolation and that fails quietly.
+    Settings live in a module-level cache (backend.config._settings), so a test that
+    forgot to request this fixture would read the developer's real config.json, and a
+    test that mutated settings would leak them into whichever test ran next. Neither
+    failure announces itself — you get a pass locally and a mystery in CI.
+
+    Both halves are required: redirecting CONFIG_PATH alone does nothing once the
+    cache is warm, and clearing the cache alone would just re-read the real file.
     """
     config_file = tmp_path / "config.json"
-    # Write empty config to simulate fresh install or missing values
+    # Empty config: exercises the fresh-install / missing-values path by default.
     config_file.write_text("{}")
 
     import backend.config as config
@@ -66,6 +68,11 @@ def temp_config(tmp_path, monkeypatch):
     yield str(config_file)
 
     config.reset_cache()
+
+@pytest.fixture
+def temp_config(isolate_config):
+    """Path to this test's isolated config.json, for tests that read or write it."""
+    return isolate_config
 
 @pytest.fixture
 def mock_base64_image():
