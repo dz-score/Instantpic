@@ -43,20 +43,33 @@ export default function CountdownScreen({
   capturedCount = 0,
   fireShot,
   resumePreview,
-  standbyPreview,
   cameraJob,
   cameraStatus,
   onCancel,
   config,
   language,
 }) {
+  // Numbers shown, and how fast they tick. The guest sees COUNTDOWN_FROM
+  // numbers either way; SPEED just compresses them. 5 @ 1.25 = a full
+  // 5,4,3,2,1 in 4.0s. See backend/config.py — the effective length feeds the
+  // shot-spacing budget that keeps the next shot inside the M50's live-view
+  // window, and speeding the count buys that time without dropping a number.
   const COUNTDOWN_FROM = config?.countdown_duration || 3;
+  const COUNTDOWN_SPEED = config?.countdown_speed || 1;
+  // The tick and the decrement are the same quantity in different units:
+  // 0.25s of countdown per tick. Scaling the tick interval scales the whole
+  // countdown; the ring video's playbackRate is scaled by the same factor
+  // below so the animation stays in step with the numbers.
+  const TICK_MS = 250 / COUNTDOWN_SPEED;
+  // Where the ring video must sit to show COUNTDOWN_FROM as its first frame.
+  // The 10s video places number N at (10 - N) + 0.1 — so "9" is at 1.1s, "3" at
+  // 7.1s, and "1" at 9.1s, which is where it RUNS OUT. There is no "0" frame.
+  const ringStartTime = COUNTDOWN_FROM >= 10 ? 0 : Math.max(0, (10 - COUNTDOWN_FROM) + 0.1);
   const flashEnabled = config?.flash_enabled !== false;
   const shotIntervalMs = config?.shot_interval_ms || 1000;
   const [phase, setPhase] = useState('COUNTDOWN'); // COUNTDOWN | POSING | BETWEEN
   const [count, setCount] = useState(COUNTDOWN_FROM);
   const [flashActive, setFlashActive] = useState(false);
-  const [lastCapture, setLastCapture] = useState(null);
   const [isCapturing, setIsCapturing] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
   const [sessionStarted, setSessionStarted] = useState(false);
@@ -66,6 +79,10 @@ export default function CountdownScreen({
   // starts (which happens on a fixed hardware-driven schedule, not tied to
   // the video's actual remaining runtime).
   const [countdownVideoDone, setCountdownVideoDone] = useState(false);
+  // Whether the ring video has finished seeking to this round's start offset.
+  // Gates its visibility: shown before the seek lands, it displays the frame it
+  // was parked on — the previous round's trailing "1".
+  const [ringSeeked, setRingSeeked] = useState(false);
   // Set when a capture fails permanently (backend already retried once and
   // still failed). The backend never emits a further 'completed'/'failed'
   // event on its own here, so without this the screen would otherwise wait
@@ -121,14 +138,46 @@ export default function CountdownScreen({
   // flushes any flash/sound that was waiting on it — an error must still
   // unblock the pending flash, or a missing/broken video file would
   // silently swallow the shutter feedback for the rest of the session.
+  // Park the ring on the frame this round must OPEN with, so that when the round
+  // starts there is nothing to seek and nothing to wait for.
+  //
+  // Two bugs, one cause. A <video> keeps painting its last frame, and seeking is
+  // asynchronous while the JS countdown is not:
+  //   - end of a round leaves it on "1" (the video runs out there — there is no
+  //     "0" frame), so round 2+ flashed "1" before jumping to 5;
+  //   - a fresh mount leaves it at 0, so the FIRST round of a session had to seek
+  //     all the way to ringStartTime while the timer was already running. The ring
+  //     then trailed ~1s behind and the shutter fired while it still showed "2"
+  //     (booth report, 3s countdown: "the first shot is too early").
+  // Parking ahead of time — on mount, on metadata load, and at the end of every
+  // round — means the frame it is sitting on is always already the right one.
+  const parkRing = useCallback(() => {
+    const v = countdownVideoRef.current;
+    if (!v) return;
+    try {
+      v.pause();
+      v.currentTime = ringStartTime;
+    } catch {
+      // Seeking throws if metadata isn't loaded yet; onLoadedMetadata re-parks.
+    }
+  }, [ringStartTime]);
+
+  // Park on mount and whenever the countdown length changes (admin panel). The
+  // screen sits on the camera warmup for 1-3.5s before the first round starts,
+  // which is ample time for the seek to land.
+  useEffect(() => {
+    parkRing();
+  }, [parkRing]);
+
   const handleCountdownVideoDone = useCallback(() => {
     setCountdownVideoDone(true);
     countdownVideoDoneRef.current = true;
+    parkRing();   // hidden right now — re-park for the next round
     if (pendingFlashRef.current) {
       pendingFlashRef.current();
       pendingFlashRef.current = null;
     }
-  }, []);
+  }, [parkRing]);
 
   const safeTimeout = useCallback((fn, ms) => {
     const id = setTimeout(fn, ms);
@@ -166,9 +215,6 @@ export default function CountdownScreen({
       }
     } else if (cameraJob.status === 'completed') {
       setIsCapturing(false);
-      if (cameraJob.filename) {
-        setLastCapture(`/photos/${cameraJob.filename}`);
-      }
       // Round advancement comes from capturedCount (backend state), not here.
     } else if (cameraJob.status === 'failed') {
       logger.warn('countdown', 'capture_failed', 'Shot capture failed permanently', { error: cameraJob.error });
@@ -186,17 +232,23 @@ export default function CountdownScreen({
     let c = COUNTDOWN_FROM;
     setCount(c);
 
-    // Calculate start time based on countdown duration.
-    // Video is 10s. Time offsets provided: 9 is 1.1s, 8 is 2.1s, 3 is 7.1s
-    let startTime = 0;
-    if (COUNTDOWN_FROM <= 10) {
-      startTime = COUNTDOWN_FROM === 10 ? 0 : (10 - COUNTDOWN_FROM) + 0.1;
-    }
-
-    // Hardware accelerated restart of video
-    if (countdownVideoRef.current) {
-      countdownVideoRef.current.currentTime = startTime;
-      countdownVideoRef.current.play().catch(err =>
+    // Start the ring. handleCountdownVideoDone already parked it on ringStartTime
+    // when the last round ended, so it is normally sitting on the right frame
+    // and needs no seek at all — in which case NO 'seeked' event will fire, and
+    // gating visibility on that event would hide the ring for the whole fallback.
+    // So: if it is already parked, show it immediately; only gate when we
+    // genuinely have to seek (first round after mount, or a config change).
+    const v = countdownVideoRef.current;
+    if (v) {
+      v.playbackRate = COUNTDOWN_SPEED;
+      if (Math.abs(v.currentTime - ringStartTime) < 0.05) {
+        setRingSeeked(true);
+      } else {
+        setRingSeeked(false);
+        v.currentTime = ringStartTime;   // async — onSeeked reveals the ring
+        safeTimeout(() => setRingSeeked(true), 400);  // ...or this does, if it never fires
+      }
+      v.play().catch(err =>
         logger.warn('countdown', 'countdown_video_play_fail', 'Countdown ring video failed to play', { error: err.message })
       );
     }
@@ -205,22 +257,24 @@ export default function CountdownScreen({
       c -= 0.25;
       if (c > 0) {
         if (c % 1 === 0) setCount(c);
-      } else if (c === 0) {
-        // At 0, we show "Pose!" and let the user hold their pose.
-        setPhase('POSING');
-        // We stop the live view polling now so the camera's USB bus has a brief moment
-        // to settle before the heavy high-res capture command.
-        // With active event flushing in place, a short 250ms gap is sufficient.
-        if (standbyPreview) {
-          standbyPreview();
-        }
       } else {
-        // c < 0 — the pose gap is over, fire the shutter
+        // Countdown done — fire straight away.
+        //
+        // There used to be an extra 250ms beat here, during which the frontend
+        // called standbyPreview() to "let the USB bus settle" before the heavy
+        // capture command. The backend has owned that since it became
+        // capture-authoritative: camera_service sets _capture_in_progress at
+        // enqueue, before the job is even queued, with its own 15ms settle.
+        // So the beat bought nothing — it only froze the live view 250ms early
+        // and padded the shot-to-shot gap, which is the gap that decides
+        // whether the next shot lands inside the M50's healthy live-view
+        // window (~6s after the previous capture).
         clearInterval(timerRef.current);
+        setPhase('POSING');
         onDone();
       }
-    }, 250);
-  }, [COUNTDOWN_FROM, standbyPreview]);
+    }, TICK_MS);
+  }, [COUNTDOWN_FROM, COUNTDOWN_SPEED, TICK_MS, ringStartTime, safeTimeout]);
 
   // Fire the shutter for one shot via the FSM (FIRE_SHOT). Everything after
   // this is backend-owned: the camera reports completion straight to the FSM,
@@ -381,13 +435,24 @@ export default function CountdownScreen({
         {/* Flash effect (warm champagne) */}
         <div className={`countdown-flash ${flashActive ? 'countdown-flash--active' : ''}`} />
 
+        {/* The camera is physically taking the photo during POSING: capture and
+            live view share one USB pipe, so the preview is frozen for ~1.75s
+            and no code can unfreeze it (only decoupling live view would).
+            Name the moment so the freeze reads as "we're shooting" rather than
+            as a hung app — the guest sees the ring hit 1 and the picture stop. */}
+        {phase === 'POSING' && !captureError && (
+          <div className="countdown-posing">
+            <p className="countdown-posing__text">{t('countdown.smile', language)}</p>
+          </div>
+        )}
+
         {/* Countdown video - always mounted for performance, toggled via opacity.
             Visibility follows the video's own playback (onEnded), not `phase` —
             standby/capture run on a fixed hardware schedule that shouldn't cut
             the ring's animation short. z-index keeps it below the flash (100). */}
         <div
           className="countdown-center"
-          style={{ opacity: !countdownVideoDone ? 1 : 0, transition: 'opacity 0.2s' }}
+          style={{ opacity: !countdownVideoDone && ringSeeked ? 1 : 0, transition: 'opacity 0.2s' }}
         >
           <video
             ref={countdownVideoRef}
@@ -396,18 +461,23 @@ export default function CountdownScreen({
             playsInline
             preload="auto"
             className="countdown-ring-video"
+            onLoadedMetadata={parkRing}
+            onSeeked={() => setRingSeeked(true)}
             onEnded={handleCountdownVideoDone}
             onError={handleCountdownVideoDone}
           />
         </div>
 
+        {/* Between shots: a big "get ready" prompt, deliberately text-only.
+            This used to also show the shot just taken — but that <img> pointed
+            at the raw capture straight off the camera (~7MB, 24MP), and
+            decoding it into a 240x160 box blocked the browser's main thread
+            for seconds. That starved the countdown's setInterval, stretching a
+            5s countdown to 8.5s and freezing the UI mid-collage while the ring
+            video (compositor-driven) kept spinning. The guest sees every shot
+            on the reveal screen anyway, so the thumbnail bought nothing. */}
         {phase === 'BETWEEN' && !isCapturing && (
           <div className="countdown-between">
-            <div className="countdown-between__preview">
-              {lastCapture && (
-                <img src={lastCapture} alt="Last shot" className="countdown-between__img" />
-              )}
-            </div>
             <p className="countdown-between__text">
               {totalShots - capturedCount === 1
                 ? t('countdown.oneMore', language)

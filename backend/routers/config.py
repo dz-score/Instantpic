@@ -21,6 +21,8 @@ class ConfigUpdateRequest(BaseModel):
     welcome_message: Optional[str] = None
     thank_you_message: Optional[str] = None
     countdown_duration: Optional[int] = None
+    countdown_speed: Optional[float] = None
+    shot_interval_ms: Optional[int] = None
     flash_enabled: Optional[bool] = None
     max_photos_per_session: Optional[int] = None
     session_timeout: Optional[int] = None

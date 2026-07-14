@@ -215,7 +215,6 @@ export default function App() {
           capturedCount={appState?.capturedImages?.length || 0}
           fireShot={handleFireShot}
           resumePreview={camera.resumePreview}
-          standbyPreview={camera.standbyPreview}
           cameraJob={sse.cameraJob}
           cameraStatus={camera.cameraStatus}
           onCancel={() => api.sendEvent('FINISH')}

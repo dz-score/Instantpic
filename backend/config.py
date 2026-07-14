@@ -17,14 +17,48 @@ class AppSettings(BaseModel):
     admin_pin: str = "123456"
     welcome_message: str = "Create a Beautiful Memory"
     thank_you_message: str = "Thank you for celebrating with us!"
+    # How many numbers the guest sees counted down (5 => "5,4,3,2,1").
     countdown_duration: int = 3
+    # How fast those numbers tick, as a multiplier. The guest still sees all
+    # countdown_duration numbers — they just run quicker, and the ring video's
+    # playbackRate is scaled to match. 1.25 plays a full 5,4,3,2,1 in 4.0s.
+    #
+    # This exists because the *effective* countdown length feeds the shot-spacing
+    # budget below, but simply dropping numbers (a 3-count) reads as rushed to
+    # guests. Speeding the count buys the time back without losing a number.
+    #
+    #     effective countdown (s) = countdown_duration / countdown_speed
+    countdown_speed: float = 1.0
     # Pacing between shots in a multi-shot layout; owned by backend per Rule 14.
-    # Kept SHORT on purpose: a capture opens a ~6s stall-free live-view window
-    # (Docs/CAMERA_NOTES.md §3), so the next shot must fire inside it —
-    # shot_interval_ms + countdown_duration must stay under ~5s or the next
-    # capture lands in the M50's periodic ~3s stall. Do not raise without
-    # reading CAMERA_NOTES.
-    shot_interval_ms: int = 1000
+    #
+    # The shot-to-shot gap
+    #
+    #     shot_interval_ms/1000 + countdown_duration/countdown_speed + ~0.05s
+    #
+    # must stay UNDER ~6s. A real capture resets the M50's live-view stall clock,
+    # and the next stall lands ~6.1s later (measured: healthy live view of 6.06,
+    # 6.19, 6.17, 6.16, 6.06s before each stall, every stall exactly 3.01s). Fire
+    # the next shot before that and the preview worker is never mid-stall when the
+    # capture wants the camera lock. Hardware-measured 2026-07-13:
+    #
+    #   ~4.5s   : shutter takes the lock in 19-162ms. Booth: 11/11 clean.
+    #             --contention probe: 0/13 blocked, 0 stalls in 605 preview grabs
+    #             (the stall never even fires — 4.5s never reaches the ~6.1s mark).
+    #   ~6.0s   : the stall lands ON the shutter. --contention: 3/14 blocked ~3.0s;
+    #             booth: 2/6 mid-collage shots, 2858ms and 2827ms.
+    #   ~8s     : the stall started at ~6.1s and is still draining — capture waits
+    #             out its remainder, ~1.0s (booth: 794-990ms). This is the shape of
+    #             guest-paced shots (first shot of a session, first after a RETAKE):
+    #             live view has been running unbounded, so the clock is at a random
+    #             phase and nothing here can control it.
+    #
+    # There is NO lower bound. An earlier note here claimed captures fail below
+    # ~3.5s; that was overfit to 2 samples. Across 36 booth shots the fast
+    # capture_image [-1] (0.45-0.73s, vs ~1.8s healthy) appears at 3.1s, 4.8s AND
+    # 8.2s spacing at ~11%, with no spacing dependence. It is the known periodic
+    # fast-fail; retry-once recovers it. Tightening the gap does not cause it and
+    # will not fix it.
+    shot_interval_ms: int = 500
     flash_enabled: bool = True
     max_photos_per_session: int = 3
     session_timeout: int = 120
