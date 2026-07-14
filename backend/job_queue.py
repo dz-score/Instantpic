@@ -1,6 +1,6 @@
 import asyncio
 import os
-from backend.config import SettingsService
+from backend.settings import SettingsService
 from backend.logger import log
 from backend.photo_processor import process_photo_layout
 from backend.print_service import PrintService

@@ -2,7 +2,7 @@ import glob
 import os
 import json
 import pytest
-from backend.config import (
+from backend.settings import (
     AppSettings,
     SettingsService,
     read_settings,

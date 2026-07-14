@@ -1,6 +1,6 @@
 import os
 from PIL import Image
-from backend.config import AppSettings
+from backend.settings import AppSettings
 from backend.photo_processor import process_photo_layout
 
 # The overlay catalogue is passed in now rather than read from a global.

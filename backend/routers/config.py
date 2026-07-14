@@ -3,7 +3,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from backend.config import AppSettings, SettingsService
+from backend.settings import AppSettings, SettingsService
 from backend.deps import get_settings_service
 from backend.logger import log
 from backend.sse_service import sse_svc

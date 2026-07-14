@@ -12,7 +12,7 @@ holds the result on app.state, and routes reach the camera through a dependency.
 
 from typing import Optional
 
-from backend.config import AppSettings
+from backend.settings import AppSettings
 from backend.logger import log
 
 

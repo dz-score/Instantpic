@@ -2,7 +2,7 @@ import pytest
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from backend.config import AppSettings
+from backend.settings import AppSettings
 from backend.job_queue import JobQueue
 
 @pytest.fixture

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Request
 from sse_starlette.sse import EventSourceResponse
 
-from backend.config import AppSettings
+from backend.settings import AppSettings
 from backend.deps import get_settings
 from backend.sse_service import sse_svc, SseClient
 

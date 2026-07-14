@@ -3,7 +3,7 @@ import base64
 from typing import List
 from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont, ImageOps
-from backend.config import OverlayConfig
+from backend.settings import OverlayConfig
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PHOTOS_DIR = os.path.join(BASE_DIR, "backend", "photos")

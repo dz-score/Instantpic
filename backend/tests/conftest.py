@@ -59,7 +59,7 @@ def isolate_config(tmp_path, monkeypatch):
     # Empty config: exercises the fresh-install / missing-values path by default.
     config_file.write_text("{}")
 
-    import backend.config as config
+    import backend.settings as config
     monkeypatch.setattr(config, "CONFIG_PATH", str(config_file))
 
     return str(config_file)
@@ -72,7 +72,7 @@ def temp_config(isolate_config):
 @pytest.fixture
 def settings_svc(isolate_config):
     """A loaded SettingsService on this test's config, for services that need one."""
-    from backend.config import SettingsService
+    from backend.settings import SettingsService
     svc = SettingsService(isolate_config)
     svc.load()
     return svc

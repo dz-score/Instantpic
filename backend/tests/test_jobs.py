@@ -1,5 +1,5 @@
 from backend import jobs
-from backend.config import AppSettings
+from backend.settings import AppSettings
 
 
 async def _noop(*_):

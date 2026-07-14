@@ -1,7 +1,7 @@
 import pytest
 import asyncio
 from backend.state_machine import StateMachine
-from backend.config import AppSettings, OverlayConfig
+from backend.settings import AppSettings, OverlayConfig
 
 @pytest.fixture
 def anyio_backend():

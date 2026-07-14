@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
-from backend.config import AppSettings
+from backend.settings import AppSettings
 from backend.deps import get_settings
 from backend.state_machine import state_machine
 

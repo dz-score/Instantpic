@@ -3,7 +3,7 @@ import socket
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
-from backend.config import AppSettings
+from backend.settings import AppSettings
 from backend.deps import get_print_service, get_settings
 from backend.logger import log
 from backend.print_service import PrintService

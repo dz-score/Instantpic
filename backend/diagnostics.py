@@ -3,7 +3,7 @@ import sys
 import shutil
 import subprocess
 import glob
-from backend.config import AppSettings
+from backend.settings import AppSettings
 from backend.print_service import PrintService
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

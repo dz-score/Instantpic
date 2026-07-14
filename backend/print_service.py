@@ -21,7 +21,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, asdict
 from typing import Optional
 
-from backend.config import SettingsService
+from backend.settings import SettingsService
 from backend.logger import log
 
 

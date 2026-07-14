@@ -11,7 +11,7 @@ Everything here reads `request.app.state`, which main.py's lifespan populates.
 
 from fastapi import Depends, HTTPException, Request
 
-from backend.config import AppSettings, SettingsService
+from backend.settings import AppSettings, SettingsService
 from backend.print_service import PrintService
 
 

@@ -2,7 +2,7 @@ import os
 import shutil
 import glob
 from typing import List
-from backend.config import AppSettings
+from backend.settings import AppSettings
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PHOTOS_DIR = os.path.join(BASE_DIR, "backend", "photos")

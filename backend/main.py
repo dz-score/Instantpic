@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 
 from backend.storage import ensure_directories, PHOTOS_DIR, OVERLAYS_DIR, BASE_DIR
-from backend.config import SettingsService
+from backend.settings import SettingsService
 from backend.print_service import PrintService
 from backend.sse_service import sse_svc
 from backend.logger import log
