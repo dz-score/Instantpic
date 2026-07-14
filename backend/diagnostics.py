@@ -3,13 +3,13 @@ import sys
 import shutil
 import subprocess
 import glob
-from backend.config import load_settings
-from backend.print_service import print_svc
+from backend.settings import AppSettings
+from backend.print_service import PrintService
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PHOTOS_DIR = os.path.join(BASE_DIR, "backend", "photos")
 
-def check_printer():
+def check_printer(print_svc: PrintService):
     """Check if printer is connected/available via PrintService."""
     status = print_svc.get_status()
     return {
@@ -20,16 +20,14 @@ def check_printer():
         "error": status.error,
     }
 
-def check_storage():
+def check_storage(settings: AppSettings):
     """Check disk usage and photo count."""
     os.makedirs(PHOTOS_DIR, exist_ok=True)
     total, used, free = shutil.disk_usage(PHOTOS_DIR)
-    
+
     pattern = os.path.join(PHOTOS_DIR, "*.[jJ][pP][gG]")
     photo_count = len(glob.glob(pattern))
-    
-    settings = load_settings()
-    
+
     return {
         "total_gb": round(total / (1024**3), 1),
         "used_gb": round(used / (1024**3), 1),
@@ -39,11 +37,11 @@ def check_storage():
         "max_photos": settings.max_photos
     }
 
-def get_diagnostics():
+def get_diagnostics(settings: AppSettings, print_svc: PrintService):
     """Aggregate all diagnostic checks."""
     return {
-        "printer": check_printer(),
-        "storage": check_storage()
+        "printer": check_printer(print_svc),
+        "storage": check_storage(settings)
     }
 
 def execute_emergency(action: str):

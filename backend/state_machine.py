@@ -3,7 +3,7 @@ from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
 from backend.logger import log
 from backend.sse_service import sse_svc
-from backend.config import AppSettings
+from backend.settings import AppSettings
 from backend import jobs
 
 class BoothState(BaseModel):

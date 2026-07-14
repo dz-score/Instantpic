@@ -1,0 +1,194 @@
+"""Application settings.
+
+`AppSettings` is the schema. `SettingsService` owns the live instance for one
+process and is constructed at the composition root (main.py's lifespan) — per
+Rule 19, nothing below the entrypoint reaches for settings through a module
+global; it receives a SettingsService or a plain AppSettings snapshot.
+
+Memory is the source of truth. config.json is where that memory is persisted so it
+survives a restart — it is an output, not an input, once the process is running. The
+admin panel is the only writer; editing config.json by hand while the booth is running
+will be silently overwritten by the next admin save, so hand-edits need a restart.
+"""
+
+import os
+import json
+import threading
+import time
+from pydantic import BaseModel, ValidationError
+from typing import List, Dict, Literal, Optional
+
+from backend.logger import log
+
+# Paths
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
+
+class OverlayConfig(BaseModel):
+    id: str
+    name: str
+    filename: str
+
+class AppSettings(BaseModel):
+    camera_backend: Literal["gphoto2", "mock"] = "gphoto2"
+    admin_pin: str = "123456"
+    welcome_message: str = "Create a Beautiful Memory"
+    thank_you_message: str = "Thank you for celebrating with us!"
+    # How many numbers the guest sees counted down (5 => "5,4,3,2,1").
+    countdown_duration: int = 3
+    # How fast those numbers tick, as a multiplier. The guest still sees all
+    # countdown_duration numbers — they just run quicker, and the ring video's
+    # playbackRate is scaled to match.
+    #
+    #     effective countdown (s) = countdown_duration / countdown_speed
+    countdown_speed: float = 1.0
+    # Pacing between shots in a multi-shot layout; owned by backend per Rule 14.
+    # A "get ready" beat after the shutter so the guest can change pose before the
+    # next count starts. Pure UX, and free — there is no shot-spacing constraint.
+    shot_interval_ms: int = 500
+    flash_enabled: bool = True
+    max_photos_per_session: int = 3
+    session_timeout: int = 120
+    # Floor for a stalled capture sequence: if the browser or camera dies
+    # mid-session, COUNTDOWN would strand forever. After this many seconds
+    # with no shot progress the FSM resets to ATTRACT. Sized well above
+    # countdown + capture + retry-once + shot interval; recovery is
+    # backend-owned per Rule 14. (Ordinary completion never depends on the
+    # browser: the camera reports straight to the FSM via callbacks.)
+    capture_stall_timeout: float = 75.0
+    show_names_on_photo: bool = True
+    printer_name: str = "mock"
+    printer_options: str = "fit-to-page media=4x6"
+    max_photos: int = 1000
+    disk_min_free_gb: float = 2.0
+    couple_names: str = "Sarah & Michael"
+    event_date: str = "June 14, 2026"
+    default_text: str = "Sarah & Michael \u00b7 June 14, 2026"
+    port: int = 8000
+    selected_overlay: str = "none"
+    wifi_network_name: str = "Our Wedding WiFi"
+    overlays: List[OverlayConfig] = [
+        OverlayConfig(id="none", name="No Frame", filename=""),
+        OverlayConfig(id="blush_floral", name="Chic Blush Floral", filename="blush_floral.png"),
+        OverlayConfig(id="gold_glitter", name="Elegant Gold Frame", filename="gold_glitter.png")
+    ]
+
+def _quarantine_bad_config(path: str) -> str:
+    """Move an unreadable config.json aside so the next boot starts clean.
+
+    Returns the backup path, or "" if the file could not be moved.
+    """
+    backup = os.path.join(
+        os.path.dirname(path), f"config.corrupt-{int(time.time())}.json"
+    )
+    try:
+        os.replace(path, backup)
+        return backup
+    except OSError:
+        return ""
+
+def read_settings(path: str) -> AppSettings:
+    """Read settings from disk, falling back to defaults if the file is unusable.
+
+    MUST NOT raise. This runs during startup, so an exception here is not a bad
+    config — it is a booth that will not boot. A file we cannot parse is quarantined
+    and we carry on with defaults.
+    """
+    if not os.path.exists(path):
+        return AppSettings()
+
+    try:
+        with open(path, "r") as f:
+            return AppSettings(**json.load(f))
+    except (json.JSONDecodeError, ValidationError, OSError, TypeError) as e:
+        backup = _quarantine_bad_config(path)
+        log.error(
+            "config",
+            "config_load_corrupt",
+            f"config.json is unusable ({type(e).__name__}); starting from defaults",
+            data={"error": str(e), "backup": backup or None},
+        )
+        return AppSettings()
+
+def write_settings(path: str, settings: AppSettings):
+    """Write settings to disk atomically.
+
+    Write-in-place would truncate the file first, so a crash mid-write leaves a
+    half-written config that read_settings then has to quarantine. Instead we write
+    a temp file alongside it and os.replace() — atomic on both Windows and POSIX.
+    The temp file must share a directory with the target: os.replace across volumes
+    is not atomic.
+    """
+    tmp = f"{path}.tmp"
+    try:
+        with open(tmp, "w") as f:
+            json.dump(settings.model_dump(), f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except OSError:
+        # Leave the existing config.json untouched, and don't litter a partial temp.
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
+
+
+class SettingsService:
+    """Owns the live settings for one process.
+
+    Constructed and loaded at the composition root, then handed to whoever needs it.
+    Hold the service (not the AppSettings it returns) when you need to see later
+    edits — print_service reloads its driver per job so a printer swap takes effect.
+    Hold the AppSettings snapshot when you need a consistent view for the duration of
+    some work, which is what the FSM does across a capture sequence.
+    """
+
+    def __init__(self, path: Optional[str] = None):
+        # No I/O here, per Rule 19 — call load(). A constructor that reads a file
+        # can't be built in a test without that file existing.
+        #
+        # CONFIG_PATH is resolved here rather than as a default argument, because a
+        # default binds once at import and would ignore a monkeypatched path.
+        self._path = path if path is not None else CONFIG_PATH
+        self._lock = threading.RLock()
+        self._settings: Optional[AppSettings] = None
+
+    def load(self) -> AppSettings:
+        """Read the config file into memory. The composition root calls this once."""
+        with self._lock:
+            self._settings = read_settings(self._path)
+            return self._settings
+
+    def get(self) -> AppSettings:
+        """The current settings. Memory only — never touches disk."""
+        with self._lock:
+            if self._settings is None:
+                # Loudly, rather than lazily reading the file: a silent fallback here
+                # is a second wiring mechanism, and it is what let tests quietly read
+                # the developer's real config.json.
+                raise RuntimeError(
+                    "SettingsService.load() was never called. Settings are wired at "
+                    "the composition root (main.py lifespan)."
+                )
+            return self._settings
+
+    def update(self, updates: Dict) -> AppSettings:
+        """Apply a dict of changes and persist them."""
+        # The lock closes the read-modify-write race between two concurrent admin
+        # POSTs, where the later write would otherwise clobber the earlier one.
+        with self._lock:
+            updated_data = self.get().model_dump()
+            for key, value in updates.items():
+                if key in updated_data:
+                    updated_data[key] = value
+
+            # REBIND, never mutate in place. The FSM takes an AppSettings snapshot and
+            # holds it across a whole capture sequence (state_machine.py, the
+            # shot_completed closure). Mutating the instance would reach into sequences
+            # already in flight and change the pacing of shots mid-session; rebinding
+            # leaves every existing holder on the snapshot it started with.
+            self._settings = AppSettings(**updated_data)
+            write_settings(self._path, self._settings)
+            return self._settings

@@ -1,9 +1,10 @@
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from backend.config import load_settings, update_settings, AppSettings
+from backend.settings import AppSettings, SettingsService
+from backend.deps import get_settings_service
 from backend.logger import log
 from backend.sse_service import sse_svc
 
@@ -36,18 +37,20 @@ class ChangePinRequest(BaseModel):
 
 
 @router.get("/api/config", response_model=AppSettings)
-async def get_config():
+async def get_config(settings_svc: SettingsService = Depends(get_settings_service)):
     """Retrieve current application settings."""
-    settings = load_settings()
-    return settings
+    return settings_svc.get()
 
 
 @router.post("/api/config", response_model=AppSettings)
-async def post_config(updates: ConfigUpdateRequest):
+async def post_config(
+    updates: ConfigUpdateRequest,
+    settings_svc: SettingsService = Depends(get_settings_service),
+):
     """Update configurations."""
     try:
         changed = {k: v for k, v in updates.model_dump(exclude_unset=True).items() if v is not None}
-        updated = update_settings(changed)
+        updated = settings_svc.update(changed)
         # Push the new config to all connected clients over SSE.
         sse_svc.dispatch_event("config_update", updated.model_dump())
         log.info("config", "config_updated", f"Config updated: {list(changed.keys())}", data=changed)
@@ -58,12 +61,14 @@ async def post_config(updates: ConfigUpdateRequest):
 
 
 @router.post("/api/change-pin")
-async def change_pin(req: ChangePinRequest):
-    settings = load_settings()
-    if req.current_pin != settings.admin_pin:
+async def change_pin(
+    req: ChangePinRequest,
+    settings_svc: SettingsService = Depends(get_settings_service),
+):
+    if req.current_pin != settings_svc.get().admin_pin:
         log.warn("config", "config_pin_fail", "PIN change attempted with wrong current PIN")
         raise HTTPException(status_code=403, detail="Invalid current PIN")
-    updated = update_settings({"admin_pin": req.new_pin})
+    updated = settings_svc.update({"admin_pin": req.new_pin})
     sse_svc.dispatch_event("config_update", updated.model_dump())
     log.info("config", "config_pin_changed", "Admin PIN changed")
     return {"status": "success", "detail": "PIN updated"}

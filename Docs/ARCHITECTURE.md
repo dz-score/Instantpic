@@ -55,7 +55,7 @@
 |  |  |   +-- photo_processor.py (Pillow compositing)|  | |
 |  |  |   +-- print_service.py  (CUPS / mock)        |  | |
 |  |  |   +-- storage.py        (circular buffer)    |  | |
-|  |  |   +-- config.py         (config.json r/w)    |  | |
+|  |  |   +-- settings.py       (AppSettings + svc)  |  | |
 |  |  |   +-- logger.py         (structured JSONL)   |  | |
 |  |  |   +-- diagnostics.py   (health checks)       |  | |
 |  |  +---------------------------------------------+   | |
@@ -343,8 +343,19 @@ SseService (singleton sse_svc)
 
 ---
 
-### `config.py` — Configuration
-**Responsibility:** Read/write `config.json` at the project root.
+### `settings.py` — Configuration
+**Responsibility:** The `AppSettings` schema, atomic read/write of `config.json` at the
+project root, and `SettingsService`, which owns the live settings for one process.
+
+`SettingsService` is constructed and loaded by the composition root (`main.py`'s
+lifespan) and reaches everything else by injection — routes via `deps.py`, services as
+a constructor argument (`PrintService`, `JobQueue`) or a plain `AppSettings` parameter
+(`storage`, `photo_processor`, `diagnostics`). There is no module-level settings global.
+
+Memory is the source of truth; `config.json` is the persisted mirror. `update()`
+rebinds rather than mutating, so an `AppSettings` snapshot already handed to a running
+capture sequence cannot change under it. An unreadable `config.json` is quarantined and
+the booth boots from defaults rather than failing to start.
 
 **Key settings:**
 
@@ -891,7 +902,7 @@ Tests live in `backend/tests/`. Run with `pytest`.
 | `test_api_errors.py` | Error handling / 4xx / 5xx responses |
 | `test_camera.py` | CameraService unit tests |
 | `test_camera_worker.py` | Worker thread behavior |
-| `test_config.py` | Config load/save/update |
+| `test_settings.py` | AppSettings read/write, corrupt-config fallback, SettingsService |
 | `test_job_queue.py` | Queue enqueue, worker processing, cleanup |
 | `test_photo_processor.py` | Image compositing output |
 | `test_printer.py` | PrintService driver logic |
@@ -932,21 +943,32 @@ Vite proxies `/api/*` and `/photos/*` to `localhost:8000` in dev mode (configure
 ## 17. Dependency Map
 
 ```
-main.py
-  +-- config.py          (no backend imports)
-  +-- storage.py         <- config.py
+main.py                  (composition root, Rule 19 — the lifespan constructs
+  |                       SettingsService, PrintService, JobQueue and the camera,
+  |                       puts them on app.state, and wires the FSM)
   +-- logger.py          (no backend imports)
+  +-- settings.py        <- logger.py
+  +-- deps.py            <- settings.py, print_service.py  (FastAPI dependencies;
+  |                         reads app.state, so routes never import a service)
+  +-- storage.py         <- settings.py  (AppSettings passed in)
   +-- sse_service.py     <- logger.py
-  +-- state_machine.py   <- logger.py, sse_service.py, config.py, jobs.py
-  +-- jobs.py            <- config.py   (job payload builders — the
+  +-- state_machine.py   <- logger.py, sse_service.py, settings.py, jobs.py
+  +-- jobs.py            <- settings.py  (job payload builders — the
   |                         FSM<->job_queue payload schema in one place)
-  +-- job_queue.py       <- logger.py, photo_processor.py,
+  +-- job_queue.py       <- logger.py, settings.py, photo_processor.py,
   |                         storage.py, print_service.py
+  +-- camera_factory.py  <- settings.py, logger.py  (create_camera() factory;
+  |                         importing it must not pick or open a camera)
   +-- camera_service.py  <- logger.py, storage.py, sse_service.py
   +-- mock_camera.py     <- logger.py, storage.py, sse_service.py
-  +-- photo_processor.py <- config.py
-  +-- print_service.py   <- config.py, logger.py
-  +-- diagnostics.py     <- config.py, print_service.py
+  +-- photo_processor.py <- settings.py
+  +-- print_service.py   <- settings.py, logger.py
+  +-- diagnostics.py     <- settings.py, print_service.py
+
+No module below main.py holds a settings, printer, job-queue or camera singleton:
+each is built once in the lifespan and handed to whoever needs it. state_machine
+and sse_service are still module-level singletons wired by setter — a known
+remaining Rule 19 gap.
 
 state_machine <-> job_queue wiring (no import in either direction beyond
 the above): main.py injects the queue into the FSM at startup via

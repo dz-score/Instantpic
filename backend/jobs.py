@@ -6,7 +6,7 @@ are dumb assembly — deciding WHEN to enqueue and WHICH callbacks to bind is
 flow control and stays in the state machine.
 """
 
-from backend.config import AppSettings
+from backend.settings import AppSettings
 
 
 def compose_banner_text(settings: AppSettings) -> str:

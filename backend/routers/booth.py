@@ -1,7 +1,8 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
-from backend.config import load_settings
+from backend.settings import AppSettings
+from backend.deps import get_settings
 from backend.state_machine import state_machine
 
 router = APIRouter(tags=["booth"])
@@ -19,8 +20,7 @@ async def get_state():
 
 
 @router.post("/api/events")
-async def handle_event(req: EventRequest):
+async def handle_event(req: EventRequest, settings: AppSettings = Depends(get_settings)):
     """Handle frontend events."""
-    settings = load_settings()
     await state_machine.handle_event(req.type, req.payload, settings)
     return {"status": "ok"}

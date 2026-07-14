@@ -2,7 +2,7 @@ import os
 import shutil
 import glob
 from typing import List
-from backend.config import load_settings
+from backend.settings import AppSettings
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PHOTOS_DIR = os.path.join(BASE_DIR, "backend", "photos")
@@ -24,14 +24,13 @@ def get_all_photos() -> List[str]:
     # Return relative or absolute paths (just filenames)
     return [os.path.basename(f) for f in files]
 
-def enforce_circular_storage():
+def enforce_circular_storage(settings: AppSettings):
     """
     Check disk usage and total count of photos.
     Delete the oldest photos if limits are exceeded.
     """
     ensure_directories()
-    settings = load_settings()
-    
+
     # 1. Enforce photo count limit
     pattern = os.path.join(PHOTOS_DIR, "*.[jJ][pP][gG]")
     files = glob.glob(pattern)
