@@ -34,7 +34,7 @@ Every important file in the project, grouped by layer. Use this as a quick-refer
 | [`camera_factory.py`](backend/camera_factory.py) | `create_camera(settings)` — a factory that returns the backend named by the config (`gphoto2` or `mock`), or `None` when gphoto2 is not installed. Importing it must not pick or open a camera; the lifespan calls it once. |
 | [`logger.py`](backend/logger.py) | Structured JSONL logger (`BoothLogger` singleton `log`) writing to a fresh `logs/backend_<startup-timestamp>.log` (5 MB × 3) each process start, plus stdout. Also accepts pre-formatted frontend log lines for `logs/frontend_<startup-timestamp>.log`. |
 | [`diagnostics.py`](backend/diagnostics.py) | Aggregates system health (printer status, disk usage, photo count) for the admin panel, and executes emergency actions (`restart_booth`, `restart_printer`, `clear_queue`) via systemd/CUPS CLI. |
-| [`generate_sound.py`](backend/generate_sound.py) | One-off utility script to generate audio asset files (beeps, shutter click) used by the frontend sound system. |
+| [`tools/generate_sound.py`](backend/tools/generate_sound.py) | One-off utility script to generate audio asset files (beeps, shutter click) used by the frontend sound system. Lives in `tools/` with the other dev-time scripts, not among production modules. |
 | [`requirements.txt`](backend/requirements.txt) | Python dependencies: FastAPI, uvicorn, gphoto2, Pillow, pydantic, sse-starlette, qrcode. |
 | [`PlayfairDisplay-Regular.ttf`](backend/PlayfairDisplay-Regular.ttf) | Embedded font file used by `photo_processor.py` to render branding text on finished photos. |
 
