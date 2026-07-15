@@ -2,6 +2,7 @@ import os
 import shutil
 import glob
 from typing import List
+from backend.logger import log
 from backend.settings import AppSettings
 
 # Re-exported as module attributes so tests can monkeypatch them per-module
@@ -42,27 +43,43 @@ def enforce_circular_storage(settings: AppSettings):
         for i in range(num_to_delete):
             try:
                 os.remove(files[i])
-                print(f"Circular Storage: Deleted oldest photo {files[i]} due to file count limit ({max_photos}).")
+                # Deleting a guest's photo is a significant event (Rule 16):
+                # it must be reconstructable from the log, not lost on stdout.
+                log.info("storage", "storage_photo_deleted",
+                         f"Circular storage: deleted oldest photo {os.path.basename(files[i])} (count limit)",
+                         data={"filename": os.path.basename(files[i]),
+                               "reason": "count_limit", "max_photos": max_photos})
             except Exception as e:
-                print(f"Error deleting old photo {files[i]}: {e}")
+                log.error("storage", "storage_delete_fail",
+                          f"Could not delete old photo {os.path.basename(files[i])}: {e}",
+                          data={"filename": os.path.basename(files[i]),
+                                "reason": "count_limit", "error": str(e)})
         # Refresh the list for the disk space check
         files = glob.glob(pattern)
         files.sort(key=os.path.getmtime)
-        
+
     # 2. Enforce disk space limit (Free GB)
     min_free_gb = settings.disk_min_free_gb
     total, used, free = shutil.disk_usage(PHOTOS_DIR)
     free_gb = free / (1024**3)
-    
+
     # Keep deleting oldest until we have enough free space or no files left
     while free_gb < min_free_gb and files:
         oldest_file = files.pop(0)
         try:
             os.remove(oldest_file)
-            print(f"Circular Storage: Deleted {oldest_file} due to low disk space ({free_gb:.2f} GB free, threshold {min_free_gb} GB).")
+            log.info("storage", "storage_photo_deleted",
+                     f"Circular storage: deleted {os.path.basename(oldest_file)} "
+                     f"({free_gb:.2f} GB free, threshold {min_free_gb} GB)",
+                     data={"filename": os.path.basename(oldest_file),
+                           "reason": "disk_space", "free_gb": round(free_gb, 2),
+                           "min_free_gb": min_free_gb})
             # Recompute disk space
             total, used, free = shutil.disk_usage(PHOTOS_DIR)
             free_gb = free / (1024**3)
         except Exception as e:
-            print(f"Error deleting file {oldest_file} for space recovery: {e}")
+            log.error("storage", "storage_delete_fail",
+                      f"Could not delete {os.path.basename(oldest_file)} for space recovery: {e}",
+                      data={"filename": os.path.basename(oldest_file),
+                            "reason": "disk_space", "error": str(e)})
             break
