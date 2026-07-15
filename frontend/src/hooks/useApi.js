@@ -117,6 +117,19 @@ export default function useApi(isOnline) {
     return await r.json();
   }, []);
 
+  /* ── Camera preview wake-up ──
+   * The countdown screen wakes the backend preview worker from standby on
+   * mount / round start. Capture itself is NOT triggered here: the shutter
+   * fires only via the FSM (FIRE_SHOT). */
+  const resumeCameraPreview = useCallback(async () => {
+    try {
+      logger.info('camera', 'resume_start', 'Waking up backend camera worker');
+      await fetch(`${API}/api/camera/resume`, { method: 'POST' });
+    } catch (err) {
+      logger.error('camera', 'resume_fail', `Failed to resume camera: ${err.message}`);
+    }
+  }, []);
+
   /* ── Camera settings (admin) ──
    * Live gphoto2 EXIF settings are read/written directly (not part of the SSE
    * config broadcast) because they are a USB round-trip to the camera. */
@@ -147,6 +160,7 @@ export default function useApi(isOnline) {
     getRecentLogs,
     getCameraConfig,
     saveCameraConfig,
+    resumeCameraPreview,
     fetchState,
     sendEvent,
   };
