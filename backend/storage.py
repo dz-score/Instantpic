@@ -4,9 +4,9 @@ import glob
 from typing import List
 from backend.settings import AppSettings
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PHOTOS_DIR = os.path.join(BASE_DIR, "backend", "photos")
-OVERLAYS_DIR = os.path.join(BASE_DIR, "backend", "overlays")
+# Re-exported as module attributes so tests can monkeypatch them per-module
+# (conftest.temp_workspace); main.py also imports BASE_DIR from here.
+from backend.paths import BASE_DIR, PHOTOS_DIR, OVERLAYS_DIR
 
 def ensure_directories():
     """Ensure photos and overlays directories exist."""

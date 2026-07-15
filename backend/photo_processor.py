@@ -6,14 +6,14 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 from backend.logger import log
 from backend.settings import OverlayConfig
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PHOTOS_DIR = os.path.join(BASE_DIR, "backend", "photos")
-OVERLAYS_DIR = os.path.join(BASE_DIR, "backend", "overlays")
+# Re-exported as module attributes so tests can monkeypatch them per-module
+# (conftest.temp_workspace).
+from backend.paths import PHOTOS_DIR, OVERLAYS_DIR
 # Playfair Display is bundled with the app (committed alongside this module).
 # The booth must run fully offline (no venue internet / captive portals), so
 # the font is NEVER fetched at runtime — a missing file falls back to PIL's
 # built-in default rather than blocking the job worker on a network call.
-FONT_PATH = os.path.join(BASE_DIR, "backend", "PlayfairDisplay-Regular.ttf")
+from backend.paths import FONT_PATH
 
 def get_font(size: int):
     """Load the bundled Playfair Display font, or fall back to PIL's default.

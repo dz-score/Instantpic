@@ -20,9 +20,9 @@ from typing import List, Dict, Literal, Optional
 
 from backend.logger import log
 
-# Paths
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
+# Re-exported as a module attribute so tests can monkeypatch it
+# (conftest.isolate_config).
+from backend.paths import CONFIG_PATH
 
 class OverlayConfig(BaseModel):
     id: str

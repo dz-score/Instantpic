@@ -15,8 +15,8 @@ from typing import Optional
 
 from pydantic import BaseModel
 
+from backend import storage
 from backend.logger import log
-from backend.storage import PHOTOS_DIR
 
 
 class CaptureJobState(BaseModel):
@@ -205,9 +205,10 @@ class CaptureRunner:
         dl_time = time.perf_counter() - dl_start
         log.debug("camera_timing", "capture_download", f"Image downloaded in {dl_time*1000:.1f}ms")
 
-        # 5. Save to disk
+        # 5. Save to disk. storage.PHOTOS_DIR is read at call time so the test
+        # fixture's redirection applies to camera saves too.
         filename = f"capture_{job_id}.jpg"
-        save_path = os.path.join(PHOTOS_DIR, filename)
+        save_path = os.path.join(storage.PHOTOS_DIR, filename)
         camera_file.save(save_path)
 
         total_time = time.perf_counter() - cap_start

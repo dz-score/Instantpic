@@ -3,8 +3,8 @@ import os
 import time
 import uuid
 import threading
+from backend import storage
 from backend.logger import log
-from backend.storage import PHOTOS_DIR
 
 
 class MockCameraService:
@@ -119,7 +119,7 @@ class MockCameraService:
                 time.sleep(1)  # simulate shutter lag
                 self._emit_job_state(job_id, "downloading")
                 filename = f"capture_{job_id}_mock.jpg"
-                with open(os.path.join(PHOTOS_DIR, filename), "wb") as f:
+                with open(os.path.join(storage.PHOTOS_DIR, filename), "wb") as f:
                     f.write(self._black_jpeg)
                 self._capture_in_progress = False
                 self._preview_allowed.set()
@@ -158,7 +158,7 @@ class MockCameraService:
         time.sleep(1)  # Simulate shutter lag
 
         filename = f"capture_{uuid.uuid4().hex[:8]}_mock.jpg"
-        save_path = os.path.join(PHOTOS_DIR, filename)
+        save_path = os.path.join(storage.PHOTOS_DIR, filename)
 
         with open(save_path, "wb") as f:
             f.write(self._black_jpeg)
