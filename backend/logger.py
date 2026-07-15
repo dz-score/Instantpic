@@ -8,6 +8,13 @@ Structured JSONL logger for the photo booth backend.
   for a single very long-running session
 - Also logs to stdout for systemd journal capture
 
+This module is the sanctioned exception to Rule 19 (BACKEND_RULES): it opens
+its log files and stamps the run at import time, and `log` is a module-level
+singleton. Every module needs logging (including during import), so
+constructor-threading it would be noise for no gain. The escape hatch for the
+import-time side effect is BOOTH_LOG_DIR, which must be set BEFORE any backend
+module is imported — conftest.py does this first thing.
+
 Usage:
     from backend.logger import log
     log.info("printer", "printer_sent", "Print job sent", sid="s_abc", data={"printer": "Canon"})
