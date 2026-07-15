@@ -1,10 +1,9 @@
 """FastAPI dependencies that hand routes the services the lifespan built.
 
-Routes used to import services directly (`from backend.camera_factory import
-get_camera`), which is Rule 19's "module-level singletons that other modules import
-to reach a service". They now ask for what they need, and the composition root
-decides what that is — so a test can build an app with a fake camera and never
-monkeypatch a module.
+Routes used to import services directly (a module-global `camera_svc`), which is
+Rule 19's "module-level singletons that other modules import to reach a service".
+They now ask for what they need, and the composition root decides what that is —
+so a test can build an app with a fake camera and never monkeypatch a module.
 
 Everything here reads `request.app.state`, which main.py's lifespan populates.
 """

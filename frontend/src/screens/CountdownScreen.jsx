@@ -247,7 +247,7 @@ export default function CountdownScreen({
         if (c % 1 === 0) setCount(c);
       } else {
         // Countdown done — fire straight away. Any pre-capture settling is
-        // backend-owned: camera_service gates the preview worker at enqueue
+        // backend-owned: the camera service gates the preview worker at enqueue
         // and applies its own settle, so a beat here would only freeze the
         // live view early for nothing.
         clearInterval(timerRef.current);

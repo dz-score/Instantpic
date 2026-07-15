@@ -284,9 +284,9 @@ There is no database, no environment variables for runtime settings, and no `.en
 ---
 
 ### Rule: `camera_backend` is read once at startup
-The camera backend (`"gphoto2"` or `"mock"`) is chosen by `camera_factory.create_camera()`, which the lifespan calls exactly once. Changing this setting requires a server restart to take effect.
+The camera backend (`"gphoto2"` or `"mock"`) is chosen by `backend/camera/factory.py`'s `create_camera()`, which the lifespan calls exactly once. Changing this setting requires a server restart to take effect.
 
-> **Why:** The gphoto2 import happens at module level inside `camera_service.py` and cannot be hot-swapped. This is a startup-time decision, not a runtime one.
+> **Why:** The gphoto2 import happens at module level inside `backend/camera/device.py` and cannot be hot-swapped. This is a startup-time decision, not a runtime one.
 
 ---
 
