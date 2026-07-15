@@ -124,11 +124,14 @@ export default function SystemTab({ getDiagnostics, emergencyAction, changePin, 
   const printer = diagnostics?.printer;
   const storage = diagnostics?.storage;
 
-  // No "Restart Camera" action: the backend has no real implementation (the
-  // camera reconnects automatically via its backoff loop), and a button that
-  // reports success while doing nothing lies to an operator mid-crisis.
+  // restart_camera has no backend implementation (the camera reconnects
+  // automatically via its backoff loop); the backend answers it with an
+  // honest "unsupported", which renders in the result toast below. The
+  // button stays visible so the operator learns that, instead of hunting
+  // for a control that quietly doesn't exist.
   const EMERGENCY_ACTIONS = [
     { id: 'restart_booth', label: 'Restart Booth', desc: 'Restarts Chromium and the backend server' },
+    { id: 'restart_camera', label: 'Restart Camera', desc: 'Reconnection is automatic — tapping reports the backend status' },
     { id: 'restart_printer', label: 'Restart Printer', desc: 'Restarts the CUPS print service' },
     { id: 'clear_queue', label: 'Clear Print Queue', desc: 'Cancels all pending print jobs' },
   ];
