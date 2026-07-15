@@ -346,7 +346,7 @@ Operator taps "Close" or presses outside
   Operator edits fields and taps "Save"
     → api.saveConfig({ couple_names: "...", event_date: "..." })
     → POST /api/config {body: updates}
-    → backend: load_settings() → merge → validate → save to config.json
+    → backend: settings_svc.update() → merge → validate → rebind in memory → atomic write to config.json
     → response: full updated AppSettings
     → frontend: setConfig(data) — live update, no restart needed
 
@@ -443,12 +443,12 @@ Operator taps "Close" or presses outside
     → POST /api/change-pin {current_pin: "123456", new_pin: "999888"}
 
   Backend:
-    load_settings() → compare req.current_pin vs settings.admin_pin
+    settings_svc.get() → compare req.current_pin vs settings.admin_pin
     Mismatch → 403 Forbidden → frontend shows error
-    Match    → update_settings({admin_pin: "999888"})
+    Match    → settings_svc.update({admin_pin: "999888"})
                → config.json updated
                → log.info "config_pin_changed"
-    → frontend: fetchConfig() refreshes local config cache
+    → backend broadcasts config_update over SSE; the frontend's copy self-heals
 ```
 
 ---
@@ -467,26 +467,29 @@ run.sh
   3. uvicorn backend.main:app --host 0.0.0.0 --port 8000 &
 
 uvicorn loads main.py:
-  4. load_settings() → reads config.json
-  5. Selects camera backend (gphoto2 or mock)
-  6. FastAPI app created, CORS middleware added
+  4. FastAPI app created, CORS middleware added, routers registered
+       (importing main.py constructs nothing — no camera, no settings)
 
-  lifespan() startup:
-  7. ensure_directories() → creates photos/ and overlays/ if absent
-  8. log.info "system_boot"
-  9. state_machine.set_job_queue(job_queue)
- 10. job_queue.start() → asyncio.Queue created, _worker task launched
- 11. camera_svc.init() → gphoto2 detects camera, connects
+  lifespan() startup — the composition root (BACKEND_RULES Rule 19):
+  5. ensure_directories() → creates photos/ and overlays/ if absent
+  6. log.info "system_boot"
+  7. Services built in dependency order, each handed its collaborators:
+       sse → settings (load() reads config.json once) → printer
+           → job_queue → camera (create_camera factory) → state_machine
+     All parked on app.state; routes reach them via backend/deps.py
+  8. sse.bind_loop() → camera threads can now marshal SSE dispatches
+  9. job_queue.start() → asyncio.Queue created, _worker task launched
+ 10. camera_svc.init() → gphoto2 detects camera, connects
        On success: _worker_thread starts, _monitor_thread starts
        On failure: exponential backoff, retries silently
- 12. SIGINT/SIGTERM handlers registered
+ 11. SIGINT/SIGTERM handlers registered
 
   4. chromium-browser --kiosk http://localhost:8000
- 13. Chromium opens → GET / → FastAPI serves frontend/dist/index.html
- 14. React mounts → useSse connects to /api/sse
- 15. useApi.fetchConfig() → GET /api/config
- 16. useApi.fetchState() → GET /api/state → appState = {screen: "ATTRACT"}
- 17. AttractScreen renders — booth is live
+ 12. Chromium opens → GET / → FastAPI serves frontend/dist/index.html
+ 13. React mounts → useSse connects to /api/sse
+       → backend seeds the new client with config_update over the stream
+ 14. useApi.fetchState() → GET /api/state → appState = {screen: "ATTRACT"}
+ 15. AttractScreen renders — booth is live
 ```
 
 ---
@@ -678,7 +681,8 @@ FSM enters PRINTING (_enter_printing):
   4. print_svc.print(filepath)  (run in thread pool — it blocks)
 
   PrintService.print():
-  5. load_settings() → printer_name
+  5. settings_svc.get() → printer_name  (holds the service, so a printer
+       swapped in the admin panel takes effect on the next job, no restart)
   6. Select driver:
        printer_name == "mock" → MockPrinterDriver (returns immediate success)
        else → CupsPrinterDriver

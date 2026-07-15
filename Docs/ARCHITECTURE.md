@@ -88,7 +88,7 @@ The backend **serves the frontend** as static files (`/frontend/dist/`). There i
 4. chromium-browser --kiosk http://localhost:8000
 ```
 
-### `main.py` lifespan (startup)
+### `main.py` lifespan (startup) — the composition root
 ```python
 # The composition root. Construction order is the dependency order, no cycles:
 ensure_directories()                                  # photos/ and overlays/
@@ -842,21 +842,28 @@ Photos are also accessible via HTTP:
 ## 12. Configuration System
 
 ```
-config.json  (project root)
+SettingsService  (backend/settings.py — one instance, built by the lifespan)
      |
-     +-- read:  load_settings() -> AppSettings (Pydantic)
-     +-- write: save_settings(settings)
-     +-- patch: update_settings(dict) = load -> merge -> validate -> save
+     +-- load():        read config.json into memory once, at startup
+     +-- get():         the current AppSettings — memory only, never disk
+     +-- update(dict):  merge -> validate -> REBIND in memory -> atomic write
+
+Memory is the source of truth; config.json is where it is persisted
+(write-temp + os.replace, fsync'd). update() rebinds a new AppSettings
+instead of mutating, so an in-flight holder (e.g. the FSM mid-capture-
+sequence) keeps the snapshot it started with. Hand-editing config.json
+while the booth runs requires a restart.
 
 AppSettings is a Pydantic BaseModel with defaults.
 All settings are flat key-value except:
     overlays: List[OverlayConfig]   {id, name, filename}
 
-Runtime camera backend selection (at import time in main.py):
+Camera backend selection (camera_factory.create_camera, called once by
+the lifespan — importing the factory picks nothing and opens nothing):
     if settings.camera_backend == "mock":
-        from backend.mock_camera import MockCameraService
+        return MockCameraService(sse)
     else:
-        from backend.camera_service import camera_svc
+        return CameraService(sse)   # or None if gphoto2 isn't installed
 ```
 
 ---
@@ -978,7 +985,8 @@ No module below main.py holds a service singleton. Every service — SSE, settin
 printer, job queue, camera, FSM — is constructed once in the lifespan and handed to
 whoever needs it; routes receive them via deps.py. Modules import service *classes*
 for type annotations, never instances. Importing any backend module has no side
-effects: it constructs nothing and opens nothing.
+effects: it constructs nothing and opens nothing. The only module-level singleton
+left is the logger — Rule 19's sanctioned exception (see BACKEND_RULES).
 
 state_machine <-> job_queue wiring (no import in either direction beyond
 the above): main.py passes the queue to the FSM at construction. The FSM
