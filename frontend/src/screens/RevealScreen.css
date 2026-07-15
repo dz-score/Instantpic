@@ -106,23 +106,39 @@
   margin-bottom: clamp(var(--space-sm), 3vh, var(--space-lg));
 }
 
-/* Cropped photo with the gold frame hugging just the picture. Width is
-   driven off the layout's aspect so the height lands ~56vh either way
-   (photo-crop supplies aspect-ratio + the crop offsets). */
+/* Gold frame hugging the raw photo(s). Sizes to its content so the frame
+   surrounds the picture with no matte. */
 .reveal-photo {
+  display: inline-flex;
   border: 3px solid var(--gold);
   border-radius: var(--radius-md);
   box-shadow: 0 8px 40px rgba(45, 36, 32, 0.12), var(--shadow-glow);
   background: var(--bg-elevated);
+  overflow: hidden;
   animation: reveal-up var(--duration-dramatic) var(--ease-dramatic) forwards;
 }
 
-.reveal-photo.photo-crop--single {
-  width: min(80vw, 84vh);
+/* Single: the photo at its natural aspect, capped to fit the screen. */
+.reveal-photo--single .reveal-photo__img {
+  display: block;
+  max-height: 58vh;
+  max-width: 84vw;
+  width: auto;
+  height: auto;
 }
 
-.reveal-photo.photo-crop--collage {
-  width: min(90vw, 133vh);
+/* Collage: the shots in a row, each a portrait 3:4 cell (matching the
+   print strip), all the same height. */
+.reveal-photo--collage {
+  height: 54vh;
+  max-width: 92vw;
+}
+
+.reveal-photo--collage .reveal-photo__img {
+  display: block;
+  height: 100%;
+  aspect-ratio: 3 / 4;
+  object-fit: cover;
 }
 
 /* ═══ Content (fade+slide in) ═══ */

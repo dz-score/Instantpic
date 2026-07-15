@@ -233,18 +233,17 @@ export default function App() {
           onPrint={handlePrintFromReveal}
           onCancel={() => api.sendEvent('FINISH')}
           language={language}
-          layoutMode={appState?.layoutMode || 'single'}
+          rawImages={appState?.capturedImages || []}
         />
       )}
 
       {currentScreen === 'PICK_FAVORITE' && (
         <PickFavoriteScreen
-          allPhotos={(appState?.allSessionPhotos || []).map(p => p.filename)}
+          photos={appState?.allSessionPhotos || []}
           onSelect={handleFavoriteSelect}
           onBack={handleFinish}
           isProcessing={appState?.isProcessing || false}
           language={language}
-          layoutMode={appState?.layoutMode || 'single'}
         />
       )}
 

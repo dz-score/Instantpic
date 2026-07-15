@@ -4,7 +4,6 @@ import ConfettiOverlay from '../components/ConfettiOverlay';
 import { t } from '../utils/i18n';
 import useTapGuard from '../hooks/useTapGuard';
 import { RotateCcw, Heart, Home } from 'lucide-react';
-import '../components/PhotoCrop.css';
 import './RevealScreen.css';
 
 /**
@@ -31,13 +30,18 @@ export default function RevealScreen({
   onPrint,
   onCancel,
   language,
-  layoutMode = 'single',
+  rawImages = [],
 }) {
   const [showPhoto, setShowPhoto] = useState(false);
   const [guard, armed] = useTapGuard();
   const cacheKey = useRef(Date.now());
   const isLastRetake = retakeCount >= maxRetakes - 1;
   const canRetake = retakeCount < maxRetakes;
+
+  // Show the actual captured photo(s), not the print composite (which bakes
+  // in the cream matte + names/date caption). Fall back to the composite only
+  // if the raw shots aren't available for some reason.
+  const previewPhotos = rawImages.length ? rawImages : (finalPhoto ? [finalPhoto] : []);
 
   useEffect(() => {
     if (finalPhoto && !isProcessing) {
@@ -66,15 +70,18 @@ export default function RevealScreen({
           {/* Heading */}
           <h1 className="reveal-title">{t('reveal.title', language)}</h1>
 
-          {/* Photo — cropped to just the picture; the cream matte and
-              names/date caption on the print composite are hidden here. */}
+          {/* Photo — the raw capture(s), with the gold frame around them.
+              No matte or names/date caption (that lives on the print). */}
           <div className="reveal-photo-wrap">
-            <div className={`reveal-photo photo-crop photo-crop--${layoutMode}`}>
-              <img
-                src={`/photos/${finalPhoto}?t=${cacheKey.current}`}
-                alt="Your photo"
-                className="photo-crop__img"
-              />
+            <div className={`reveal-photo reveal-photo--${previewPhotos.length > 1 ? 'collage' : 'single'}`}>
+              {previewPhotos.map((f, i) => (
+                <img
+                  key={i}
+                  src={`/photos/${f}?t=${cacheKey.current}`}
+                  alt="Your photo"
+                  className="reveal-photo__img"
+                />
+              ))}
             </div>
           </div>
 

@@ -145,9 +145,8 @@
   max-width: min(31vw, 560px);
 }
 
-/* Card keeps the gold frame/fill/shadow; its aspect-ratio + the photo
-   crop come from the .photo-crop--<layout> classes (see PhotoCrop.css),
-   so the frame hugs just the picture, not the matte/caption. */
+/* Card keeps the gold frame/fill/shadow around the raw photo(s). Single
+   takes the camera's 3:2 aspect; collage sizes to its row of shots. */
 .pick-fav__card {
   position: relative;
   width: 100%;
@@ -159,6 +158,24 @@
   border: 1px solid var(--gold);
   background: var(--ivory);
   box-shadow: var(--shadow-floating-card);
+}
+
+.pick-fav__card--single {
+  aspect-ratio: 3 / 2;
+}
+
+/* Collage: shots in a row, each a portrait 3:4 cell (matching the strip). */
+.pick-fav__collage {
+  display: flex;
+  width: 100%;
+}
+
+.pick-fav__collage-img {
+  flex: 1;
+  min-width: 0;
+  aspect-ratio: 3 / 4;
+  object-fit: cover;
+  display: block;
 }
 
 .pick-fav__card:active {
