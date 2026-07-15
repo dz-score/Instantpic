@@ -435,7 +435,7 @@ the booth boots from defaults rather than failing to start.
 | Action | Effect |
 |---|---|
 | `restart_booth` | `systemctl restart chromium-kiosk && photobooth` |
-| `restart_camera` | Returns `unsupported` — the camera reconnects automatically; no button offers this action any more |
+| `restart_camera` | Returns `unsupported` — the camera reconnects automatically; the admin button surfaces that answer honestly |
 | `restart_printer` | `systemctl restart cups` |
 | `clear_queue` | `cancel -a` (clear all CUPS jobs) |
 

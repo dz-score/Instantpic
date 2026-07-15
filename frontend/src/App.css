@@ -18,8 +18,13 @@
 
 /* Camera-disconnected banner (bottom of screen, above everything).
    Deliberately NOT var(--error): that token is a soft dusty rose for guest-
-   facing copy; this banner is an operator alarm and keeps its hard crimson. */
+   facing copy; this banner is an operator alarm and keeps its hard crimson.
+   pointer-events: none — the banner is pure display and overlaps the hidden
+   admin trigger (L'Étoile, bottom-right): it must never eat those taps.
+   The trigger already wins by z-index (10000 vs 9999); this makes taps pass
+   through regardless of any future stacking change. */
 .camera-error-banner {
+  pointer-events: none;
   position: absolute;
   bottom: 0;
   left: 0;
