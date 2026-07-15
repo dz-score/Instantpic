@@ -1,0 +1,59 @@
+/* ══════════════════════════════════════════════
+   PhotoCrop — show ONLY the photo region of a
+   composited print image, hiding the cream matte
+   and the names/date caption band.
+
+   The photo displayed on Reveal / PickFavorite is the
+   full 1800x1200 print composite (matte + caption baked
+   in — that layout is what gets printed & downloaded).
+   Here we scale the image up inside an overflow-hidden
+   box and offset it so only the photo(s) show.
+
+   Geometry MUST match backend/photo_processor.py
+   process_photo_layout() (canvas 1800x1200):
+     single : photo pasted at (180, 80), size 1440x960
+              -> region x 180..1620, y 80..1040
+     collage: 3x 540x720, 45px gaps, at y=80
+              -> strip  x 45..1755,  y 80..800
+   If those paste coordinates change, update the
+   percentages below.
+   ══════════════════════════════════════════════ */
+
+.photo-crop {
+  position: relative;
+  overflow: hidden;
+}
+
+/* The <img> is the whole composite, scaled/offset — not object-fit'd.
+   Each variant's box happens to stay 3:2 (the composite's own aspect),
+   so no additional cropping occurs inside the image itself. */
+.photo-crop__img {
+  position: absolute;
+  display: block;
+}
+
+/* single — region 1440x960 (3:2).
+   scale 1800/1440 = 125% wide, 1200/960 = 125% tall.
+   offset 180/1440 = 12.5% left, 80/960 = 8.3333% top. */
+.photo-crop--single {
+  aspect-ratio: 3 / 2;
+}
+.photo-crop--single .photo-crop__img {
+  width: 125%;
+  height: 125%;
+  left: -12.5%;
+  top: -8.3333%;
+}
+
+/* collage — strip 1710x720.
+   scale 1800/1710 = 105.263% wide, 1200/720 = 166.667% tall.
+   offset 45/1710 = 2.6316% left, 80/720 = 11.1111% top. */
+.photo-crop--collage {
+  aspect-ratio: 1710 / 720;
+}
+.photo-crop--collage .photo-crop__img {
+  width: 105.263%;
+  height: 166.667%;
+  left: -2.6316%;
+  top: -11.1111%;
+}

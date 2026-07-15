@@ -233,6 +233,7 @@ export default function App() {
           onPrint={handlePrintFromReveal}
           onCancel={() => api.sendEvent('FINISH')}
           language={language}
+          layoutMode={appState?.layoutMode || 'single'}
         />
       )}
 
@@ -243,6 +244,7 @@ export default function App() {
           onBack={handleFinish}
           isProcessing={appState?.isProcessing || false}
           language={language}
+          layoutMode={appState?.layoutMode || 'single'}
         />
       )}
 

@@ -145,10 +145,12 @@
   max-width: min(31vw, 560px);
 }
 
+/* Card keeps the gold frame/fill/shadow; its aspect-ratio + the photo
+   crop come from the .photo-crop--<layout> classes (see PhotoCrop.css),
+   so the frame hugs just the picture, not the matte/caption. */
 .pick-fav__card {
   position: relative;
   width: 100%;
-  aspect-ratio: 4 / 3;
   border-radius: var(--radius-lg);
   overflow: hidden;
   cursor: pointer;

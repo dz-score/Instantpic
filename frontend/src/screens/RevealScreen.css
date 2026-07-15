@@ -106,10 +106,23 @@
   margin-bottom: clamp(var(--space-sm), 3vh, var(--space-lg));
 }
 
-.reveal-photo-wrap .photo-frame--reveal {
+/* Cropped photo with the gold frame hugging just the picture. Width is
+   driven off the layout's aspect so the height lands ~56vh either way
+   (photo-crop supplies aspect-ratio + the crop offsets). */
+.reveal-photo {
   border: 3px solid var(--gold);
   border-radius: var(--radius-md);
   box-shadow: 0 8px 40px rgba(45, 36, 32, 0.12), var(--shadow-glow);
+  background: var(--bg-elevated);
+  animation: reveal-up var(--duration-dramatic) var(--ease-dramatic) forwards;
+}
+
+.reveal-photo.photo-crop--single {
+  width: min(80vw, 84vh);
+}
+
+.reveal-photo.photo-crop--collage {
+  width: min(90vw, 133vh);
 }
 
 /* ═══ Content (fade+slide in) ═══ */

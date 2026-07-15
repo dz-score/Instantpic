@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import ScreenShell from '../components/ScreenShell';
-import PhotoFrame from '../components/PhotoFrame';
 import ConfettiOverlay from '../components/ConfettiOverlay';
 import { t } from '../utils/i18n';
 import useTapGuard from '../hooks/useTapGuard';
 import { RotateCcw, Heart, Home } from 'lucide-react';
+import '../components/PhotoCrop.css';
 import './RevealScreen.css';
 
 /**
@@ -31,6 +31,7 @@ export default function RevealScreen({
   onPrint,
   onCancel,
   language,
+  layoutMode = 'single',
 }) {
   const [showPhoto, setShowPhoto] = useState(false);
   const [guard, armed] = useTapGuard();
@@ -65,14 +66,16 @@ export default function RevealScreen({
           {/* Heading */}
           <h1 className="reveal-title">{t('reveal.title', language)}</h1>
 
-          {/* Photo */}
+          {/* Photo — cropped to just the picture; the cream matte and
+              names/date caption on the print composite are hidden here. */}
           <div className="reveal-photo-wrap">
-            <PhotoFrame
-              src={`/photos/${finalPhoto}?t=${cacheKey.current}`}
-              alt="Your photo"
-              size="large"
-              className="photo-frame--reveal"
-            />
+            <div className={`reveal-photo photo-crop photo-crop--${layoutMode}`}>
+              <img
+                src={`/photos/${finalPhoto}?t=${cacheKey.current}`}
+                alt="Your photo"
+                className="photo-crop__img"
+              />
+            </div>
           </div>
 
           {/* Actions */}

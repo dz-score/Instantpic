@@ -3,6 +3,7 @@ import ScreenShell from '../components/ScreenShell';
 import { t } from '../utils/i18n';
 import useTapGuard from '../hooks/useTapGuard';
 import { Home } from 'lucide-react';
+import '../components/PhotoCrop.css';
 import './PickFavoriteScreen.css';
 
 /**
@@ -24,6 +25,7 @@ export default function PickFavoriteScreen({
   onBack,
   isProcessing,
   language,
+  layoutMode = 'single',
 }) {
   const [selected, setSelected] = useState(allPhotos.length - 1);
   const [guard, armed] = useTapGuard();
@@ -49,14 +51,14 @@ export default function PickFavoriteScreen({
         {allPhotos.map((photo, index) => (
           <div className="pick-fav__item" key={photo}>
             <button
-              className={`pick-fav__card ${selected === index ? 'pick-fav__card--selected' : ''}`}
+              className={`pick-fav__card photo-crop photo-crop--${layoutMode} ${selected === index ? 'pick-fav__card--selected' : ''}`}
               onClick={() => setSelected(index)}
             >
               <span className="pick-fav__badge">{index + 1}</span>
               <img
                 src={`/photos/${photo}?t=${cacheKey.current}`}
                 alt={`Photo ${index + 1}`}
-                className="pick-fav__img"
+                className="pick-fav__img photo-crop__img"
               />
             </button>
             {/* Radio dot */}
