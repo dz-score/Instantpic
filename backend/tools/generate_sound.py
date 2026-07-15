@@ -13,9 +13,9 @@ DURATION = 0.8  # seconds
 NUM_SAMPLES = int(SAMPLE_RATE * DURATION)
 AMPLITUDE = 0.45  # master volume (0.0 - 1.0)
 
-# Output path
+# Output path (this file lives in backend/tools/, so the repo root is two up)
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-BASE_DIR = os.path.dirname(SCRIPT_DIR)
+BASE_DIR = os.path.dirname(os.path.dirname(SCRIPT_DIR))
 OUTPUT_DIR = os.path.join(BASE_DIR, "frontend", "public", "sounds")
 OUTPUT_PATH = os.path.join(OUTPUT_DIR, "shutter.wav")
 
