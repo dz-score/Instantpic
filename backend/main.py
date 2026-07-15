@@ -16,7 +16,7 @@ from backend.sse_service import SseService
 from backend.logger import log
 from backend.state_machine import StateMachine
 from backend.job_queue import JobQueue
-from backend.camera_factory import create_camera
+from backend.camera import create_camera
 
 from backend.routers import booth, camera, config, logs, photos, sse, system
 

@@ -293,7 +293,7 @@ Any screen (except ATTRACT, DOWNLOAD, LOADING):
       → SSE state_update → AttractScreen renders
 
   Camera auto-standby (independent):
-    camera_service watchdog fires if no preview request in 10s
+    camera preview watchdog fires if no preview request in 10s
     camera enters low-power standby automatically
     resumes when next /api/camera/preview request arrives
 ```
@@ -420,7 +420,7 @@ Operator taps "Close" or presses outside
   "Restart Camera"
     → POST /api/emergency {action: "restart_camera"}
     → backend: returns signal-only success
-    → camera_service auto-reconnects via its init backoff loop
+    → the camera service auto-reconnects via its init backoff loop
 
   "Restart Printer"
     → POST /api/emergency {action: "restart_printer"}

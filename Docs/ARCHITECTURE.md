@@ -51,7 +51,7 @@
 |  |  |   +-- state_machine.py  (booth FSM)          |  | |
 |  |  |   +-- job_queue.py      (async worker)       |  | |
 |  |  |   +-- sse_service.py    (push events)        |  | |
-|  |  |   +-- camera_service.py (gphoto2 wrapper)    |  | |
+|  |  |   +-- camera/           (gphoto2 package)    |  | |
 |  |  |   +-- photo_processor.py (Pillow compositing)|  | |
 |  |  |   +-- print_service.py  (CUPS / mock)        |  | |
 |  |  |   +-- storage.py        (circular buffer)    |  | |
@@ -77,7 +77,7 @@ The backend **serves the frontend** as static files (`/frontend/dist/`). There i
 | **Backend process** | `backend/main.py` | FastAPI app + lifespan manager |
 | **Frontend SPA** | `frontend/src/main.jsx` | React root mount |
 | **Run script** | `run.sh` | Production startup: build frontend -> start uvicorn -> open Chromium kiosk |
-| **Camera init** | `camera_service.py -> init()` | Called on startup by `main.py` lifespan |
+| **Camera init** | `camera/service.py -> init()` | Called on startup by `main.py` lifespan |
 | **Job queue start** | `job_queue.py -> start()` | Called on startup by `main.py` lifespan |
 
 ### `run.sh` boot sequence
@@ -215,31 +215,44 @@ asyncio.Queue -> _worker() task
 
 ---
 
-### `camera_service.py` — Camera Service (gphoto2)
+### `camera/` — Camera Package (gphoto2)
 **Responsibility:** Manages a Canon M50 (or compatible) DSLR via `python-gphoto2`. Runs a **dedicated background thread** for live preview, completely decoupled from HTTP consumers.
+
+Split by responsibility (Rule 20) — one module per reason to change:
+
+| Module | Owns |
+|---|---|
+| `service.py` | `CameraService` — the facade the app talks to; public surface unchanged from the pre-split single class |
+| `device.py` | The gphoto2 handle, the camera lock, init/backoff, every locked USB primitive. **Sole importer of `gphoto2`.** |
+| `preview.py` | The worker thread, frame buffer, MJPEG generator, idle watchdog, metrics monitor |
+| `capture.py` | Capture job queue, retry-once policy, `camera_job` SSE states, FSM callback marshalling |
+| `gate.py` | `CaptureGate` — the ONE owner of the "no preview while a capture is pending/in flight" rule (previously duplicated between the worker loop and `resume_preview()`) |
+| `factory.py` | `create_camera()` — builds the backend named by the config |
+| `mock.py` | `MockCameraService` — same facade contract, no hardware |
 
 **Architecture:**
 ```
 +----------------------------------------+
-|  _worker_thread (camera-worker)        |
+|  worker thread (camera-worker)         |   preview.py
 |                                        |
 |  Loop:                                 |
-|    wait _preview_allowed (Event)       |
-|    camera.capture_preview()            |
-|    write -> _latest_frame             |
-|    notify _frame_condition            |
-|    check _cmd_queue for commands       |
+|    runner.run_pending()  (captures     |   capture.py runs ON this
+|      execute here — one thread owns    |   thread via the job queue
+|      all camera USB I/O)               |
+|    gate.preview_may_run()?             |   gate.py decides
+|    device.read_preview_frame_locked()  |   device.py touches USB
+|    publish -> frame buffer             |
 +----------------------------------------+
          | frame buffer (Condition)
 +------------------------------------------+
-|  preview_generator()  <- HTTP consumer  |
-|  Waits on _frame_condition              |
-|  Yields MJPEG boundary chunks           |
+|  generator()  <- HTTP consumer           |  preview.py
+|  Waits on the frame condition            |
+|  Yields MJPEG boundary chunks            |
 +------------------------------------------+
          | SSE events
 +------------------------------------------+
-|  _diagnostic_monitor (camera-monitor)   |
-|  Dispatches camera_metrics every ~1s    |
+|  monitor thread (camera-monitor)         |  preview.py
+|  Dispatches camera_metrics every ~1s     |
 +------------------------------------------+
 ```
 
@@ -247,14 +260,14 @@ asyncio.Queue -> _worker() task
 - **Decoupled frame buffer**: HTTP is never blocked by camera; old frames are silently overwritten if consumers are slow.
 - **Auto-standby watchdog**: If no preview request arrives within `_preview_idle_timeout` (10s), the camera enters standby to avoid overheating/disconnection. An attached MJPEG viewer counts as a preview request on every poll, even while no frames are arriving.
 - **Disconnect cascade**: 6 consecutive preview failures mark the camera disconnected, handing recovery to `init()`'s exponential backoff. (There used to be a "wedged-session heal" here — a 1-error hair trigger driving an `exit()+init()` cascade, to clear a wedge the M50 supposedly entered after any run that took a photo. That wedge was a **libgphoto2 2.5.34 bug**, not camera behavior; it does not happen on the system 2.5.30. Removed 2026-07-14 — see CAMERA_NOTES §2 and the `--no-binary gphoto2` rule in CONSTRAINTS.md.)
-- **Command queue (`_cmd_queue`)**: Allows thread-safe commands (`STANDBY`, `RESUME`, `CAPTURE`) from the asyncio thread without locks.
-- **Capture flow**: `enqueue_capture()` -> worker thread runs `_execute_capture_job()`, which emits granular `camera_job` SSE states (`started` -> `fired` -> `downloading` -> `completed`/`failed`) as it triggers the shutter and downloads the file.
-- **Capture retry-once policy**: If a trigger or download attempt fails, `_execute_capture_job()` waits `CAPTURE_RETRY_DELAY_S` (1.5s), reconnects if needed, and retries exactly once before emitting a terminal `failed` event. This mirrors `PrintService`'s retry-once pattern and is a workflow decision — it must never live in the frontend (Rule 14). A shot that fails both attempts stays `failed`; the frontend surfaces a retry/home affordance rather than silently hanging.
+- **Capture job queue**: capture jobs are enqueued from the asyncio thread and executed by the worker thread (`CaptureRunner.run_pending()` at the top of every loop iteration) — one thread owns all camera USB I/O, no locks needed for the handoff.
+- **Capture flow**: `enqueue_capture()` -> worker thread runs `CaptureRunner.execute()`, which emits granular `camera_job` SSE states (`started` -> `fired` -> `downloading` -> `completed`/`failed`) as it triggers the shutter and downloads the file.
+- **Capture retry-once policy**: If a trigger or download attempt fails, `CaptureRunner` waits `CAPTURE_RETRY_DELAY_S` (1.5s), reconnects if needed, and retries exactly once before emitting a terminal `failed` event. This mirrors `PrintService`'s retry-once pattern and is a workflow decision — it must never live in the frontend (Rule 14). A shot that fails both attempts stays `failed`; the frontend surfaces a retry/home affordance rather than silently hanging.
 - **Exponential backoff**: On init failure, waits `_init_backoff` seconds (doubles up to 60s) before retrying.
 
-**Mock mode:** `mock_camera.py` provides `MockCameraService` — same API, generates synthetic frames for dev/Windows environments (selected via `config.json -> camera_backend: "mock"`).
+**Mock mode:** `camera/mock.py` provides `MockCameraService` — same API, generates synthetic frames for dev/Windows environments (selected via `config.json -> camera_backend: "mock"`).
 
-**Hardware field knowledge:** [CAMERA_NOTES.md](CAMERA_NOTES.md) documents how this specific M50 body behaves (wedged sessions, stall cycles, widgets that must never be written, diagnostic log signatures). Read it before changing `camera_service.py`.
+**Hardware field knowledge:** [CAMERA_NOTES.md](CAMERA_NOTES.md) documents how this specific M50 body behaves (wedged sessions, stall cycles, widgets that must never be written, diagnostic log signatures). Read it before changing the camera package.
 
 ---
 
@@ -325,16 +338,16 @@ SseService (singleton sse_svc)
          auto-removes client on disconnect or shutdown
 ```
 
-**Thread-safety contract:** client queues are `asyncio.Queue`s, which are not thread-safe. `SseService` owns the marshalling — callers never need to know which thread they're on. This matters because `camera_service` dispatches from its worker and monitor threads.
+**Thread-safety contract:** client queues are `asyncio.Queue`s, which are not thread-safe. `SseService` owns the marshalling — callers never need to know which thread they're on. This matters because the camera package dispatches from its worker and monitor threads.
 
 **Events emitted:**
 
 | Event | Emitted by | Content |
 |---|---|---|
 | `state_update` | `state_machine.py` | Full `BoothState` dict (snapshot taken under the FSM handler lock) |
-| `camera_status` | `camera_service.py` | `{connected, is_capturing, error}` on connect/disconnect/standby/resume |
-| `camera_metrics` | `camera_service.py` (monitor thread, ~1s) | `{fps, latency_ms, time_since_last_frame_ms, connected, ...}` |
-| `camera_job` | `camera_service.py` (worker thread) | `{job_id, status, filename?, error?}` — status: `started`/`fired`/`downloading`/`completed`/`failed`, one or more per capture (retried attempts re-emit `fired`) |
+| `camera_status` | `camera/` (device + preview/standby) | `{connected, is_capturing, error}` on connect/disconnect/standby/resume |
+| `camera_metrics` | `camera/preview.py` (monitor thread, ~1s) | `{fps, latency_ms, time_since_last_frame_ms, connected, ...}` |
+| `camera_job` | `camera/capture.py` (worker thread) | `{job_id, status, filename?, error?}` — status: `started`/`fired`/`downloading`/`completed`/`failed`, one or more per capture (retried attempts re-emit `fired`) |
 | `printer_status` | `print_service.py` | `{connected, ready, status_text}` |
 | `config_update` | `main.py` | Full `AppSettings` dict — broadcast on `POST /api/config` / PIN change, and seeded per-client on every SSE (re)connect |
 
@@ -707,9 +720,9 @@ The SSE channel at `GET /api/sse` is the **backbone** of the frontend-backend co
 Backend Module          Event Type          Triggered When
 ----------------------------------------------------------
 state_machine.py   ->   state_update      -> Any FSM transition
-camera_service.py  ->   camera_status     -> Connect/disconnect/standby/resume
-camera_service.py  ->   camera_metrics    -> Periodic monitor thread (~1s)
-camera_service.py  ->   camera_job        -> Per capture, granular: started/fired/downloading/completed/failed
+camera/ (package)  ->   camera_status     -> Connect/disconnect/standby/resume
+camera/preview.py  ->   camera_metrics    -> Periodic monitor thread (~1s)
+camera/capture.py  ->   camera_job        -> Per capture, granular: started/fired/downloading/completed/failed
 print_service.py   ->   printer_status    -> On print attempt
 main.py            ->   config_update     -> Config/PIN change; also seeded per-client on every SSE (re)connect
 ```
@@ -858,7 +871,7 @@ AppSettings is a Pydantic BaseModel with defaults.
 All settings are flat key-value except:
     overlays: List[OverlayConfig]   {id, name, filename}
 
-Camera backend selection (camera_factory.create_camera, called once by
+Camera backend selection (camera/factory.py's create_camera, called once by
 the lifespan — importing the factory picks nothing and opens nothing):
     if settings.camera_backend == "mock":
         return MockCameraService(sse)
@@ -973,10 +986,14 @@ main.py                  (composition root, Rule 19 — the lifespan constructs
   |                         FSM<->job_queue payload schema in one place)
   +-- job_queue.py       <- logger.py, settings.py, photo_processor.py,
   |                         storage.py, print_service.py
-  +-- camera_factory.py  <- settings.py, logger.py  (create_camera() factory;
-  |                         importing it must not pick or open a camera)
-  +-- camera_service.py  <- logger.py, storage.py, sse_service.py
-  +-- mock_camera.py     <- logger.py, storage.py, sse_service.py
+  +-- camera/            (package — see §8; only device.py imports gphoto2)
+  |     factory.py       <- settings.py, logger.py  (create_camera();
+  |     |                   importing it must not pick or open a camera)
+  |     service.py       <- device.py, preview.py, capture.py, gate.py (facade)
+  |     device.py        <- logger.py
+  |     preview.py       <- logger.py
+  |     capture.py       <- logger.py, storage.py
+  |     mock.py          <- logger.py, storage.py
   +-- photo_processor.py <- settings.py
   +-- print_service.py   <- settings.py, logger.py
   +-- diagnostics.py     <- settings.py, print_service.py
@@ -992,7 +1009,7 @@ state_machine <-> job_queue wiring (no import in either direction beyond
 the above): main.py passes the queue to the FSM at construction. The FSM
 enqueues jobs carrying its own bound methods as
 on_success/on_failure callbacks; the queue invokes them blindly and
-never imports the state machine. camera_service uses the same
+never imports the state machine. The camera package uses the same
 inversion: enqueue_capture(on_complete, on_failure) delivers the capture
 outcome straight to FSM-supplied callbacks without importing the FSM,
 and the COUNTDOWN stall watchdog remains the floor for a dead browser
