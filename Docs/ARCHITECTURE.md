@@ -124,9 +124,7 @@ camera_svc.init()     # connect to gphoto2 camera
 | `POST` | `/api/events` | Send an event to the FSM |
 | `GET` | `/api/sse` | Server-Sent Events stream |
 | `GET` | `/api/camera/preview` | MJPEG live preview stream |
-| `POST` | `/api/camera/capture` | Enqueue a camera capture job |
-| `POST` | `/api/camera/standby` | Pause preview worker |
-| `POST` | `/api/camera/resume` | Resume preview worker |
+| `POST` | `/api/camera/resume` | Resume preview worker (no capture/standby routes: the shutter fires only via the FSM's FIRE_SHOT; standby is the idle watchdog's call) |
 | `GET` | `/api/camera/status` | Camera health |
 | `GET/POST` | `/api/camera/config` | Camera EXIF/gphoto2 settings |
 | `GET` | `/api/printer/status` | Printer health |
@@ -437,7 +435,7 @@ the booth boots from defaults rather than failing to start.
 | Action | Effect |
 |---|---|
 | `restart_booth` | `systemctl restart chromium-kiosk && photobooth` |
-| `restart_camera` | Signal only (camera re-initializes automatically) |
+| `restart_camera` | Returns `unsupported` — the camera reconnects automatically; no button offers this action any more |
 | `restart_printer` | `systemctl restart cups` |
 | `clear_queue` | `cancel -a` (clear all CUPS jobs) |
 

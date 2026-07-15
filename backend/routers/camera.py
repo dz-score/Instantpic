@@ -26,22 +26,11 @@ async def camera_preview(camera=Depends(require_camera)):
     )
 
 
-@router.post("/capture")
-async def camera_capture(camera=Depends(require_camera)):
-    try:
-        job_id = camera.enqueue_capture()
-        return {"status": "enqueued", "job_id": job_id}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.post("/standby")
-async def camera_standby(camera=Depends(require_camera)):
-    try:
-        camera.standby()
-        return {"status": "success"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+# There is deliberately no POST /capture route: the shutter fires only through
+# the FSM (FIRE_SHOT), which owns the one-shot-in-flight guard and receives the
+# outcome via callbacks. A raw capture endpoint bypassed that guard and emitted
+# real camera_job SSE events into whatever session was on screen. Standby has
+# no route either — the idle watchdog calls the service method directly.
 
 
 @router.post("/resume")
