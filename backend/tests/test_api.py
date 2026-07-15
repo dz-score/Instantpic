@@ -69,25 +69,24 @@ def test_diagnostics(client):
     assert "printer" in data
     assert "storage" in data
 
-def test_camera_capture(client, mocker):
-    """Test enqueuing a camera capture."""
-    # The camera is whatever the composition root put on app.state, so a double goes
-    # in the same way — no monkeypatching a module global to reach the service.
+def test_camera_route_uses_injected_service(client, mocker):
+    """The camera is whatever the composition root put on app.state, so a double
+    goes in the same way — no monkeypatching a module global to reach the
+    service. (There is deliberately no POST /capture route: the shutter fires
+    only through the FSM's FIRE_SHOT, which owns the in-flight guard.)"""
     mock_svc = mocker.MagicMock()
-    mock_svc.enqueue_capture.return_value = "1234abcd"
     client.app.state.camera = mock_svc
 
-    response = client.post("/api/camera/capture")
+    response = client.post("/api/camera/resume")
     assert response.status_code == 200
-    assert response.json()["status"] == "enqueued"
-    assert response.json()["job_id"] == "1234abcd"
+    mock_svc.resume_preview.assert_called_once()
 
 
 def test_camera_route_501_without_backend(client):
     """With no camera backend, the camera routes 501 rather than crashing."""
     client.app.state.camera = None
 
-    assert client.post("/api/camera/capture").status_code == 501
+    assert client.post("/api/camera/resume").status_code == 501
     # ...but status still answers, reporting the camera as disconnected.
     resp = client.get("/api/camera/status")
     assert resp.status_code == 200

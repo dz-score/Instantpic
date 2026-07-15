@@ -63,8 +63,14 @@ def execute_emergency(action: str):
             return {"status": "success", "detail": "Booth restart initiated"}
         
         elif action == "restart_camera":
-            # The frontend will handle camera re-init; this is a backend signal
-            return {"status": "success", "detail": "Camera restart signal sent"}
+            # Deliberately unimplemented, and honest about it. The camera heals
+            # itself (worker re-init with backoff, disconnect cascade), and a
+            # forced exit+init cycle is camera surgery that must be validated
+            # on the real body before it's offered as a button. This used to
+            # return success while doing nothing — lying to an operator
+            # mid-crisis is worse than admitting there's no lever.
+            return {"status": "unsupported",
+                    "detail": "Camera reconnects automatically; no manual restart is implemented"}
         
         elif action == "restart_printer":
             subprocess.run(["sudo", "systemctl", "restart", "cups"],

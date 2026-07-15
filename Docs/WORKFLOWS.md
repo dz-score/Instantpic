@@ -417,10 +417,9 @@ Operator taps "Close" or presses outside
     → backend (Linux): systemctl restart chromium-kiosk + photobooth
     → backend (Windows): returns mock success
 
-  "Restart Camera"
-    → POST /api/emergency {action: "restart_camera"}
-    → backend: returns signal-only success
-    → the camera service auto-reconnects via its init backoff loop
+  (There is no "Restart Camera" button: the camera reconnects automatically
+   via its init backoff loop, and the backend answers a restart_camera
+   action with an honest "unsupported" rather than a fake success.)
 
   "Restart Printer"
     → POST /api/emergency {action: "restart_printer"}
