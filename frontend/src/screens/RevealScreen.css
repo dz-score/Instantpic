@@ -106,10 +106,12 @@
   margin-bottom: clamp(var(--space-sm), 3vh, var(--space-lg));
 }
 
+/* Just the photo — no card/frame chrome (border, fill, shadow). */
 .reveal-photo-wrap .photo-frame--reveal {
-  border: 3px solid var(--gold);
+  border: none;
   border-radius: var(--radius-md);
-  box-shadow: 0 8px 40px rgba(45, 36, 32, 0.12), var(--shadow-glow);
+  box-shadow: none;
+  background: none;
 }
 
 /* ═══ Content (fade+slide in) ═══ */

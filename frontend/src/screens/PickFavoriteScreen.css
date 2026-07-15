@@ -145,28 +145,30 @@
   max-width: min(31vw, 560px);
 }
 
+/* Just the photo — no card chrome. Selection is shown by the radio dot
+   below plus a gold ring on the chosen photo only. */
 .pick-fav__card {
   position: relative;
   width: 100%;
   aspect-ratio: 4 / 3;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   overflow: hidden;
   cursor: pointer;
   padding: 0;
-  transition: all var(--duration-normal) var(--ease-out);
-  border: 1px solid var(--gold);
-  background: var(--ivory);
-  box-shadow: var(--shadow-floating-card);
+  border: none;
+  background: none;
+  box-shadow: none;
+  transition:
+    transform var(--duration-normal) var(--ease-out),
+    box-shadow var(--duration-normal) var(--ease-out);
 }
 
 .pick-fav__card:active {
-  transform: translateY(2px);
-  box-shadow: var(--shadow-sm);
+  transform: scale(0.98);
 }
 
 .pick-fav__card--selected {
-  border-color: var(--gold);
-  box-shadow: 0 0 0 3px var(--gold-glow-sm), var(--shadow-floating-card);
+  box-shadow: 0 0 0 4px var(--gold);
   transform: scale(1.03);
 }
 
