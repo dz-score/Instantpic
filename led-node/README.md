@@ -1,70 +1,89 @@
-| Supported Targets | ESP32 | ESP32-C2 | ESP32-C3 | ESP32-C5 | ESP32-C6 | ESP32-C61 | ESP32-H2 | ESP32-P4 | ESP32-S2 | ESP32-S3 | Linux |
-| ----------------- | ----- | -------- | -------- | -------- | -------- | --------- | -------- | -------- | -------- | -------- | ----- |
+# led-node
 
-# Simple HTTPD Server Example
+ESP32 firmware for the photobooth's LED ring: **60× SK6812 RGBW**, driven over
+RMT, taking commands from the backend.
 
-The Example consists of HTTPD server demo with demonstration of URI handling :
-    1. URI \hello for GET command returns "Hello World!" message
-    2. URI \echo for POST command echoes back the POSTed message
-    3. URI \sse for GET command sends a message to client every second
+- **What the ring does:** [`Docs/LED_SPEC.md`](../Docs/LED_SPEC.md)
+- **How the firmware is arranged:** [`Docs/LED_NODE_ARCHITECTURE.md`](../Docs/LED_NODE_ARCHITECTURE.md)
 
-## User Callback
+> **Status: scaffold. Never compiled.** There is no ESP-IDF toolchain on the
+> machine this was written on, so the first `idf.py build` should be expected to
+> surface errors. Nothing here has been run on hardware.
 
-The example includes a simple user callback that can be used to get the SSL context (connection information) when the server is being initialized. To enable the user callback, set `CONFIG_EXAMPLE_ENABLE_HTTPS_USER_CALLBACK` to `y` in the project configuration menu.
-
-## Server-Sent Events (SSE)
-
-The example also includes a simple SSE handler (having endpoint \sse), which sends a message to the client every second. To enable SSE, set `CONFIG_EXAMPLE_ENABLE_SSE_HANDLER` to `y` in the project configuration menu.
-
-## How to use example
-
-### Hardware Required
-
-* A development board with ESP32/ESP32-S2/ESP32-C3 SoC (e.g., ESP32-DevKitC, ESP-WROVER-KIT, etc.)
-* A USB cable for power supply and programming
-
-### Configure the project
+## Layout
 
 ```
-idf.py menuconfig
+main/                 wiring only: queue, render task, transport
+components/
+  protocol/           the one command parser  (host-testable)
+  transport/          transport_http.c (dev) | transport_uart.c (booth)
+  render/             canvas, output, mode manager, anim_*.c
 ```
-* Open the project configuration menu (`idf.py menuconfig`) to configure Wi-Fi or Ethernet. See "Establishing Wi-Fi or Ethernet Connection" section in [examples/protocols/README.md](../../README.md) for more details.
 
-### Build and Flash
+The render task owns all mode state. Transports produce onto a command queue and
+never touch it, which is why there are no mutexes. That queue is also the seam
+the dev→booth transport swap happens at.
 
-Build the project and flash it to the board, then run monitor tool to view serial output:
+## Build
 
 ```
+idf.py set-target esp32       # or esp32s3 / esp32c3 / esp32c6
+idf.py menuconfig             # LED Node Configuration
 idf.py -p PORT flash monitor
 ```
 
-(Replace PORT with the name of the serial port to use.)
+Under **LED Node Configuration**: ring size, data GPIO, `RING_OFFSET`,
+direction, transport, and default brightness.
 
-(To exit the serial monitor, type ``Ctrl-]``.)
+### Development (HTTP)
 
-See the Getting Started Guide for full steps to configure and use ESP-IDF to build projects.
+The default. The booth wiring occupies the USB port that flashing needs, so
+during development commands arrive over WiFi instead and the cable stays free.
 
-### Test the example :
-        * run the test script : "python scripts/client.py \<IP\> \<port\> \<MSG\>"
-            * the provided test script first does a GET \hello and displays the response
-            * the script does a POST to \echo with the user input \<MSG\> and displays the response
-        * or use curl (assuming IP is 192.168.43.130):
-            1. "curl 192.168.43.130:80/hello"  - tests the GET "\hello" handler
-            2. "curl -X POST --data-binary @anyfile 192.168.43.130:80/echo > tmpfile"
-                * "anyfile" is the file being sent as request body and "tmpfile" is where the body of the response is saved
-                * since the server echoes back the request body, the two files should be same, as can be confirmed using : "cmp anyfile tmpfile"
-            3. "curl -X PUT -d "0" 192.168.43.130:80/ctrl" - disable /hello and /echo handlers
-            4. "curl -X PUT -d "1" 192.168.43.130:80/ctrl" -  enable /hello and /echo handlers
-
-## Example Output
 ```
-I (9580) example_connect: - IPv4 address: 192.168.194.219
-I (9580) example_connect: - IPv6 address: fe80:0000:0000:0000:266f:28ff:fe80:2c74, type: ESP_IP6_ADDR_IS_LINK_LOCAL
-I (9590) example: Starting server on port: '80'
-I (9600) example: Registering URI handlers
-I (66450) example: Found header => Host: 192.168.194.219
-I (66460) example: Request headers lost
+curl "http://<ip>/cmd?c=CAPTURE"
+curl -X POST --data "COUNTDOWN 3000" http://<ip>/cmd
 ```
 
-## Troubleshooting
-* If the server log shows "httpd_parse: parse_block: request URI/header too long", especially when handling POST requests, then you probably need to increase HTTPD_MAX_REQ_HDR_LEN, which you can find in the project configuration menu (`idf.py menuconfig`): Component config -> HTTP Server -> Max HTTP Request Header Length
+`http://<ip>/` serves a page with a button per mode.
+
+### Booth (UART)
+
+Select `LED_NODE_TRANSPORT_UART`. WiFi is compiled out entirely.
+
+> With `LED_NODE_UART_PORT=0` — the port wired to the USB bridge, which is how
+> the Pi connects — the console shares that line. Set `CONFIG_ESP_CONSOLE_NONE`
+> or `ESP_LOG` output will be interleaved into the protocol stream the Pi is
+> parsing.
+
+## Commands
+
+ASCII, newline-terminated, identical on both transports.
+
+| Command | Reply | Notes |
+|---|---|---|
+| `IDLE` | `OK IDLE` | |
+| `PHASE <hue>` | `OK PHASE` | hue 0–359; the Pi owns the screen→colour table |
+| `COUNTDOWN <ms>` | `OK COUNTDOWN` | node runs its own clock from here |
+| `CAPTURE` | `OK CAPTURE` | **wait for this reply, then fire the shutter** |
+| `RELEASE` | `OK RELEASE` | |
+| `PRINTING` | `OK PRINTING` | times out to Error after 120 s |
+| `FINISHED <ms>` | `OK FINISHED` | returns to Idle on its own |
+| `ERROR <code>` | `OK ERROR` | code = number of heartbeat groups |
+| `PING` | `PONG` | **every ~2 s** — this is what the link watchdog measures |
+
+Unknown verbs return `ERR UNKNOWN` and are otherwise ignored, so the firmware
+and backend can version independently.
+
+`PING` is not optional. The watchdog measures time since any inbound line, not
+since the last mode change — Idle runs for hours without a transition, and
+without a heartbeat the node would drop into Link Lost at a perfectly healthy
+booth.
+
+## Hardware notes
+
+- Strip gets **its own 5 V supply**. A Pi 5's official supply is 5 A total and
+  cannot carry even the ~1.8 A capture load.
+- **Inject power at both ends.** Capture holds near-max for seconds; single-end
+  feed drops enough voltage that the far side goes dim and pink, mid-shot.
+- **74AHCT125 level shifter.** 3.3 V logic into a 5 V strip is marginal.
