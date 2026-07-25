@@ -1,36 +1,85 @@
-menu "Example Configuration"
+menu "LED Node Configuration"
 
-    config EXAMPLE_BASIC_AUTH
-        bool "Basic Authentication"
-        default n
-        help
-            Basic Authentication is a method for an HTTP user agent (e.g. a web browser)
-            to provide a user name and password when making a request. It is the simplest
-            technique for enforcing access controls to web resources. because it doesn't
-            require cookies, session identifiers, or login pages; rather, it uses standard
-            fields in the HTTP header.
-            Note that, Basic Authentication is not encrypted channel and also easy to retrieve
-            credentials as they are sent in plain text format.
+    menu "Ring geometry"
 
-    config EXAMPLE_BASIC_AUTH_USERNAME
-        string "Basic Authenticate User Name"
-        depends on EXAMPLE_BASIC_AUTH
-        default "ESP32"
-        help
-            The client's user name which used for basic authenticate.
+        config LED_NODE_RING_LEDS
+            int "Number of LEDs in the ring"
+            default 60
+            range 1 300
+            help
+                Physical pixel count. The spec assumes 60 (one per second on a
+                clock face), which is what makes the countdown sweep land at
+                exactly one pixel per 16.67 ms.
 
-    config EXAMPLE_BASIC_AUTH_PASSWORD
-        string "Basic Authenticate Password"
-        depends on EXAMPLE_BASIC_AUTH
-        default "ESP32Webserver"
-        help
-            The client's password which used for basic authenticate.
+        config LED_NODE_DATA_GPIO
+            int "Data GPIO"
+            default 18
+            help
+                Drives the strip through a 74AHCT125 level shifter. 3.3V direct
+                into a 5V strip is marginal and flaky.
 
-    config EXAMPLE_ENABLE_SSE_HANDLER
-        bool "Enable Server-Sent Events (SSE) handler"
-        default n
+        config LED_NODE_RING_OFFSET
+            int "Pixel index at visual 12 o'clock"
+            default 0
+            range 0 299
+            help
+                The strip's seam can be mounted wherever is physically
+                convenient; this rotates the logical ring to compensate.
+                Animations work in degrees and never see a pixel index.
+
+        config LED_NODE_RING_REVERSED
+            bool "Reverse direction"
+            default n
+            help
+                Enable if increasing pixel index runs counter-clockwise from
+                the guest's point of view.
+
+    endmenu
+
+    menu "Command transport"
+
+        choice LED_NODE_TRANSPORT
+            prompt "Transport"
+            default LED_NODE_TRANSPORT_HTTP
+            help
+                HTTP is the development transport: it leaves the USB port free
+                for flashing, which the booth wiring otherwise occupies. UART is
+                the booth transport. Both share one parser and one command
+                vocabulary, so the swap is behavior-identical.
+
+            config LED_NODE_TRANSPORT_HTTP
+                bool "HTTP (development)"
+
+            config LED_NODE_TRANSPORT_UART
+                bool "UART (booth)"
+        endchoice
+
+        config LED_NODE_UART_PORT
+            int "UART port number"
+            depends on LED_NODE_TRANSPORT_UART
+            default 0
+            range 0 2
+            help
+                Port 0 is the one wired to the USB bridge, which is how the Pi
+                connects. NOTE: that is also the console port. Set
+                CONFIG_ESP_CONSOLE_NONE (or route the console to USB Serial JTAG
+                on parts that have it) or ESP_LOG output will corrupt the
+                protocol stream.
+
+        config LED_NODE_UART_BAUD
+            int "UART baud rate"
+            depends on LED_NODE_TRANSPORT_UART
+            default 115200
+
+    endmenu
+
+    config LED_NODE_DEFAULT_BRIGHTNESS
+        int "Default global brightness (percent)"
+        default 70
+        range 1 100
         help
-            Enable this option to use Server-Sent Events (SSE) functionality.
-            This will allow the server to push real-time updates to the client over an HTTP connection.
+            Applied to every mode except Capture, which always runs at full
+            brightness because PWM dimming bands the photo. Venue lighting
+            varies, so this is runtime-settable too.
 
 endmenu
