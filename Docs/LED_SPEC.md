@@ -284,9 +284,16 @@ Derived from the above; the concrete wire format belongs in
 2. **Send state, not frames.** One command per transition, with parameters. No
    per-tick messages — serial arrival jitter is visible in continuously-drawn
    elements like the countdown arc.
-3. **Unknown commands are ignored, not faulted.** The two artifacts version
+3. **Anything that gates a photo is acknowledged; everything else is
+   fire-and-forget.** Capture is the only command whose lateness can ruin an
+   unrepeatable frame, so the Pi sends it, waits for the ack, *then* triggers the
+   shutter. Decorative modes need no reply — a 200 ms delay in Idle or Printing
+   is imperceptible. This makes correctness depend on a handshake rather than on
+   the transport being fast, which is also what would make a future move to a
+   network transport safe.
+4. **Unknown commands are ignored, not faulted.** The two artifacts version
    independently; drift must degrade gracefully.
-4. **Every hold-forever mode has a timeout.** Printing and Capture both wait on
+5. **Every hold-forever mode has a timeout.** Printing and Capture both wait on
    external events that can fail silently.
-5. **The ESP32 is self-sufficient at boot.** It looks correct with no host
+6. **The ESP32 is self-sufficient at boot.** It looks correct with no host
    talking to it at all.
