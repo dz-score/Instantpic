@@ -4,9 +4,12 @@ Design specification for the booth's LED ring: **60× SK6812 RGBW**, driven by a
 dedicated **ESP32** (`led-node/`) that receives mode commands from the backend
 over **USB serial**.
 
-**Status:** design spec, written 2026-07-25. Not yet reconciled against the
-existing `led-node/` firmware — where the two disagree, that is an open item,
-not a decision.
+**Status:** design spec, written 2026-07-25. `led-node/` currently contains no
+LED code — it is a copy of the ESP-IDF `http_server/simple` example — so nothing
+here has been implemented yet.
+
+For *how the firmware is structured* to deliver this behavior, see
+[LED_NODE_ARCHITECTURE.md](LED_NODE_ARCHITECTURE.md).
 
 ---
 
@@ -261,7 +264,12 @@ reporting a fault.
 30%. No motion, no direction. Clearly different in both color and character from
 the red heartbeat.
 
-**Entry.** No valid command for 10 s.
+**Entry.** No line received for 10 s — measured from *any* inbound traffic, not
+from the last mode change. Idle runs for hours without a transition, so a
+mode-change-based watchdog would trip into Link Lost at a perfectly healthy
+booth and sit there pulsing amber at the guests. The Pi therefore sends `PING`
+every ~2 s and the node replies `PONG`; the heartbeat is what the watchdog
+actually measures.
 
 **Notes.** One safety rule: **if the link drops while in Capture, leave Capture.**
 Ramp down and enter this mode. A dead host must never strand the strip at full
