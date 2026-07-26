@@ -14,4 +14,7 @@ idf_component_register(SRCS "canvas.c"
                             "anim_linklost.c"
                     INCLUDE_DIRS "include"
                     REQUIRES protocol
-                    PRIV_REQUIRES esp_timer driver)
+                    # No driver requirement of our own: led_strip declares
+                    # esp_driver_rmt itself, and nothing here touches a
+                    # peripheral directly.
+                    PRIV_REQUIRES esp_timer)
