@@ -260,6 +260,13 @@ endchoice
 
 `MINIMAL_BUILD ON` is already set in the root CMakeLists and should stay.
 
+**`espressif/led_strip` must be pinned to 3.x on ESP-IDF 6.** Version 2.5.5
+declares only `idf: '>=4.4'`, so the component manager installs it without
+complaint — but its SPI backend uses `MALLOC_CAP_*` and `heap_caps_calloc`
+without including `esp_heap_caps.h`, relying on a transitive include that IDF 6
+removed. That file is compiled on any target with GPSPI whichever backend we
+actually use, so selecting RMT does not avoid it.
+
 ## Testing
 
 The scaffold already carries `esp_stubs` and linux-target support in

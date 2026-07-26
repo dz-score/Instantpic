@@ -10,17 +10,26 @@ static const char *TAG = "output";
 
 #define INV_GAMMA (1.0f / 2.2f)
 
+/* An unset Kconfig bool emits no #define at all, so the bare symbol is an
+ * undeclared identifier in any runtime expression (it only evaluates to 0
+ * inside #if). Normalize it once here. */
+#if CONFIG_LED_NODE_RING_REVERSED
+#define RING_REVERSED 1
+#else
+#define RING_REVERSED 0
+#endif
+
 static led_strip_handle_t s_strip;
 static float              s_brightness = CONFIG_LED_NODE_DEFAULT_BRIGHTNESS / 100.0f;
 
 esp_err_t output_init(void)
 {
     led_strip_config_t strip_config = {
-        .strip_gpio_num   = CONFIG_LED_NODE_DATA_GPIO,
-        .max_leds         = RING_LEDS,
-        .led_pixel_format = LED_PIXEL_FORMAT_GRBW,
-        .led_model        = LED_MODEL_SK6812,
-        .flags.invert_out = false,
+        .strip_gpio_num         = CONFIG_LED_NODE_DATA_GPIO,
+        .max_leds               = RING_LEDS,
+        .led_model              = LED_MODEL_SK6812,
+        .color_component_format = LED_STRIP_COLOR_COMPONENT_FMT_GRBW,
+        .flags.invert_out       = false,
     };
 
     led_strip_rmt_config_t rmt_config = {
@@ -36,7 +45,7 @@ esp_err_t output_init(void)
     led_strip_clear(s_strip);
     ESP_LOGI(TAG, "%d px on GPIO %d, offset %d%s",
              RING_LEDS, CONFIG_LED_NODE_DATA_GPIO, CONFIG_LED_NODE_RING_OFFSET,
-             CONFIG_LED_NODE_RING_REVERSED ? ", reversed" : "");
+             RING_REVERSED ? ", reversed" : "");
     return ESP_OK;
 }
 
@@ -58,7 +67,7 @@ float output_get_brightness(void)
 /* Logical index (increasing clockwise from 12 o'clock) -> physical pixel. */
 static inline int physical_index(int logical)
 {
-#if CONFIG_LED_NODE_RING_REVERSED
+#if RING_REVERSED
     int p = CONFIG_LED_NODE_RING_OFFSET - logical;
 #else
     int p = CONFIG_LED_NODE_RING_OFFSET + logical;
