@@ -5,10 +5,13 @@ RMT, taking commands from the backend.
 
 - **What the ring does:** [`Docs/LED_SPEC.md`](../Docs/LED_SPEC.md)
 - **How the firmware is arranged:** [`Docs/LED_NODE_ARCHITECTURE.md`](../Docs/LED_NODE_ARCHITECTURE.md)
+- **How to test it without hardware:** [`Docs/LED_NODE_TESTING.md`](../Docs/LED_NODE_TESTING.md)
 
-> **Status: scaffold. Never compiled.** There is no ESP-IDF toolchain on the
-> machine this was written on, so the first `idf.py build` should be expected to
-> surface errors. Nothing here has been run on hardware.
+> **Status: builds on ESP-IDF 6, bench testing in progress.** Not yet run with a
+> strip attached — nothing photographic (PWM banding, colour rendition, current
+> draw, thermal shift) has been verified. See
+> [`Docs/LED_NODE_TESTING.md`](../Docs/LED_NODE_TESTING.md) for what is and is
+> not provable without hardware.
 
 ## Layout
 
