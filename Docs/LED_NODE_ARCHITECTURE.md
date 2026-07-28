@@ -226,6 +226,9 @@ led-node/
   components/
     protocol/                 command_t, the one parser  ← host-testable
     transport/                transport.h, transport_http.c, transport_uart.c
+                              wifi_sta.c  ← dev only; the HTTP transport owns
+                                            its own connectivity, since the
+                                            booth build has no network
     render/
       canvas.[ch]             linear framebuffer, canvas_point/canvas_arc
       output.[ch]             brightness, gamma LUT, geometry, led_strip push
@@ -292,11 +295,17 @@ What is in `led-node/` today is the stock example. It needs:
 | `while (server) sleep(5);` in `app_main` | Replace with render task creation |
 | `sdkconfig.defaults` | Empty; needs httpd stack size and RMT settings |
 
-**One flag:** `example_connect()` pulls `protocol_examples_common` by
-`${IDF_PATH}` path, so the build depends on Espressif's examples tree being
-present, and WiFi credentials live in menuconfig as `EXAMPLE_WIFI_*`. Acceptable
-for a dev-only build that gets compiled out — but it must not survive into the
-booth build.
+**Resolved:** the scaffold originally used `example_connect()` from
+`protocol_examples_common`, which tied the build to Espressif's examples tree
+via an `${IDF_PATH}` path dependency and named our config keys `EXAMPLE_WIFI_*`.
+That is gone, replaced by `transport/wifi_sta.c` with `LED_NODE_WIFI_*` options.
+`main` now requires no networking components at all.
+
+WiFi retries forever rather than failing — a node that gave up because the
+hotspot was not up yet would need a power cycle to notice it appeared. Modem
+sleep is disabled (`WIFI_PS_NONE`), because its tens-to-hundreds of
+milliseconds of added inbound latency would make development timings
+unrepresentative of the wired transport this becomes.
 
 ## Deliberately excluded
 

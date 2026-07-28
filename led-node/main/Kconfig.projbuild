@@ -54,6 +54,27 @@ menu "LED Node Configuration"
                 bool "UART (booth)"
         endchoice
 
+        config LED_NODE_WIFI_SSID
+            string "WiFi SSID"
+            depends on LED_NODE_TRANSPORT_HTTP
+            default "photobooth"
+            help
+                The development hotspot (the Pi's, or your PC's while
+                bringing things up).
+
+                NOTE: classic ESP32 is 2.4 GHz only. A Windows PC hotspot
+                often defaults to 5 GHz, in which case the node never sees
+                the network and the failure looks exactly like a wrong
+                password. Set the hotspot band explicitly.
+
+        config LED_NODE_WIFI_PASSWORD
+            string "WiFi password"
+            depends on LED_NODE_TRANSPORT_HTTP
+            default ""
+            help
+                Stored in sdkconfig, which is gitignored. Do not put this in
+                sdkconfig.defaults — that file is tracked.
+
         config LED_NODE_UART_PORT
             int "UART port number"
             depends on LED_NODE_TRANSPORT_UART

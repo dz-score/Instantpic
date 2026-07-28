@@ -21,6 +21,7 @@
 #include "canvas.h"
 #include "modes.h"
 #include "output.h"
+#include "wifi_sta.h"
 
 static const char *TAG = "transport_http";
 
@@ -155,12 +156,16 @@ static esp_err_t state_get_handler(httpd_req_t *req)
     modes_state_t st;
     modes_get_state(&st);
 
+    char ip[16];
+    wifi_sta_ip_str(ip, sizeof(ip));
+
     snprintf(s_json, sizeof(s_json),
-             "{\"mode\":\"%s\",\"elapsed_ms\":%lu,\"since_rx_ms\":%lu,"
+             "{\"ip\":\"%s\","
+             "\"mode\":\"%s\",\"elapsed_ms\":%lu,\"since_rx_ms\":%lu,"
              "\"brightness\":%.2f,\"hue\":%.1f,\"duration_ms\":%lu,\"code\":%ld,"
              "\"frames\":%lu,\"leds\":%d,\"offset\":%d,\"reversed\":%s,"
              "\"link_timeout_ms\":%d}",
-             modes_mode_name(st.mode), (unsigned long)st.elapsed_ms,
+             ip, modes_mode_name(st.mode), (unsigned long)st.elapsed_ms,
              (unsigned long)st.since_rx_ms, output_get_brightness(), st.hue,
              (unsigned long)st.duration_ms, (long)st.code,
              (unsigned long)output_frame_count(), RING_LEDS,
@@ -263,6 +268,13 @@ esp_err_t transport_start(QueueHandle_t cmd_q)
         return err;
     }
     s_cmd_q = cmd_q;
+
+    /* Non-blocking: httpd binds to any address, so it is ready before the
+     * association completes and stays correct across reconnects. */
+    err = wifi_sta_start();
+    if (err != ESP_OK) {
+        return err;
+    }
 
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.lru_purge_enable = true;
