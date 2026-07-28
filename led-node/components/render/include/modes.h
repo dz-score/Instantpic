@@ -55,6 +55,28 @@ typedef struct {
 /* Starts the render task. Takes ownership of nothing; reads `cmd_q` forever. */
 esp_err_t modes_start(QueueHandle_t cmd_q);
 
+/* --- introspection -------------------------------------------------------- */
+
+typedef struct {
+    mode_id_t mode;
+    uint32_t  elapsed_ms;      /* since entering the current mode */
+    uint32_t  since_rx_ms;     /* since the last inbound line — what the watchdog watches */
+    float     hue;
+    uint32_t  duration_ms;
+    int32_t   code;
+} modes_state_t;
+
+/* A read-only look at the render task's state, for diagnostics.
+ *
+ * This does not weaken the "transports never touch mode state" rule: that rule
+ * exists so nothing outside the render task can MUTATE state, which is what
+ * would demand a lock. Reading a few scalars for a status page creates no such
+ * hazard, and a torn read is harmless here. Mutation still only ever happens by
+ * putting a command on the queue. */
+void modes_get_state(modes_state_t *out);
+
+const char *modes_mode_name(mode_id_t mode);
+
 #ifdef __cplusplus
 }
 #endif

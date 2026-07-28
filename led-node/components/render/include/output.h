@@ -27,6 +27,18 @@ float output_get_brightness(void);
  * faster that samples a fraction of a cycle and bands the photo. */
 void output_show(const canvas_t *c, bool apply_brightness);
 
+/* --- introspection -------------------------------------------------------- */
+
+/* Copies the last frame pushed to the strip as RGBW quads, in PHYSICAL pixel
+ * order — exactly the bytes the strip received, after brightness, geometry and
+ * gamma. Returns the number of pixels written.
+ *
+ * Read from another task without locking. A torn frame is possible and
+ * harmless: this exists to look at, not to act on. */
+size_t output_snapshot(uint8_t *dst, size_t max_pixels);
+
+uint32_t output_frame_count(void);
+
 #ifdef __cplusplus
 }
 #endif

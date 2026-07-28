@@ -240,6 +240,38 @@ static void render_task(void *arg)
     }
 }
 
+static const char *MODE_NAMES[MODE_COUNT] = {
+    [MODE_BOOT]      = "BOOT",
+    [MODE_IDLE]      = "IDLE",
+    [MODE_PLAYFUL]   = "PLAYFUL",
+    [MODE_COUNTDOWN] = "COUNTDOWN",
+    [MODE_CAPTURE]   = "CAPTURE",
+    [MODE_PRINTING]  = "PRINTING",
+    [MODE_FINISHED]  = "FINISHED",
+    [MODE_ERROR]     = "ERROR",
+    [MODE_LINKLOST]  = "LINKLOST",
+};
+
+const char *modes_mode_name(mode_id_t mode)
+{
+    if (mode < 0 || mode >= MODE_COUNT || MODE_NAMES[mode] == NULL) {
+        return "?";
+    }
+    return MODE_NAMES[mode];
+}
+
+void modes_get_state(modes_state_t *out)
+{
+    const int64_t t = now_ms();
+
+    out->mode        = s.mode;
+    out->elapsed_ms  = (uint32_t)(t - s.entry_ms);
+    out->since_rx_ms = (uint32_t)(t - s.last_rx_ms);
+    out->hue         = s.params.hue;
+    out->duration_ms = s.params.duration_ms;
+    out->code        = s.params.code;
+}
+
 esp_err_t modes_start(QueueHandle_t cmd_q)
 {
     s_cmd_q = cmd_q;

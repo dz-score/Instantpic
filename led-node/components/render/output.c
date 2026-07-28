@@ -1,6 +1,7 @@
 #include "output.h"
 
 #include <math.h>
+#include <string.h>
 
 #include "esp_check.h"
 #include "esp_log.h"
@@ -96,17 +97,42 @@ static inline uint8_t encode(float linear)
     return (uint8_t)lrintf(powf(linear, INV_GAMMA) * 255.0f);
 }
 
+/* Mirror of what the strip was last sent, for /frame. Physical order. */
+static uint8_t  s_snapshot[RING_LEDS][4];
+static uint32_t s_frames;
+
 void output_show(const canvas_t *c, bool apply_brightness)
 {
     const float k = apply_brightness ? s_brightness : 1.0f;
 
     for (int i = 0; i < RING_LEDS; i++) {
         const rgbw_t px = c->px[i];
-        led_strip_set_pixel_rgbw(s_strip, physical_index(i),
-                                 encode(px.r * k),
-                                 encode(px.g * k),
-                                 encode(px.b * k),
-                                 encode(px.w * k));
+
+        const uint8_t r = encode(px.r * k);
+        const uint8_t g = encode(px.g * k);
+        const uint8_t b = encode(px.b * k);
+        const uint8_t w = encode(px.w * k);
+
+        const int p = physical_index(i);
+        led_strip_set_pixel_rgbw(s_strip, p, r, g, b, w);
+
+        s_snapshot[p][0] = r;
+        s_snapshot[p][1] = g;
+        s_snapshot[p][2] = b;
+        s_snapshot[p][3] = w;
     }
     led_strip_refresh(s_strip);
+    s_frames++;
+}
+
+size_t output_snapshot(uint8_t *dst, size_t max_pixels)
+{
+    const size_t n = max_pixels < RING_LEDS ? max_pixels : RING_LEDS;
+    memcpy(dst, s_snapshot, n * 4);
+    return n;
+}
+
+uint32_t output_frame_count(void)
+{
+    return s_frames;
 }
