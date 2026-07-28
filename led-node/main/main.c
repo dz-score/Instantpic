@@ -5,21 +5,17 @@
  *
  * This file does nothing but wire the pieces together: create the command
  * queue, start the render task, start whichever transport is compiled in.
+ *
+ * Note there is no network setup here. Only the HTTP transport needs a
+ * network, so it owns bringing one up; the booth build has none at all.
  */
 #include "esp_err.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
-#include "sdkconfig.h"
 
 #include "command.h"
 #include "modes.h"
 #include "transport.h"
-
-#if CONFIG_LED_NODE_TRANSPORT_HTTP
-#include "esp_event.h"
-#include "esp_netif.h"
-#include "protocol_examples_common.h"
-#endif
 
 static const char *TAG = "led_node";
 
@@ -36,17 +32,9 @@ void app_main(void)
     ESP_ERROR_CHECK(cmd_q != NULL ? ESP_OK : ESP_ERR_NO_MEM);
 
     /* Render first, so the boot self-test and the waiting dot are on screen
-     * while the network (in dev builds) is still coming up. The node has to
-     * look correct with no host talking to it at all. */
+     * while the transport (and, in dev builds, WiFi) is still coming up. The
+     * node has to look correct with no host talking to it at all. */
     ESP_ERROR_CHECK(modes_start(cmd_q));
-
-#if CONFIG_LED_NODE_TRANSPORT_HTTP
-    /* Development transport. example_connect() pulls credentials from
-     * menuconfig; it is compiled out entirely of the booth build. */
-    ESP_ERROR_CHECK(esp_netif_init());
-    ESP_ERROR_CHECK(esp_event_loop_create_default());
-    ESP_ERROR_CHECK(example_connect());
-#endif
 
     ESP_ERROR_CHECK(transport_start(cmd_q));
 

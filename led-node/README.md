@@ -40,6 +40,16 @@ direction, transport, and default brightness.
 The default. The booth wiring occupies the USB port that flashing needs, so
 during development commands arrive over WiFi instead and the cable stays free.
 
+Set **WiFi SSID** and **WiFi password** under `LED Node Configuration` →
+`Command transport` in `menuconfig`. They land in `sdkconfig`, which is
+gitignored — do not put them in `sdkconfig.defaults`, which is tracked.
+
+> Classic ESP32 is **2.4 GHz only**. A Windows PC hotspot often defaults to
+> 5 GHz, and the resulting failure looks exactly like a wrong password.
+
+`idf.py monitor` prints the address on association:
+`wifi: connected — open http://192.168.x.x/`
+
 ```
 curl "http://<ip>/cmd?c=CAPTURE"
 curl -X POST --data "COUNTDOWN 3000" http://<ip>/cmd
