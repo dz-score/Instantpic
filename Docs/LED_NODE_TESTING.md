@@ -127,9 +127,12 @@ curl.exe "http://IP/cmd?c=CAPTURE"
 curl.exe http://IP/frame
 ```
 
-Every value in `px` must be **255**. If they read ~186, the `apply_brightness =
-false` path is broken and the key light would be running at 70% — which would
-quietly underexpose every photo.
+Every value in `px` must be **255**.
+
+If the bypass were broken and the default 70% brightness leaked in, the values
+would read **217** — not 178. The scaling happens in linear light and is *then*
+gamma-encoded: `255 × 0.70^(1/2.2) ≈ 217`. Either way the key light would be
+running below full and quietly underexposing every photo.
 
 ## Phase 6 — Safety behaviours
 
