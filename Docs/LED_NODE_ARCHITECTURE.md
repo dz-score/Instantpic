@@ -420,11 +420,30 @@ actually use, so selecting RMT does not avoid it.
 
 ## Testing
 
-The scaffold already carries `esp_stubs` and linux-target support in
-`idf_component.yml`. That is worth keeping: the parser and the animation math are
-pure functions by design, so both can be host-compiled and unit tested with no
-hardware. Rendering a mode at a given timestamp and asserting on the resulting
-canvas is a normal unit test.
+Unit tests live in [`led-node/host_test/`](../led-node/host_test/) and need a C
+compiler and nothing else — no ESP-IDF, no board, no strip. `make` builds and
+runs three suites: the parser, the mode state machine (`apply()` and
+`check_deadlines()`), and the canvas maths.
+
+Three design decisions are what make this possible, and they were taken for
+other reasons first:
+
+- The parser depends on nothing but a `QueueHandle_t` typedef.
+- Animations are pure functions of elapsed time, so a mode can be evaluated at
+  an arbitrary `t` without having been "running".
+- Every deadline derives from `esp_timer_get_time()`, so a fake clock turns the
+  120 s printing timeout and the 10 s link watchdog into assignments.
+
+`host_test/stubs/` holds the smallest ESP-IDF surface the code under test names.
+It is not a simulator and must not become one — anything needing a real
+scheduler belongs in [LED_NODE_TESTING.md](LED_NODE_TESTING.md).
+
+> Deliberately **not** an ESP-IDF linux-target build. That needs a full IDF
+> install plus a POSIX host toolchain; this needs `cc`. An earlier version of
+> this section claimed the scaffold already carried `esp_stubs` and
+> linux-target support in `idf_component.yml` — it does not, and did not after
+> the scaffold cleanup. Worse than stale: it advertised a capability, so anyone
+> acting on it would have gone looking for infrastructure that was never there.
 
 ---
 
