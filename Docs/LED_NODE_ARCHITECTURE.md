@@ -1,7 +1,7 @@
 ---
 status: implemented; bench-tested without a strip attached
-last-reviewed: 2026-07-29
-applies-to-commit: 6e3a3cc
+last-reviewed: 2026-07-31
+applies-to-commit: 14a6f00
 ---
 
 # LED_NODE_ARCHITECTURE — ESP32 Firmware Design
@@ -106,7 +106,7 @@ stateDiagram-v2
     ERROR : ERROR<br/>host-reported fault
     LINKLOST : LINKLOST<br/>node noticed the host went silent
 
-    BOOT --> IDLE : any mode command
+    BOOT --> IDLE : any command,<br/>PING included
     IDLE --> PLAYFUL : PHASE
     PLAYFUL --> COUNTDOWN : COUNTDOWN
     IDLE --> COUNTDOWN : COUNTDOWN
@@ -118,7 +118,7 @@ stateDiagram-v2
     PRINTING --> ERROR : after 120 s
     CAPTURE --> IDLE : after 30 s
     ERROR --> IDLE : IDLE / RELEASE
-    LINKLOST --> IDLE : any mode command
+    LINKLOST --> IDLE : any command,<br/>PING included
     IDLE --> LINKLOST : 10 s silence
 ```
 
@@ -138,7 +138,8 @@ likewise fires from any mode except `BOOT` and `LINKLOST` itself.
 | any | `PRINTING` | Printing | |
 | any | `FINISHED <ms>` | Finished | |
 | any | `ERROR <code>` | Error | |
-| any | `PING` | *no change* | feeds the watchdog only |
+| Boot, Link Lost | `PING` | Idle | the heartbeat is how the link comes back |
+| any other | `PING` | *no change* | feeds the watchdog only |
 | Printing | 120 s elapsed | Error (`code 0`) | a jammed printer must not roll ink forever |
 | Capture | 30 s elapsed | Idle | full white is the highest-current, highest-heat state; never held indefinitely |
 | Finished | `duration_ms` elapsed | Idle | resolves itself so the ring is not celebrating at nobody |
@@ -147,13 +148,17 @@ likewise fires from any mode except `BOOT` and `LINKLOST` itself.
 **Boot** is exempt from the watchdog — it has never heard from the host, so
 "silence" is its normal condition, not a fault.
 
-> ⚠️ **Boot and Link Lost are not exited by the heartbeat.** `PING` returns
-> `PONG` from `apply()` before reaching any `enter()` call, so it feeds the
-> watchdog but changes no mode. A host that recovers and resumes pinging gets
-> `PONG`, concludes the link is healthy, and leaves the ring showing the
-> link-lost pattern until the next *mode* command — which at an idle booth may
-> be a long time. Tracked as a firmware defect, not documented intent; see
-> [Risks](#risks--known-defects).
+**Watchdog entry and recovery are symmetric, and the heartbeat drives both.**
+Silence past 10 s enters Link Lost; the next `PING` leaves it. Boot behaves the
+same way, so a node powered on while the Pi is already up and idle-pinging
+reaches Idle without waiting for a mode command. Recovery is handled in the
+`CMD_PING` case specifically — mode commands recover by entering their own
+target, and doing it for every inbound line would leave `prev == IDLE` and
+cross-fade from a frame that was never on screen.
+
+Rejected lines (`ERR RANGE`, `ERR UNKNOWN`) still leave the mode alone. They
+feed the watchdog like any inbound line, but a line we could not parse is not
+grounds for a mode change.
 
 **Entering Link Lost from Capture is the safety case the watchdog exists for.**
 A host that dies mid-shot must not strand the strip at full white.
@@ -434,8 +439,8 @@ What remains:
 
 | Risk / defect | Trigger | Mitigation |
 |---|---|---|
-| **Heartbeat does not exit Boot or Link Lost** | Host recovers after >10 s silence and resumes `PING` only | Open defect. Ring stays on the link-lost pattern while the Pi sees healthy `PONG`s. Fix in firmware; until then the backend must send a mode command after any reconnect. |
 | **Nothing verified with a strip attached** | First power-on with real LEDs | PWM banding at 1/200 s, colour rendition, current draw and thermal shift are all unmeasured. Budget bench time before the event. |
+| Link recovery is fixed but unexercised | Any disconnect | The heartbeat now exits Boot and Link Lost, but the change has not been run on hardware on either transport. Bench step added to [LED_NODE_TESTING.md](LED_NODE_TESTING.md); run it before trusting it. |
 | Capture ack timeout is tuned on WiFi, not serial | Transport swap | Retune on serial — the latency distributions are not comparable, and this timeout is what stands between a hiccup and a dark photo. |
 | Serial bring-up is more than a firmware change | Event day | udev rule pinning the ESP32's USB serial to a stable `/dev/led-node`, baud, buffer sizes, Pi-side client. Do this **well before** the event. |
 | `PING`/`PONG` dropped from one build | Transport swap | Keep it in both, or the watchdog's first real test is in production. |
