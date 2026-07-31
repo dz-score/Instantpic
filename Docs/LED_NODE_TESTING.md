@@ -1,3 +1,9 @@
+---
+status: procedure written; not yet run end to end
+last-reviewed: 2026-07-31
+applies-to-commit: 06c1c34
+---
+
 # LED_NODE_TESTING — Bench Procedure
 
 How to verify `led-node` end to end **without the LED strip**, using the HTTP
@@ -138,9 +144,26 @@ running below full and quietly underexposing every photo.
 
 The ones that matter when this is unattended at a wedding.
 
-**Link watchdog.** Uncheck the heartbeat box and wait 10 s. The ring goes amber
-and the monitor logs `link lost`. Re-check it and it recovers. `/state`'s
-`since_rx_ms` should climb visibly beforehand.
+**Link watchdog — entry.** Uncheck the heartbeat box and wait 10 s. The ring goes
+amber and the monitor logs `link lost`. `/state`'s `since_rx_ms` should climb
+visibly beforehand.
+
+**Link watchdog — recovery.** From Link Lost, re-check the heartbeat box and
+**send nothing else**. The box sends `PING` and only `PING`, so this is the real
+test: within ~2 s the monitor logs `link back` and `/state` reports `IDLE`.
+
+> Do not substitute a button press for the checkbox. Every other control on the
+> page sends a mode command, which enters a mode on its own and would pass this
+> step whether or not recovery works. Heartbeat alone is the assertion.
+>
+> This is the case that shipped broken until 14a6f00: `PONG` came back while the
+> mode stayed `LINKLOST`, so the Pi saw a healthy link and the ring showed an
+> error at a working booth. The step below existed and would have caught it —
+> it had simply never been run.
+
+**Boot recovery.** Reset the node with the heartbeat box already ticked and
+touch nothing else. It must leave the boot pattern and reach Idle on pings
+alone, without a mode command.
 
 **Capture timeout.** Send `CAPTURE` and wait 30 s without `RELEASE`. Monitor
 logs `capture never released` and the mode drops to Idle. This is what stops a
