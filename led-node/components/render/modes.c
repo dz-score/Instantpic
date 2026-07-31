@@ -74,7 +74,26 @@ static void apply(const command_t *cmd, char *reply, size_t reply_sz)
 
     switch (cmd->verb) {
         case CMD_PING:
-            /* No mode change. Its only job is to feed the link watchdog. */
+            /* Normally no mode change: its job is to feed the link watchdog.
+             *
+             * Boot and Link Lost are the exception. Both states exist only
+             * because we had not heard from the host, and a ping is proof that
+             * we have. Without this, a host that stalls past the watchdog and
+             * then recovers gets healthy PONGs back while the ring sits on the
+             * link-lost pattern until the next mode command -- which at an idle
+             * booth can be a long time, and which nothing reports, since the
+             * node never volunteers its mode over the wire.
+             *
+             * Mode commands recover on their own by entering a target. This is
+             * the path for the heartbeat, which enters nothing. Recovering here
+             * rather than in drain_queue() is deliberate: doing it for every
+             * inbound line would enter Idle and then immediately enter the
+             * command's real target, leaving prev == IDLE, and the cross-fade
+             * would blend from an idle frame that was never on screen. */
+            if (s.mode == MODE_BOOT || s.mode == MODE_LINKLOST) {
+                ESP_LOGI(TAG, "link back");
+                enter(MODE_IDLE, NULL);
+            }
             snprintf(reply, reply_sz, "PONG");
             return;
 
