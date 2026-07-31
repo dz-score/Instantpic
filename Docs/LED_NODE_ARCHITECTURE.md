@@ -333,39 +333,28 @@ dedicated network with the Pi, not on a venue SSID.
 
 ## Wire protocol
 
-ASCII, newline-terminated, human-typeable on purpose — the whole booth can be
-driven from a serial monitor at the venue with no tooling.
+**The reference is [LED_PROTOCOL.md](LED_PROTOCOL.md)** — every verb, argument
+range, reply string, the seven error replies, line-format tolerances and the
+per-transport framing. It is deliberately the only copy.
 
-| Line | Valid argument | Reply | Enters mode |
-|---|---|---|---|
-| `IDLE` | — | `OK IDLE` | Idle |
-| `PHASE <hue>` | 0–359 | `OK PHASE` | Playful |
-| `COUNTDOWN <ms>` | 1–60000 | `OK COUNTDOWN` | Countdown |
-| `CAPTURE` | — | `OK CAPTURE` | Capture *(Pi waits for this, then fires)* |
-| `RELEASE` | — | `OK RELEASE` | Idle *(exact alias of `IDLE`)* |
-| `PRINTING` | — | `OK PRINTING` | Printing |
-| `FINISHED <ms>` | 1–60000 | `OK FINISHED` | Finished |
-| `ERROR <code>` | any int ≥ 0; **effective 1–9** | `OK ERROR` | Error |
-| `PING` | — | `PONG` | **none — see below** |
-
-Three reply forms, not two:
-
-- `OK <verb>` — applied.
-- `ERR RANGE` — verb understood, argument out of the range above. Mode is
-  **unchanged**.
-- `ERR UNKNOWN` — unparseable: unknown verb, missing or non-numeric argument, a
-  negative number (the parser accepts digits only), or extra tokens after a
-  no-argument verb. Mode is unchanged, and this is never a fault state, so the
-  two artifacts can version independently.
+Only the architectural consequences belong here:
 
 **Any command is legal in any mode.** There is no gating in `apply()` — a
 `COUNTDOWN` during `PRINTING` is accepted and applied. This follows from the node
 being a pure sink ([LED_SPEC.md](LED_SPEC.md)): the Pi owns sequencing, and a
 node second-guessing it could only ever disagree with the booth's actual state.
 
-`PING` is not debug sugar. The link watchdog measures time since *any* received
-line; without a heartbeat, a booth sitting in Idle for an hour would trip into
-Link Lost while nothing is wrong. The Pi sends `PING` every ~2 s.
+**One command in flight.** `transport_common.c` holds a single reply queue of
+depth 1, so command/reply correlation is positional rather than keyed. The
+constraint is invisible over HTTP and fatal over UART.
+
+**`PING` is not debug sugar.** The link watchdog measures time since *any*
+received line, so without a heartbeat a booth sitting in Idle for an hour would
+trip into Link Lost while nothing is wrong. It is also the recovery path out of
+Boot and Link Lost.
+
+**One vocabulary, one parser, both transports.** Two would drift, and the drift
+would surface as a behavior difference on the day the transport changes.
 
 ---
 

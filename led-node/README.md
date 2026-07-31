@@ -82,27 +82,26 @@ Select `LED_NODE_TRANSPORT_UART`. WiFi is compiled out entirely.
 
 ## Commands
 
-ASCII, newline-terminated, identical on both transports.
+ASCII, newline-terminated, identical on both transports. The vocabulary:
 
-| Command | Reply | Notes |
-|---|---|---|
-| `IDLE` | `OK IDLE` | |
-| `PHASE <hue>` | `OK PHASE` | hue 0–359; the Pi owns the screen→colour table |
-| `COUNTDOWN <ms>` | `OK COUNTDOWN` | node runs its own clock from here |
-| `CAPTURE` | `OK CAPTURE` | **wait for this reply, then fire the shutter** |
-| `RELEASE` | `OK RELEASE` | |
-| `PRINTING` | `OK PRINTING` | times out to Error after 120 s |
-| `FINISHED <ms>` | `OK FINISHED` | returns to Idle on its own |
-| `ERROR <code>` | `OK ERROR` | code = number of heartbeat groups |
-| `PING` | `PONG` | **every ~2 s** — this is what the link watchdog measures |
+```
+IDLE   PHASE <hue>   COUNTDOWN <ms>   CAPTURE   RELEASE
+PRINTING   FINISHED <ms>   ERROR <code>   PING
+```
 
-Unknown verbs return `ERR UNKNOWN` and are otherwise ignored, so the firmware
-and backend can version independently.
+**The specification is [`Docs/LED_PROTOCOL.md`](../Docs/LED_PROTOCOL.md)** —
+argument ranges, reply strings, the seven error replies, line-format
+tolerances and per-transport framing. Deliberately the only copy: this file
+used to carry a second table, and two copies of a protocol drift exactly the
+way the firmware's one-parser rule exists to prevent.
 
-`PING` is not optional. The watchdog measures time since any inbound line, not
-since the last mode change — Idle runs for hours without a transition, and
-without a heartbeat the node would drop into Link Lost at a perfectly healthy
-booth.
+Three things that catch client authors out, all detailed there:
+
+- `ERR` replies come back as **HTTP 200**. Parse the body, never the status.
+- Only **one command may be in flight** at a time.
+- `PING` every ~2 s is **not optional** — the watchdog measures time since any
+  inbound line, not since the last mode change, so an idle booth would drop
+  into Link Lost without it. It is also the recovery path back out.
 
 ## Hardware notes
 
