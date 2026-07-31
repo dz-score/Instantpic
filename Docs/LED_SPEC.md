@@ -4,9 +4,11 @@ Design specification for the booth's LED ring: **60× SK6812 RGBW**, driven by a
 dedicated **ESP32** (`led-node/`) that receives mode commands from the backend
 over **USB serial**.
 
-**Status:** design spec, written 2026-07-25. `led-node/` currently contains no
-LED code — it is a copy of the ESP-IDF `http_server/simple` example — so nothing
-here has been implemented yet.
+**Status:** implemented as of 6e3a3cc; last reviewed 2026-07-29. All nine modes
+described here exist in `led-node/components/render/anim_*.c` and run on
+hardware. **No behavior here has been verified with an LED strip attached** —
+everything photographic (PWM banding under a 1/200 s shutter, colour rendition,
+current draw, thermal shift) remains unmeasured.
 
 For *how the firmware is structured* to deliver this behavior, see
 [LED_NODE_ARCHITECTURE.md](LED_NODE_ARCHITECTURE.md).

@@ -1,12 +1,28 @@
+---
+status: implemented; bench-tested without a strip attached
+last-reviewed: 2026-07-29
+applies-to-commit: 6e3a3cc
+---
+
 # LED_NODE_ARCHITECTURE — ESP32 Firmware Design
 
 How `led-node/` is structured to deliver the behavior in
 [LED_SPEC.md](LED_SPEC.md). That document says *what the ring does*; this one
 says *how the firmware is arranged to do it*.
 
-**Status:** design, written 2026-07-25. `led-node/` is currently a verbatim copy
-of the ESP-IDF `examples/protocols/http_server/simple` example with no LED code
-in it — see [Scaffold remediation](#scaffold-remediation) for what has to go.
+**Status:** implemented and building on ESP-IDF 6. All nine modes, both
+transports, the parser and the render pipeline exist and run. **Nothing has been
+verified with a strip attached** — PWM banding, colour rendition, current draw
+and thermal shift are all unmeasured. See
+[LED_NODE_TESTING.md](LED_NODE_TESTING.md) for what is and is not provable on
+the bench.
+
+> **Where the rationale lives.** Design *reasoning* belongs in the header that
+> owns the constraint — `modes.h` on state ownership, `anim.h` on animation
+> purity, `canvas.h` on gamma ordering, `transport.h` on swap-safety. That is
+> where someone about to break an invariant will actually read it. This document
+> owns the cross-cutting picture and links to those headers rather than
+> restating them, because a restated argument is one nobody updates.
 
 ---
 
@@ -55,9 +71,11 @@ seam. Nothing above it can tell which transport is running.
 | `httpd` (dev build) | any | 5 | Parses `/cmd`, enqueues, blocks on reply, responds. |
 | `uart_task` (booth build) | any | 5 | Blocks on `uart_read_bytes`, parses, enqueues, writes reply line. |
 
-**Frame budget.** 120 Hz is 8.33 ms. `led_strip_refresh()` for 60 RGBW pixels is
-~2.4 ms, leaving ~6 ms. Cadence comes from `vTaskDelayUntil`, which both holds a
-fixed rate and yields cleanly.
+**Frame budget.** `FRAME_MS = 8`, so **125 Hz**. `led_strip_refresh()` for 60
+RGBW pixels is ~2.4 ms (calculated from the 1.25 µs bit period — *not* measured),
+leaving ~5.6 ms for queue drain, deadline checks and up to two animation
+evaluations. Cadence comes from `vTaskDelayUntil`, which both holds a fixed rate
+and yields cleanly.
 
 **Pinning.** ESP-IDF defaults the WiFi task to core 0, so pinning the render task
 to core 1 isolates it during the dev build. On a single-core part (C3, C6) that
@@ -68,23 +86,111 @@ instead.
 at most one frame (~8 ms) before it is applied. Transports use a 200 ms reply
 timeout, which is an error detector rather than an expected wait.
 
+## Mode state machine
+
+Nine modes, in [`modes.h`](../led-node/components/render/include/modes.h).
+Every edge is either a command from the Pi or a deadline the node evaluates
+itself in `check_deadlines()`.
+
+```mermaid
+stateDiagram-v2
+    [*] --> BOOT
+
+    BOOT : BOOT<br/>alive, no host yet
+    IDLE : IDLE
+    PLAYFUL : PLAYFUL<br/>hue from PHASE
+    COUNTDOWN : COUNTDOWN<br/>node runs its own clock
+    CAPTURE : CAPTURE<br/>full white, brightness bypassed
+    PRINTING : PRINTING
+    FINISHED : FINISHED
+    ERROR : ERROR<br/>host-reported fault
+    LINKLOST : LINKLOST<br/>node noticed the host went silent
+
+    BOOT --> IDLE : any mode command
+    IDLE --> PLAYFUL : PHASE
+    PLAYFUL --> COUNTDOWN : COUNTDOWN
+    IDLE --> COUNTDOWN : COUNTDOWN
+    COUNTDOWN --> CAPTURE : CAPTURE
+    CAPTURE --> IDLE : RELEASE / IDLE
+    CAPTURE --> PRINTING : PRINTING
+    PRINTING --> FINISHED : FINISHED
+    FINISHED --> IDLE : after duration_ms
+    PRINTING --> ERROR : after 120 s
+    CAPTURE --> IDLE : after 30 s
+    ERROR --> IDLE : IDLE / RELEASE
+    LINKLOST --> IDLE : any mode command
+    IDLE --> LINKLOST : 10 s silence
+```
+
+The graph is drawn along the happy path for readability. It is **not** a
+restriction: `apply()` is a flat switch with no mode gating, so every command
+edge above is available from every state. The watchdog edge into `LINKLOST`
+likewise fires from any mode except `BOOT` and `LINKLOST` itself.
+
+### Transitions
+
+| From | Trigger | To | Notes |
+|---|---|---|---|
+| any | `IDLE`, `RELEASE` | Idle | `RELEASE` is an exact alias — same `case` |
+| any | `PHASE <hue>` | Playful | hue stored in params |
+| any | `COUNTDOWN <ms>` | Countdown | node then times itself |
+| any | `CAPTURE` | Capture | |
+| any | `PRINTING` | Printing | |
+| any | `FINISHED <ms>` | Finished | |
+| any | `ERROR <code>` | Error | |
+| any | `PING` | *no change* | feeds the watchdog only |
+| Printing | 120 s elapsed | Error (`code 0`) | a jammed printer must not roll ink forever |
+| Capture | 30 s elapsed | Idle | full white is the highest-current, highest-heat state; never held indefinitely |
+| Finished | `duration_ms` elapsed | Idle | resolves itself so the ring is not celebrating at nobody |
+| any except Boot, Link Lost | 10 s since **any** inbound line | Link Lost | |
+
+**Boot** is exempt from the watchdog — it has never heard from the host, so
+"silence" is its normal condition, not a fault.
+
+> ⚠️ **Boot and Link Lost are not exited by the heartbeat.** `PING` returns
+> `PONG` from `apply()` before reaching any `enter()` call, so it feeds the
+> watchdog but changes no mode. A host that recovers and resumes pinging gets
+> `PONG`, concludes the link is healthy, and leaves the ring showing the
+> link-lost pattern until the next *mode* command — which at an idle booth may
+> be a long time. Tracked as a firmware defect, not documented intent; see
+> [Risks](#risks--known-defects).
+
+**Entering Link Lost from Capture is the safety case the watchdog exists for.**
+A host that dies mid-shot must not strand the strip at full white.
+
+**Cross-fade** (200 ms, `MODE_CROSSFADE_MS`) applies to every transition except
+into Capture, and is skipped when the new mode equals the old one. Capture is
+excluded because it owns its own 100 ms ramp and fading it against a decorative
+mode would put motion in the key light.
+
+**Re-entering a mode restarts it.** `enter()` unconditionally resets
+`entry_ms`, so a second `COUNTDOWN 3000` restarts the clock rather than being
+ignored.
+
+---
+
 ## Layer stack
 
 ```
 transport (http | uart)     ── parses, enqueues, awaits reply
-        │  cmd_req_t queue
+        │  cmd_req_t queue        transport_http.c | transport_uart.c
         ▼
 mode manager                ── current mode + params + entry time,
-        │                      transitions, timeouts, link watchdog
+        │                      transitions, timeouts, link watchdog,
+        │                      AND the cross-fade            modes.c
         ▼
-animations                  ── render(elapsed_ms, params, *canvas), one per mode
-        │
+animations                  ── anim_fn(elapsed_ms, params, *canvas), one per mode
+        │                                                    anim_*.c
         ▼
-compositor                  ── cross-fade: render two modes, blend in linear
-        │
-        ▼
-output                      ── global brightness → gamma LUT → geometry → strip
+output                      ── brightness → geometry → gamma LUT → strip
+                                                             output.c
 ```
+
+There is no separate compositor. Cross-fading is nine lines inside
+`render_frame()` ([`modes.c:212`](../led-node/components/render/modes.c)) — it
+renders the outgoing mode into a second canvas and calls `canvas_blend`. An
+earlier draft of this document gave it its own layer; the code never did, and a
+layer that is one `if` statement does not earn the name.
 
 ---
 
@@ -116,16 +222,25 @@ usual reason a project has a gamma table and *still* looks cheap.
 
 ### 3. Sub-pixel rendering lives in the primitives
 
-Two drawing functions:
+Three additive drawing primitives ([`canvas.h`](../led-node/components/render/include/canvas.h)):
 
 ```c
-void canvas_point(canvas_t *c, float degrees, rgbw_t color, float falloff);
-void canvas_arc  (canvas_t *c, float deg_start, float deg_end, rgbw_t color);
+void canvas_add_point(canvas_t *c, float deg, rgbw_t color, float falloff_deg);
+void canvas_add_arc  (canvas_t *c, float deg_start, float deg_span, rgbw_t color);
+void canvas_add_field(canvas_t *c, canvas_field_fn fn, void *ctx);
 ```
 
-Both anti-alias across pixel boundaries. Every animation is built from them, so
-no animation *can* forget to sub-pixel, and `RING_OFFSET` / `RING_DIRECTION` are
-applied in exactly one place.
+Note `deg_span`, not an end angle — arcs are start-plus-extent, which is what
+makes a growing arc a single animated parameter.
+
+All three anti-alias across pixel boundaries. Every animation is built from
+them, so no animation *can* forget to sub-pixel. `RING_OFFSET` / `RING_DIRECTION`
+are applied in exactly one place, and it is not here — it is in `output.c`, the
+only file that knows a physical pixel exists.
+
+Compositing helpers (`canvas_blend`, `canvas_scale`, `canvas_clear`,
+`canvas_fill`) and colour construction (`rgbw_make`, `rgbw_hue`, `rgbw_white`,
+`rgbw_lerp`, …) round out the surface.
 
 **Animations work in degrees and never see a pixel index.** That is what lets the
 physical seam land wherever mounting is convenient.
@@ -158,9 +273,9 @@ This is a dev-ergonomics decision, not an architectural one — the reasoning in
 [LED_SPEC.md](LED_SPEC.md) for why the *production* transport is serial is
 unchanged.
 
-**One parser, one vocabulary.** There is no REST surface — no `/capture`,
-`/countdown`, `/idle`. A single `/cmd` endpoint carries the identical ASCII line
-the UART carries:
+**One parser, one vocabulary.** There is no REST *command* surface — no
+`/capture`, `/countdown`, `/idle`. A single `/cmd` endpoint carries the identical
+ASCII line the UART carries:
 
 ```
 POST /cmd      body: COUNTDOWN 3000
@@ -171,8 +286,19 @@ Two vocabularies would drift, and the drift would surface as a behavior
 difference on the night the transport changes. One parser makes the swap
 provably behavior-identical.
 
-A dev-only HTML page with a button per mode may hang off `GET /`. It lives
-entirely inside the HTTP transport and leaks nothing upward.
+The HTTP transport also serves three **read-only, dev-only** endpoints
+([`transport_http.c:258`](../led-node/components/transport/transport_http.c)):
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /` | Preview page: ring rendering plus a button per mode |
+| `GET /frame` | The exact bytes the strip received — `output_snapshot()`, post-brightness, post-geometry, post-gamma, in physical pixel order |
+| `GET /state` | Render-task introspection — `modes_get_state()` |
+
+These do not weaken "one vocabulary": none of them accepts a command, and all of
+them vanish with the HTTP transport in the booth build. `/frame` is what makes
+the whole system observable with no strip attached, which is the entire basis of
+[LED_NODE_TESTING.md](LED_NODE_TESTING.md).
 
 ### Swap checklist
 
@@ -191,21 +317,32 @@ entirely inside the HTTP transport and leaks nothing upward.
 ASCII, newline-terminated, human-typeable on purpose — the whole booth can be
 driven from a serial monitor at the venue with no tooling.
 
-```
-IDLE
-PHASE <hue>
-COUNTDOWN <ms>
-CAPTURE              → OK CAPTURE      (Pi waits for this, then fires shutter)
-RELEASE
-PRINTING
-FINISHED <ms>
-ERROR <code>
-PING                 → PONG
-```
+| Line | Valid argument | Reply | Enters mode |
+|---|---|---|---|
+| `IDLE` | — | `OK IDLE` | Idle |
+| `PHASE <hue>` | 0–359 | `OK PHASE` | Playful |
+| `COUNTDOWN <ms>` | 1–60000 | `OK COUNTDOWN` | Countdown |
+| `CAPTURE` | — | `OK CAPTURE` | Capture *(Pi waits for this, then fires)* |
+| `RELEASE` | — | `OK RELEASE` | Idle *(exact alias of `IDLE`)* |
+| `PRINTING` | — | `OK PRINTING` | Printing |
+| `FINISHED <ms>` | 1–60000 | `OK FINISHED` | Finished |
+| `ERROR <code>` | any int ≥ 0; **effective 1–9** | `OK ERROR` | Error |
+| `PING` | — | `PONG` | **none — see below** |
 
-Replies are `OK <verb>` or `ERR <reason>`. Unknown verbs return `ERR UNKNOWN` and
-are otherwise ignored — never a fault state, so the two artifacts can version
-independently.
+Three reply forms, not two:
+
+- `OK <verb>` — applied.
+- `ERR RANGE` — verb understood, argument out of the range above. Mode is
+  **unchanged**.
+- `ERR UNKNOWN` — unparseable: unknown verb, missing or non-numeric argument, a
+  negative number (the parser accepts digits only), or extra tokens after a
+  no-argument verb. Mode is unchanged, and this is never a fault state, so the
+  two artifacts can version independently.
+
+**Any command is legal in any mode.** There is no gating in `apply()` — a
+`COUNTDOWN` during `PRINTING` is accepted and applied. This follows from the node
+being a pure sink ([LED_SPEC.md](LED_SPEC.md)): the Pi owns sequencing, and a
+node second-guessing it could only ever disagree with the booth's actual state.
 
 `PING` is not debug sugar. The link watchdog measures time since *any* received
 line; without a heartbeat, a booth sitting in Idle for an hour would trip into
@@ -226,6 +363,9 @@ led-node/
   components/
     protocol/                 command_t, the one parser  ← host-testable
     transport/                transport.h, transport_http.c, transport_uart.c
+                              transport_common.c  ← parse+enqueue+await reply,
+                                            shared by both so the swap cannot
+                                            change command semantics
                               wifi_sta.c  ← dev only; the HTTP transport owns
                                             its own connectivity, since the
                                             booth build has no network
@@ -280,26 +420,26 @@ canvas is a normal unit test.
 
 ---
 
-## Scaffold remediation
+## Risks & known defects
 
-What is in `led-node/` today is the stock example. It needs:
+Scaffold remediation is **complete** — `project(led_node)`, the LED Node Kconfig
+menu, `/cmd`, a real `app_main`, and a populated `sdkconfig.defaults` are all in
+place, and the stock example's handlers and pytest are gone. The
+`protocol_examples_common` / `example_connect()` dependency that tied the build
+to Espressif's examples tree is likewise gone, replaced by
+`transport/wifi_sta.c` with `LED_NODE_WIFI_*` options; `main` requires no
+networking components at all. Git history holds the details.
 
-| Item | Action |
-|---|---|
-| `project(simple)` | → `project(led_node)` |
-| Kconfig menu "Example Configuration" | → LED node config (ring size, GPIO, offset, direction, transport choice) |
-| `EXAMPLE_BASIC_AUTH`, `EXAMPLE_ENABLE_SSE_HANDLER` | Delete — unused |
-| `/hello`, `/echo`, `/ctrl`, `/any` handlers | Delete, replace with `/cmd` |
-| `pytest_http_server_simple.py` | Example's CI test for `/hello`+`/echo` — delete or retarget |
-| `README.md` | Stock example README; describes endpoints that will not exist |
-| `while (server) sleep(5);` in `app_main` | Replace with render task creation |
-| `sdkconfig.defaults` | Empty; needs httpd stack size and RMT settings |
+What remains:
 
-**Resolved:** the scaffold originally used `example_connect()` from
-`protocol_examples_common`, which tied the build to Espressif's examples tree
-via an `${IDF_PATH}` path dependency and named our config keys `EXAMPLE_WIFI_*`.
-That is gone, replaced by `transport/wifi_sta.c` with `LED_NODE_WIFI_*` options.
-`main` now requires no networking components at all.
+| Risk / defect | Trigger | Mitigation |
+|---|---|---|
+| **Heartbeat does not exit Boot or Link Lost** | Host recovers after >10 s silence and resumes `PING` only | Open defect. Ring stays on the link-lost pattern while the Pi sees healthy `PONG`s. Fix in firmware; until then the backend must send a mode command after any reconnect. |
+| **Nothing verified with a strip attached** | First power-on with real LEDs | PWM banding at 1/200 s, colour rendition, current draw and thermal shift are all unmeasured. Budget bench time before the event. |
+| Capture ack timeout is tuned on WiFi, not serial | Transport swap | Retune on serial — the latency distributions are not comparable, and this timeout is what stands between a hiccup and a dark photo. |
+| Serial bring-up is more than a firmware change | Event day | udev rule pinning the ESP32's USB serial to a stable `/dev/led-node`, baud, buffer sizes, Pi-side client. Do this **well before** the event. |
+| `PING`/`PONG` dropped from one build | Transport swap | Keep it in both, or the watchdog's first real test is in production. |
+| Console shares UART0 with the protocol | Booth build with `LED_NODE_UART_PORT=0` | Set `CONFIG_ESP_CONSOLE_NONE` (commented stub already in `sdkconfig.defaults`) or `ESP_LOG` output corrupts the stream the Pi parses. |
 
 WiFi retries forever rather than failing — a node that gave up because the
 hotspot was not up yet would need a power cycle to notice it appeared. Modem
@@ -315,4 +455,6 @@ unrepresentative of the wired transport this becomes.
   60×4 linear buffers), fixed command struct.
 - **No JSON, no binary protocol.** ASCII lines until they demonstrably hurt.
 - **No OTA.** Dev flashing is over USB; the booth build has no network.
-- **No REST surface.** One `/cmd` endpoint, one parser.
+- **No REST command surface.** One `/cmd` endpoint, one parser. `/`, `/frame`
+  and `/state` are read-only dev instrumentation and exist only in the HTTP
+  build.
