@@ -1,0 +1,351 @@
+"""LED ring controller — booth semantics on one side, command lines on the other.
+
+Owns the heartbeat, the latency instrumentation, and degradation when the node
+is absent. The state machine calls the semantic methods here and never sees a
+command line; the transport below carries lines and never sees booth state.
+
+### One command in flight, structurally
+
+The firmware's `transport_common.c` holds a single reply queue of depth 1, so
+command/reply correlation is **positional**, not keyed. HTTP hides this —
+`esp_http_server` serializes handlers on one task, so overlapping requests still
+get the right answers — but the constraint is real, and a byte-stream transport
+cannot hide it.
+
+So serialization is a property of the shape, not a rule to remember: a single
+owner task drains a queue and is the only thing that ever touches the transport.
+Callers await a future. This is the same argument the firmware makes for having
+one owner of mode state and no mutex, and it is why swapping in UART later is a
+port rather than a redesign (Docs/LED_UART_SWITCH.md).
+
+### Degradation
+
+A missing or unreachable node must never stop the booth taking photos. Every
+method is a no-op when disabled, and a link failure is logged, not raised.
+
+One caveat worth knowing: at CAPTURE the ring is the **key light**, not
+decoration. A dead node there means underexposed photos rather than merely
+undecorated ones, so `capture()` reports whether it was acknowledged and the
+caller decides. That decision is workflow, and workflow belongs to the FSM
+(Rule 7).
+"""
+
+import asyncio
+import time
+from collections import deque
+from typing import Optional
+
+from backend.led_transport import LedHttpTransport, LedLinkError, LedTransport
+from backend.logger import log
+
+# Commands whose reply is `PONG` rather than `OK <VERB>`.
+_PONG_VERBS = {"PING"}
+
+# How many recent round-trips to keep per command class for percentiles. Small:
+# this is a health signal, not a time series.
+_LATENCY_WINDOW = 256
+
+
+class _Request:
+    __slots__ = ("line", "timeout_s", "future")
+
+    def __init__(self, line: str, timeout_s: float,
+                 future: Optional[asyncio.Future]):
+        self.line = line
+        self.timeout_s = timeout_s
+        # None for fire-and-forget. The owner task still serializes the send;
+        # the caller simply does not wait for the reply. Only CAPTURE has a
+        # reason to wait, and every other command awaiting a round trip would
+        # tax every FSM transition with one.
+        self.future = future
+
+
+class LedController:
+    """Booth semantics for the LED node. Constructed by the composition root."""
+
+    def __init__(self, transport: Optional[LedTransport], *, enabled: bool,
+                 heartbeat_s: float, capture_timeout_s: float,
+                 default_timeout_s: float):
+        self._transport = transport
+        self._enabled = enabled and transport is not None
+        self._heartbeat_s = heartbeat_s
+        self._capture_timeout_s = capture_timeout_s
+        self._default_timeout_s = default_timeout_s
+
+        self._queue: Optional[asyncio.Queue] = None
+        self._worker: Optional[asyncio.Task] = None
+        self._shutdown = False
+
+        # Instrumentation. This is the evidence the HTTP-vs-UART decision is
+        # supposed to rest on (Docs/LED_UART_SWITCH.md), so it is a permanent
+        # signal rather than temporary diagnostics (Rule 24).
+        self._latency_ms: dict[str, deque] = {}
+        self._counts: dict[str, int] = {}
+
+    @property
+    def enabled(self) -> bool:
+        return self._enabled
+
+    # --- lifecycle ---------------------------------------------------------
+
+    async def start(self) -> None:
+        if not self._enabled:
+            log.info("led", "led_disabled", "LED node disabled; commands are no-ops")
+            return
+
+        await self._transport.start()
+        self._queue = asyncio.Queue()
+        self._worker = asyncio.create_task(self._run(), name="led-worker")
+        log.info("led", "led_start",
+                 f"LED controller started against {self._transport.description}")
+
+    async def drain(self, timeout_s: float = 2.0) -> bool:
+        """Wait until every queued command has reached the node.
+
+        Most callers do not wait for replies, so without this there is no point
+        at which a queued line is known to have been sent. Returns False if the
+        queue did not clear in time, which means the link is struggling.
+        """
+        if self._queue is None:
+            return True
+        try:
+            await asyncio.wait_for(self._queue.join(), timeout=timeout_s)
+            return True
+        except asyncio.TimeoutError:
+            return False
+
+    async def stop(self) -> None:
+        # Drain first: commands are fire-and-forget, so cancelling the worker
+        # outright would silently drop whatever is still queued — including the
+        # IDLE that leaves the ring in a sane state at shutdown.
+        if self._queue is not None and not self._shutdown:
+            await self.drain(timeout_s=1.0)
+
+        self._shutdown = True
+        if self._worker is not None:
+            self._worker.cancel()
+            try:
+                await self._worker
+            except asyncio.CancelledError:
+                pass
+            self._worker = None
+        if self._transport is not None:
+            await self._transport.stop()
+
+    # --- the single owner --------------------------------------------------
+
+    async def _run(self) -> None:
+        """Drain the queue; ping when the wire has been idle.
+
+        The heartbeat is folded into the idle timeout rather than run on its own
+        timer. The node's watchdog measures time since *any* inbound line, so a
+        session that is already sending commands needs no heartbeat at all — and
+        a separate timer could queue a PING ahead of CAPTURE during the
+        countdown window, which is the one place latency is visible.
+        """
+        while not self._shutdown:
+            try:
+                req = await asyncio.wait_for(self._queue.get(),
+                                             timeout=self._heartbeat_s)
+            except asyncio.TimeoutError:
+                await self._heartbeat()
+                continue
+            except asyncio.CancelledError:
+                raise
+
+            try:
+                reply = await self._exchange(req.line, req.timeout_s)
+                if req.future is not None and not req.future.done():
+                    req.future.set_result(reply)
+            except asyncio.CancelledError:
+                if req.future is not None and not req.future.done():
+                    req.future.cancel()
+                raise
+            except LedLinkError as e:
+                if req.future is not None and not req.future.done():
+                    req.future.set_exception(e)
+                # Fire-and-forget senders have nowhere to receive this. It is
+                # already logged and counted in _exchange, and a dead ring must
+                # never surface as an exception inside the booth's workflow.
+            finally:
+                self._queue.task_done()
+
+    async def _heartbeat(self) -> None:
+        try:
+            await self._exchange("PING", self._default_timeout_s)
+        except LedLinkError:
+            # Already logged and counted in _exchange. A missed heartbeat is not
+            # itself an event: the node tolerates 10 s of silence, and a link
+            # that stays down is reported by the link_down counter.
+            pass
+
+    async def _exchange(self, line: str, timeout_s: float) -> str:
+        """The only place the transport is touched. Times it, logs anomalies."""
+        verb = line.split(" ", 1)[0].upper()
+        started = time.perf_counter()
+        try:
+            reply = await self._transport.send(line, timeout_s)
+        except LedLinkError as e:
+            self._bump(f"link_error:{verb}")
+            log.warn("led", "led_link_error", f"{verb} failed: {e}")
+            # A byte-stream transport can be left mid-line by a timeout; clear it
+            # before the next command rather than letting one failure desync
+            # every reply after it. No-op over HTTP.
+            await self._transport.resync()
+            raise
+
+        elapsed_ms = (time.perf_counter() - started) * 1000.0
+        self._record(verb, elapsed_ms)
+
+        if not self._is_ack(verb, reply):
+            self._bump(f"rejected:{verb}")
+            log.warn("led", "led_rejected", f"{verb} -> {reply}")
+
+        return reply
+
+    @staticmethod
+    def _is_ack(verb: str, reply: str) -> bool:
+        expected = "PONG" if verb in _PONG_VERBS else f"OK {verb}"
+        return reply.strip().upper() == expected
+
+    # --- instrumentation ---------------------------------------------------
+
+    def _record(self, verb: str, elapsed_ms: float) -> None:
+        self._latency_ms.setdefault(verb, deque(maxlen=_LATENCY_WINDOW)).append(elapsed_ms)
+        self._bump(f"sent:{verb}")
+
+    def _bump(self, key: str) -> None:
+        self._counts[key] = self._counts.get(key, 0) + 1
+
+    def stats(self) -> dict:
+        """Health snapshot. CAPTURE latency is the number that matters.
+
+        Percentiles, not averages: the decision this feeds is about the tail.
+        A mean hides exactly the retry storm that would put a dark frame in a
+        photo, which is the whole failure mode HTTP is on probation for.
+        """
+        out: dict = {"enabled": self._enabled, "counts": dict(self._counts)}
+        for verb, samples in self._latency_ms.items():
+            if not samples:
+                continue
+            ordered = sorted(samples)
+            out.setdefault("latency_ms", {})[verb] = {
+                "n": len(ordered),
+                "p50": round(_percentile(ordered, 0.50), 1),
+                "p95": round(_percentile(ordered, 0.95), 1),
+                "p99": round(_percentile(ordered, 0.99), 1),
+                "max": round(ordered[-1], 1),
+            }
+        return out
+
+    # --- command plumbing --------------------------------------------------
+
+    async def _submit(self, line: str, timeout_s: Optional[float] = None, *,
+                      wait: bool = False) -> Optional[str]:
+        """Queue a line for the owner task.
+
+        With `wait=False` (the default) this returns as soon as the line is
+        queued — the send is still serialized by the owner task, the caller just
+        does not block on the round trip. Only CAPTURE has a reason to wait.
+
+        Returns None when disabled, when not waiting, or when the link failed.
+        Callers treat that as "the ring did not do it", never as an error to
+        propagate.
+        """
+        if not self._enabled or self._queue is None:
+            return None
+
+        loop = asyncio.get_running_loop()
+        future: Optional[asyncio.Future] = loop.create_future() if wait else None
+        await self._queue.put(_Request(line, timeout_s or self._default_timeout_s, future))
+        if future is None:
+            return None
+        try:
+            return await future
+        except LedLinkError:
+            return None
+        except asyncio.CancelledError:
+            raise
+
+    # --- booth semantics ---------------------------------------------------
+
+    async def idle(self) -> None:
+        await self._submit("IDLE")
+
+    async def phase(self, hue: int) -> None:
+        await self._submit(f"PHASE {int(hue) % 360}")
+
+    async def countdown(self, duration_ms: int) -> None:
+        # The node runs its own clock from here. The browser runs one too; the
+        # firmware clamps elapsed to duration, so drift degrades to a frozen
+        # head rather than a glitch (anim_countdown.c).
+        await self._submit(f"COUNTDOWN {_clamp_ms(duration_ms)}")
+
+    async def capture(self) -> bool:
+        """Take the ring to full white. True if the node acknowledged.
+
+        **The caller must wait for this before firing the shutter** — the ring is
+        the key light, and firing early photographs it mid-ramp.
+
+        False means the ring may or may not be lit: a transport timeout and an
+        `ERR TIMEOUT` reply are both ambiguous by nature, and neither can be
+        resolved without another round trip on a link that just proved slow.
+        """
+        reply = await self._submit("CAPTURE", self._capture_timeout_s, wait=True)
+        return reply is not None and self._is_ack("CAPTURE", reply)
+
+    async def release(self) -> None:
+        await self._submit("RELEASE")
+
+    async def printing(self) -> None:
+        await self._submit("PRINTING")
+
+    async def finished(self, duration_ms: int) -> None:
+        await self._submit(f"FINISHED {_clamp_ms(duration_ms)}")
+
+    async def error(self, code: int = 1) -> None:
+        await self._submit(f"ERROR {max(0, int(code))}")
+
+
+def create_led_controller(settings) -> LedController:
+    """Build the controller from config. Called by the composition root only.
+
+    Returns an inert controller rather than None when the ring is disabled or
+    misconfigured, so no call site needs a null check and the booth behaves
+    identically either way.
+    """
+    cfg = settings.led
+
+    transport: Optional[LedTransport] = None
+    if cfg.enabled and cfg.transport == "http" and cfg.http.host.strip():
+        transport = LedHttpTransport(cfg.http.host,
+                                     timeout_s=cfg.http.timeout_ms / 1000.0)
+    elif cfg.enabled:
+        log.warn("led", "led_misconfigured",
+                 f"LED enabled but unusable (transport={cfg.transport!r}, "
+                 f"host={cfg.http.host!r}) — running without a ring")
+
+    return LedController(
+        transport,
+        enabled=cfg.enabled,
+        heartbeat_s=cfg.heartbeat_ms / 1000.0,
+        capture_timeout_s=cfg.http.capture_timeout_ms / 1000.0,
+        default_timeout_s=cfg.http.timeout_ms / 1000.0,
+    )
+
+
+def _clamp_ms(value: int) -> int:
+    """Hold arguments inside the protocol's 1..60000 range.
+
+    Out-of-range values earn `ERR RANGE` and leave the mode unchanged, so a
+    miscomputed duration would silently strand the ring in whatever it was
+    showing. Clamping fails visibly instead.
+    """
+    return max(1, min(60000, int(value)))
+
+
+def _percentile(ordered: list, q: float) -> float:
+    if len(ordered) == 1:
+        return ordered[0]
+    idx = min(len(ordered) - 1, max(0, int(round(q * (len(ordered) - 1)))))
+    return ordered[idx]

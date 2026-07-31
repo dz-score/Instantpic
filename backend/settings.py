@@ -29,6 +29,36 @@ class OverlayConfig(BaseModel):
     name: str
     filename: str
 
+
+class LedHttpConfig(BaseModel):
+    # Host or IP only, no scheme or path. `idf.py monitor` prints it on
+    # association: "wifi: connected — open http://192.168.x.x/".
+    host: str = ""
+    # Ordinary commands. Generous, because a retry storm on a congested 2.4 GHz
+    # link is exactly the condition this has to survive without stalling the FSM.
+    timeout_ms: int = 400
+    # CAPTURE only. Deliberately tighter: this one sits between the guest's
+    # countdown hitting zero and the shutter, so waiting longer for the ring
+    # costs a visibly late photo. See Docs/LED_PROTOCOL.md on ERR TIMEOUT.
+    capture_timeout_ms: int = 250
+
+
+class LedConfig(BaseModel):
+    """LED ring node. Off by default — the booth runs unchanged without one.
+
+    Nested under a transport key so that adding a `uart:` block later is additive
+    rather than a restructure (Docs/LED_UART_SWITCH.md).
+    """
+    enabled: bool = False
+    transport: Literal["http"] = "http"
+    # PING cadence. The node's watchdog trips at 10 s of silence
+    # (MODE_LINK_TIMEOUT_MS), so this is a 5x margin. Only fires when the wire
+    # has actually been idle — the watchdog counts any inbound line, so a busy
+    # session needs no heartbeat at all.
+    heartbeat_ms: int = 2000
+    http: LedHttpConfig = LedHttpConfig()
+
+
 class AppSettings(BaseModel):
     camera_backend: Literal["gphoto2", "mock"] = "gphoto2"
     admin_pin: str = "123456"
@@ -67,6 +97,7 @@ class AppSettings(BaseModel):
     port: int = 8000
     selected_overlay: str = "none"
     wifi_network_name: str = "Our Wedding WiFi"
+    led: LedConfig = LedConfig()
     overlays: List[OverlayConfig] = [
         OverlayConfig(id="none", name="No Frame", filename=""),
         OverlayConfig(id="blush_floral", name="Chic Blush Floral", filename="blush_floral.png"),
