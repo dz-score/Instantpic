@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useEffect, useRef, useCallback } from 'react';
 import ScreenShell from '../components/ScreenShell';
 import { t } from '../utils/i18n';
 import useTapGuard from '../hooks/useTapGuard';
@@ -40,9 +40,8 @@ export default function PrintingScreen({
     : printStatus === 'failed' ? 'ERROR'
     : 'PRINTING';
 
-  const [countdown, setCountdown] = useState(AUTO_RESET_SECONDS);
   const [guard, armed] = useTapGuard();
-  const countdownRef = useRef(null);
+  const resetTimerRef = useRef(null);
   const onFinishRef = useRef(onFinish);
 
   useEffect(() => { onFinishRef.current = onFinish; }, [onFinish]);
@@ -50,25 +49,15 @@ export default function PrintingScreen({
   const downloadUrl = getDownloadUrl(finalPhoto);
   const qrSrc = getQrUrl(downloadUrl);
 
-  // Auto-reset countdown
+  // Auto-return home after a fixed delay (no longer shown as a live countdown).
   useEffect(() => {
     if (phase === 'PRINTING') return;
-    setCountdown(AUTO_RESET_SECONDS);
-    countdownRef.current = setInterval(() => {
-      setCountdown((c) => {
-        if (c <= 1) {
-          clearInterval(countdownRef.current);
-          onFinishRef.current();
-          return 0;
-        }
-        return c - 1;
-      });
-    }, 1000);
-    return () => clearInterval(countdownRef.current);
+    resetTimerRef.current = setTimeout(() => onFinishRef.current(), AUTO_RESET_SECONDS * 1000);
+    return () => clearTimeout(resetTimerRef.current);
   }, [phase]);
 
   const handleAnother = useCallback(() => {
-    clearInterval(countdownRef.current);
+    clearTimeout(resetTimerRef.current);
     onAnother();
   }, [onAnother]);
 
@@ -108,20 +97,9 @@ export default function PrintingScreen({
       {(phase === 'DONE' || phase === 'ERROR') && (
         <div className="print-done">
 
-          {/* Flourish */}
-          <div className="print-done__flourish" aria-hidden="true">
-            <span className="print-done__hearts">♡♡</span>
-            <div className="print-done__flourish-line">
-              <span className="print-done__curl">❧</span>
-              <span className="print-done__dash" />
-              <span className="print-done__curl print-done__curl--flip">❧</span>
-            </div>
-          </div>
-
           {/* Heading */}
           {phase === 'DONE' ? (
             <>
-              <p className="print-done__kicker">{t('printing.doneKicker', language)}</p>
               <h1 className="print-done__title">{t('printing.doneTitle', language)}</h1>
             </>
           ) : (
@@ -130,11 +108,6 @@ export default function PrintingScreen({
               <h1 className="print-done__title">{t('printing.savePhotoTitle', language)}</h1>
             </>
           )}
-
-          {/* Thank you */}
-          <p className="print-done__thankyou">
-            {config?.thank_you_message || 'Thank you for celebrating with us!'}
-          </p>
 
           {/* Photo + QR side by side */}
           <div className="print-done__body">
@@ -175,18 +148,6 @@ export default function PrintingScreen({
             </div>
           </div>
 
-          {/* Camera divider */}
-          <div className="print-done__cam-line" aria-hidden="true">
-            <span className="print-done__cam-curl">»»»</span>
-            <span className="print-done__cam-icon">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                <rect x="3" y="3" width="18" height="18" rx="2" />
-                <circle cx="12" cy="12" r="3" />
-              </svg>
-            </span>
-            <span className="print-done__cam-curl">«««</span>
-          </div>
-
           {/* Actions */}
           <div className="print-done__actions">
             <button className="print-done__btn-another" onClick={guard(handleAnother)} disabled={!armed}>
@@ -194,11 +155,6 @@ export default function PrintingScreen({
               <span className="print-done__btn-main">{t('printing.takeAnother', language)}</span>
             </button>
           </div>
-
-          {/* Countdown */}
-          <p className="print-done__countdown">
-            {t('printing.returning', language).replace('{countdown}', countdown)}
-          </p>
         </div>
       )}
 

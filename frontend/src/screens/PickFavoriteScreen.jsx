@@ -19,13 +19,13 @@ import './PickFavoriteScreen.css';
  *   - Blush "Confirm Selection" button + ghost "Retake Photo" button
  */
 export default function PickFavoriteScreen({
-  allPhotos,
+  photos = [],
   onSelect,
   onBack,
   isProcessing,
   language,
 }) {
-  const [selected, setSelected] = useState(allPhotos.length - 1);
+  const [selected, setSelected] = useState(photos.length - 1);
   const [guard, armed] = useTapGuard();
   const cacheKey = useRef(Date.now());
 
@@ -40,47 +40,57 @@ export default function PickFavoriteScreen({
         </button>
       )}
 
-      {/* ── Decorative flourish ── */}
-      <div className="pick-fav__flourish" aria-hidden="true">
-        <span className="pick-fav__flourish-hearts">♡♡</span>
-        <div className="pick-fav__flourish-line">
-          <span className="pick-fav__flourish-curl">❧</span>
-          <span className="pick-fav__flourish-dash" />
-          <span className="pick-fav__flourish-curl pick-fav__flourish-curl--flip">❧</span>
-        </div>
-      </div>
-
       {/* ── Heading ── */}
-      <p className="pick-fav__kicker">{t('pickFavorite.kicker', language)}</p>
       <h1 className="pick-fav__title">{t('pickFavorite.title', language)}</h1>
       <span className="pick-fav__heart" aria-hidden="true">♥</span>
 
       {/* ── Photo grid ── */}
       <div className="pick-fav__grid">
-        {allPhotos.map((photo, index) => (
-          <div className="pick-fav__item" key={photo}>
-            <button
-              className={`pick-fav__card ${selected === index ? 'pick-fav__card--selected' : ''}`}
-              onClick={() => setSelected(index)}
-            >
-              <span className="pick-fav__badge">{index + 1}</span>
-              <img
-                src={`/photos/${photo}?t=${cacheKey.current}`}
-                alt={`Photo ${index + 1}`}
-                className="pick-fav__img"
-              />
-            </button>
-            {/* Radio dot */}
-            <span className={`pick-fav__radio ${selected === index ? 'pick-fav__radio--active' : ''}`} />
-          </div>
-        ))}
+        {photos.map((photo, index) => {
+          // Show the raw capture(s), not the print composite (which bakes in
+          // the matte + names/date caption). Fall back to the composite if the
+          // raw shots aren't present.
+          const raws = (photo.rawImages && photo.rawImages.length)
+            ? photo.rawImages
+            : [photo.filename];
+          return (
+            <div className="pick-fav__item" key={photo.filename}>
+              <button
+                className={`pick-fav__card pick-fav__card--${raws.length > 1 ? 'collage' : 'single'} ${selected === index ? 'pick-fav__card--selected' : ''}`}
+                onClick={() => setSelected(index)}
+              >
+                <span className="pick-fav__badge">{index + 1}</span>
+                {raws.length > 1 ? (
+                  <div className="pick-fav__collage">
+                    {raws.map((f, i) => (
+                      <img
+                        key={i}
+                        src={`/photos/${f}?t=${cacheKey.current}`}
+                        alt=""
+                        className="pick-fav__collage-img"
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <img
+                    src={`/photos/${raws[0]}?t=${cacheKey.current}`}
+                    alt={`Photo ${index + 1}`}
+                    className="pick-fav__img"
+                  />
+                )}
+              </button>
+              {/* Radio dot */}
+              <span className={`pick-fav__radio ${selected === index ? 'pick-fav__radio--active' : ''}`} />
+            </div>
+          );
+        })}
       </div>
 
       {/* ── Actions ── */}
       <div className="pick-fav__actions">
         <button
           className="pick-fav__confirm"
-          onClick={guard(() => onSelect(allPhotos[selected]))}
+          onClick={guard(() => onSelect(photos[selected].filename))}
           disabled={!armed || isProcessing}
         >
           <span className="pick-fav__confirm-icon">✓</span>

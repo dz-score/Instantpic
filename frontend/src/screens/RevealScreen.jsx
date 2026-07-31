@@ -1,8 +1,6 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import ScreenShell from '../components/ScreenShell';
-import PhotoFrame from '../components/PhotoFrame';
 import ConfettiOverlay from '../components/ConfettiOverlay';
-import { getRandomCompliment } from '../utils/compliments';
 import { t } from '../utils/i18n';
 import useTapGuard from '../hooks/useTapGuard';
 import { RotateCcw, Heart, Home } from 'lucide-react';
@@ -32,13 +30,18 @@ export default function RevealScreen({
   onPrint,
   onCancel,
   language,
+  rawImages = [],
 }) {
-  const compliment = useMemo(() => getRandomCompliment(language), [finalPhoto, language]);
   const [showPhoto, setShowPhoto] = useState(false);
   const [guard, armed] = useTapGuard();
   const cacheKey = useRef(Date.now());
   const isLastRetake = retakeCount >= maxRetakes - 1;
   const canRetake = retakeCount < maxRetakes;
+
+  // Show the actual captured photo(s), not the print composite (which bakes
+  // in the cream matte + names/date caption). Fall back to the composite only
+  // if the raw shots aren't available for some reason.
+  const previewPhotos = rawImages.length ? rawImages : (finalPhoto ? [finalPhoto] : []);
 
   useEffect(() => {
     if (finalPhoto && !isProcessing) {
@@ -64,32 +67,23 @@ export default function RevealScreen({
         /* ── Photo Reveal ── */
         <div className={`reveal-content ${showPhoto ? 'reveal-content--visible' : ''}`}>
 
-          {/* Flourish */}
-          <div className="reveal-flourish" aria-hidden="true">
-            <span className="reveal-flourish__hearts">♡♡</span>
-            <div className="reveal-flourish__line">
-              <span className="reveal-flourish__curl">❧</span>
-              <span className="reveal-flourish__dash" />
-              <span className="reveal-flourish__curl reveal-flourish__curl--flip">❧</span>
-            </div>
-          </div>
-
           {/* Heading */}
-          <p className="reveal-kicker">{t('reveal.kicker', language)}</p>
           <h1 className="reveal-title">{t('reveal.title', language)}</h1>
 
-          {/* Photo */}
+          {/* Photo — the raw capture(s), with the gold frame around them.
+              No matte or names/date caption (that lives on the print). */}
           <div className="reveal-photo-wrap">
-            <PhotoFrame
-              src={`/photos/${finalPhoto}?t=${cacheKey.current}`}
-              alt="Your photo"
-              size="large"
-              className="photo-frame--reveal"
-            />
+            <div className={`reveal-photo reveal-photo--${previewPhotos.length > 1 ? 'collage' : 'single'}`}>
+              {previewPhotos.map((f, i) => (
+                <img
+                  key={i}
+                  src={`/photos/${f}?t=${cacheKey.current}`}
+                  alt="Your photo"
+                  className="reveal-photo__img"
+                />
+              ))}
+            </div>
           </div>
-
-          {/* Compliment */}
-          <p className="reveal-compliment">{compliment}</p>
 
           {/* Actions */}
           <div className="reveal-actions">
@@ -107,12 +101,6 @@ export default function RevealScreen({
             </button>
           </div>
 
-          {/* Retake indicator */}
-          {canRetake && (
-            <p className="reveal-retake-info">
-              {t('reveal.retakeInfo', language).replace('{count}', retakeCount).replace('{max}', maxRetakes)}
-            </p>
-          )}
         </div>
       ) : (
         /* ── Error State ── */

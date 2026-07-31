@@ -4,7 +4,7 @@
 
 .pick-fav-screen {
   position: relative;
-  padding: var(--space-md) var(--space-lg);
+  padding: clamp(var(--space-md), 4vh, var(--space-xl)) var(--space-lg);
   gap: 0;
 }
 
@@ -97,7 +97,7 @@
 
 .pick-fav__title {
   font-family: var(--font-script);
-  font-size: clamp(var(--text-h1), 6vw, var(--text-hero));
+  font-size: clamp(var(--text-h1), 7vw, 6.5rem);
   font-weight: 400;
   line-height: 1.4;
   margin-bottom: 0;
@@ -106,7 +106,7 @@
 }
 
 .pick-fav__heart {
-  font-size: var(--text-label);
+  font-size: var(--text-h3);
   color: var(--dusty-rose);
   opacity: 0.6;
   margin-bottom: var(--space-2xs);
@@ -114,24 +114,24 @@
 
 .pick-fav__subtitle {
   font-family: var(--font-body);
-  font-size: var(--text-label);
+  font-size: clamp(var(--text-label), 1.3vw, var(--text-body));
   font-weight: 400;
   letter-spacing: var(--tracking-md);
   text-transform: uppercase;
   color: var(--text-secondary);
   text-align: center;
   line-height: 1.7;
-  margin-bottom: var(--space-md);
+  margin-bottom: clamp(var(--space-md), 4vh, var(--space-xl));
 }
 
 /* ═══ Photo Grid ═══ */
 .pick-fav__grid {
   display: flex;
-  gap: var(--space-sm);
+  gap: clamp(var(--space-sm), 2vw, var(--space-xl));
   width: 100%;
-  max-width: 1100px;
+  max-width: min(94vw, 1780px);
   justify-content: center;
-  margin-bottom: var(--space-sm);
+  margin-bottom: clamp(var(--space-md), 4vh, var(--space-xl));
   padding: 0 var(--space-sm);
 }
 
@@ -139,16 +139,17 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--space-xs);
+  gap: var(--space-sm);
   flex: 1;
   min-width: 0;
-  max-width: 240px;
+  max-width: min(31vw, 560px);
 }
 
+/* Card keeps the gold frame/fill/shadow around the raw photo(s). Single
+   takes the camera's 3:2 aspect; collage sizes to its row of shots. */
 .pick-fav__card {
   position: relative;
   width: 100%;
-  aspect-ratio: 4 / 3;
   border-radius: var(--radius-lg);
   overflow: hidden;
   cursor: pointer;
@@ -157,6 +158,24 @@
   border: 1px solid var(--gold);
   background: var(--ivory);
   box-shadow: var(--shadow-floating-card);
+}
+
+.pick-fav__card--single {
+  aspect-ratio: 3 / 2;
+}
+
+/* Collage: shots in a row, each a portrait 3:4 cell (matching the strip). */
+.pick-fav__collage {
+  display: flex;
+  width: 100%;
+}
+
+.pick-fav__collage-img {
+  flex: 1;
+  min-width: 0;
+  aspect-ratio: 3 / 4;
+  object-fit: cover;
+  display: block;
 }
 
 .pick-fav__card:active {
@@ -281,8 +300,8 @@
   align-items: center;
   justify-content: center;
   gap: var(--space-sm);
-  min-width: var(--cta-min-width-md);
-  height: var(--cta-height-md);
+  min-width: min(32vw, 460px);
+  height: clamp(var(--cta-height-md), 9vh, var(--cta-height-lg));
   padding: 0 var(--space-xl);
   border-radius: var(--radius-button);
   border: 2px solid transparent;
@@ -309,7 +328,7 @@
 
 .pick-fav__confirm-text {
   font-family: var(--font-body);
-  font-size: var(--text-caption);
+  font-size: clamp(var(--text-caption), 1.5vw, var(--text-h3));
   font-weight: 700;
   letter-spacing: var(--tracking-md);
   text-transform: uppercase;

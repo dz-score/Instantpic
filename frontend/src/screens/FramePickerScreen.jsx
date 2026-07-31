@@ -53,18 +53,7 @@ export default function FramePickerScreen({
         </button>
       )}
 
-      {/* ── Decorative flourish ── */}
-      <div className="frame__flourish" aria-hidden="true">
-        <span className="frame__flourish-hearts">♡♡</span>
-        <div className="frame__flourish-line">
-          <span className="frame__flourish-curl">❧</span>
-          <span className="frame__flourish-dash" />
-          <span className="frame__flourish-curl frame__flourish-curl--flip">❧</span>
-        </div>
-      </div>
-
       {/* ── Heading ── */}
-      <p className="frame__kicker">{t('framePicker.kicker', language)}</p>
       <h1 className="frame__title">{t('framePicker.title', language)}</h1>
 
       {/* ── Main content: preview + frame cards ── */}

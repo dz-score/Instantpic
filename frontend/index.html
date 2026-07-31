@@ -6,6 +6,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <meta name="description" content="Wedding Photo Booth — capture beautiful memories" />
     <meta name="theme-color" content="#FAF7F2" />
+
+    <!-- Fonts rendered on first paint. Without these the browser only discovers
+         them after CSS parse + layout, which delays first paint (font-display is
+         `block`). `crossorigin` is required even same-origin — fonts fetch in
+         CORS mode, and omitting it downloads each file twice. -->
+    <link rel="preload" as="font" type="font/woff2" crossorigin href="/fonts/mea-culpa-400-normal-latin.woff2" />
+    <link rel="preload" as="font" type="font/woff2" crossorigin href="/fonts/cormorant-garamond-400-normal-latin.woff2" />
+    <link rel="preload" as="font" type="font/woff2" crossorigin href="/fonts/inter-400-normal-latin.woff2" />
+    <link rel="preload" as="font" type="font/woff2" crossorigin href="/fonts/inter-500-normal-latin.woff2" />
+    <link rel="preload" as="font" type="font/woff2" crossorigin href="/fonts/inter-600-normal-latin.woff2" />
+    <link rel="preload" as="font" type="font/woff2" crossorigin href="/fonts/inter-700-normal-latin.woff2" />
+
     <title>L'Étoile Photo Booth</title>
   </head>
   <body>
