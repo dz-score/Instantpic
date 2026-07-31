@@ -1,4 +1,4 @@
-# The render task runs at 120 Hz and must not be starved by the HTTP task.
+# The render task runs at 125 Hz and must not be starved by the HTTP task.
 CONFIG_FREERTOS_HZ=1000
 
 # httpd handlers block on the reply queue, so they need a little headroom.
