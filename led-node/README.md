@@ -38,10 +38,15 @@ idf.py -p PORT flash monitor
 Under **LED Node Configuration**: ring size, data GPIO, `RING_OFFSET`,
 direction, transport, and default brightness.
 
-### Development (HTTP)
+### HTTP — the transport that ships
 
-The default. The booth wiring occupies the USB port that flashing needs, so
-during development commands arrive over WiFi instead and the cable stays free.
+The default, and the production transport. Commands arrive over WiFi and the
+USB cable stays free for flashing.
+
+This reverses [`Docs/LED_SPEC.md`](../Docs/LED_SPEC.md)'s original call for
+serial. That reasoning was not refuted, only deferred — see
+[`Docs/LED_UART_SWITCH.md`](../Docs/LED_UART_SWITCH.md) for what would trigger
+the switch back and what it would involve.
 
 Set **WiFi SSID** and **WiFi password** under `LED Node Configuration` →
 `Command transport` in `menuconfig`. They land in `sdkconfig`, which is
@@ -60,9 +65,15 @@ curl -X POST --data "COUNTDOWN 3000" http://<ip>/cmd
 
 `http://<ip>/` serves a page with a button per mode.
 
-### Booth (UART)
+### UART — not currently built
 
 Select `LED_NODE_TRANSPORT_UART`. WiFi is compiled out entirely.
+
+> **Never compiled or run.** `transport_uart.c` is fully written but sits behind
+> `#if CONFIG_LED_NODE_TRANSPORT_UART`, and development has been HTTP-only. It
+> also never calls `uart_set_pin()`, which is harmless on UART0 and silently
+> deaf on UART1/2. Read
+> [`Docs/LED_UART_SWITCH.md`](../Docs/LED_UART_SWITCH.md) before selecting it.
 
 > With `LED_NODE_UART_PORT=0` — the port wired to the USB bridge, which is how
 > the Pi connects — the console shares that line. Set `CONFIG_ESP_CONSOLE_NONE`
