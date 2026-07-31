@@ -17,6 +17,7 @@ from backend.logger import log
 from backend.state_machine import StateMachine
 from backend.job_queue import JobQueue
 from backend.camera_factory import create_camera
+from backend.led_controller import create_led_controller
 
 from backend.routers import booth, camera, config, logs, photos, sse, system
 
@@ -44,12 +45,16 @@ async def lifespan(app: FastAPI):
     print_svc = PrintService(settings_svc)
     job_queue = JobQueue(print_svc, settings_svc)
     camera_svc = create_camera(settings_svc.get(), sse_svc)
-    state_machine = StateMachine(sse_svc, job_queue, camera_svc)
+    # Inert when no ring is configured, so the FSM needs no null check and the
+    # booth behaves identically with and without one.
+    led_svc = create_led_controller(settings_svc.get())
+    state_machine = StateMachine(sse_svc, job_queue, camera_svc, led_svc)
 
     app.state.sse = sse_svc
     app.state.settings = settings_svc
     app.state.print_svc = print_svc
     app.state.camera = camera_svc
+    app.state.led = led_svc
     app.state.state_machine = state_machine
 
     # Bind the event loop so camera threads can dispatch SSE events safely.
@@ -57,6 +62,10 @@ async def lifespan(app: FastAPI):
     sse_svc.bind_loop()
 
     job_queue.start()
+
+    # Starts the owner task that serializes every command to the ring. Before
+    # this, calls are queued nowhere and drop silently.
+    await led_svc.start()
 
     # Eagerly init camera
     if camera_svc:
@@ -90,6 +99,7 @@ async def lifespan(app: FastAPI):
     sse_svc.request_shutdown()
 
     await job_queue.stop()
+    await led_svc.stop()
 
     if camera_svc:
         camera_svc.shutdown()
