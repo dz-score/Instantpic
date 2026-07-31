@@ -33,10 +33,21 @@ next to capture, compositing, and spooling. The real reasons:
 4. **Independent failure.** LEDs keep running if the backend crashes; firmware
    can be reflashed without bouncing the booth service.
 
-**Transport is USB serial, not WiFi.** A wedding venue is a hostile 2.4 GHz
-environment — a few hundred phones plus whatever the DJ brought. Retries land
-exactly during the countdown-to-shutter window. Serial is wired, powers the
-ESP32, survives replug, and gives a console for on-site debugging.
+**Transport was specified as USB serial. It now ships as HTTP over WiFi.** A
+wedding venue is a hostile 2.4 GHz environment — a few hundred phones plus
+whatever the DJ brought. Retries land exactly during the countdown-to-shutter
+window. Serial is wired, powers the ESP32, survives replug, and gives a console
+for on-site debugging.
+
+> That reasoning still stands; the decision was reversed anyway, to build and
+> harden one transport instead of two. The risk is accepted deliberately, on the
+> bet that a dedicated AP on a hand-picked channel with the node as its only
+> client keeps the tail latency small enough to not reach the shutter.
+>
+> The trigger conditions for reversing it back, and everything the switch would
+> involve, are in [LED_UART_SWITCH.md](LED_UART_SWITCH.md). The protocol is
+> identical either way — the queue is the seam, and nothing below it can tell
+> which transport is running.
 
 **The ESP32 has no inputs.** It is a pure sink. Everything it displays is a
 consequence of a command from the Pi.

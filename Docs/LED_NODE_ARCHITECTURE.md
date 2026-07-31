@@ -68,8 +68,8 @@ seam. Nothing above it can tell which transport is running.
 | Task | Core | Prio | Role |
 |---|---|---|---|
 | `render_task` | 1 | 6 | Owns mode state + framebuffer. Drains queue, renders, refreshes strip. |
-| `httpd` (dev build) | any | 5 | Parses `/cmd`, enqueues, blocks on reply, responds. |
-| `uart_task` (booth build) | any | 5 | Blocks on `uart_read_bytes`, parses, enqueues, writes reply line. |
+| `httpd` (**ships**) | any | 5 | Parses `/cmd`, enqueues, blocks on reply, responds. |
+| `uart_task` (future UART version) | any | 5 | Blocks on `uart_read_bytes`, parses, enqueues, writes reply line. |
 
 **Frame budget.** `FRAME_MS = 8`, so **125 Hz**. `led_strip_refresh()` for 60
 RGBW pixels is ~2.4 ms (calculated from the 1.25 µs bit period — *not* measured),
@@ -255,28 +255,44 @@ physical seam land wherever mounting is convenient.
 ## Transport abstraction
 
 ```c
-typedef struct {
-    esp_err_t (*start)(QueueHandle_t cmd_q);
-    void      (*stop)(void);
-} transport_t;
+/* transport.h — implemented by exactly one of transport_http.c / transport_uart.c */
+esp_err_t transport_start(QueueHandle_t cmd_q);
+void      transport_stop(void);
 ```
 
-Exactly one is compiled in, selected by Kconfig. Both do the same three things:
-parse a line with the shared parser, enqueue it, wait for the reply and return it
-to the caller.
+Selection is at **compile time** via Kconfig, so the abstraction is a shared
+signature rather than a struct of function pointers — there is no vtable and no
+runtime dispatch, because there is never more than one implementation linked.
+Both do the same three things, in `transport_common.c` so neither can drift:
+parse a line with the shared parser, enqueue it, wait for the reply and return
+it to the caller.
 
-### Development strategy
+> The Pi-side client cannot copy this shape exactly. It selects its transport
+> from config at runtime, so it needs a real interface. What carries over is the
+> contract — one line in, one reply line out, one command in flight — not the
+> mechanism. See [LED_UART_SWITCH.md](LED_UART_SWITCH.md).
 
-The booth's USB port is occupied by the Pi, which makes flashing from a dev
-machine impossible while serial is wired. So:
+### Which transport ships
 
-1. **Build and iterate on the HTTP transport.** USB stays free for flashing;
-   commands come from `curl` or a browser.
-2. **Switch to the UART transport for the booth.** WiFi is compiled out entirely.
+**HTTP over WiFi is the production transport.** One transport to build, harden
+and test rather than two; the ESP32's USB stays free for flashing, and the Pi is
+spared a udev rule, baud config and device-node churn.
 
-This is a dev-ergonomics decision, not an architectural one — the reasoning in
-[LED_SPEC.md](LED_SPEC.md) for why the *production* transport is serial is
-unchanged.
+This reverses [LED_SPEC.md](LED_SPEC.md)'s original call. That reasoning has not
+been refuted — a wedding venue really is a hostile 2.4 GHz environment, and
+retries really do land in the countdown-to-shutter window. The risk is being
+accepted deliberately, on the bet that a dedicated AP on a hand-picked channel
+with the node as its only client keeps the tail small enough.
+
+UART remains a **future version**, not an event-day fallback: `transport_uart.c`
+is written but has never been compiled or run, and switching means reflashing
+plus first-ever integration. If HTTP proves unreliable — measured, per the
+trigger conditions in that document — it gets built then.
+
+> Everything needed to reverse this later, and the handful of cheap choices the
+> HTTP client must make *now* to keep the reversal cheap, is in
+> **[LED_UART_SWITCH.md](LED_UART_SWITCH.md)**. Read it before writing the Pi
+> client.
 
 **One parser, one vocabulary.** There is no REST *command* surface — no
 `/capture`, `/countdown`, `/idle`. A single `/cmd` endpoint carries the identical
@@ -300,20 +316,18 @@ The HTTP transport also serves three **read-only, dev-only** endpoints
 | `GET /frame` | The exact bytes the strip received — `output_snapshot()`, post-brightness, post-geometry, post-gamma, in physical pixel order |
 | `GET /state` | Render-task introspection — `modes_get_state()` |
 
-These do not weaken "one vocabulary": none of them accepts a command, and all of
-them vanish with the HTTP transport in the booth build. `/frame` is what makes
-the whole system observable with no strip attached, which is the entire basis of
-[LED_NODE_TESTING.md](LED_NODE_TESTING.md).
+These do not weaken "one vocabulary": none of them accepts a command. `/frame`
+is what makes the whole system observable with no strip attached, which is the
+entire basis of [LED_NODE_TESTING.md](LED_NODE_TESTING.md).
 
-### Swap checklist
+### The dev-only endpoints in a production build
 
-- Bring up serial **well before the event.** The firmware change is small; the
-  surroundings are not — a udev rule pinning the ESP32's USB serial number to a
-  stable `/dev/led-node`, baud, buffer sizes, and the Pi-side client.
-- Tune the Capture ack timeout **on serial**. The latency distributions aren't
-  comparable, and that timeout is what stands between a hiccup and a dark photo.
-- Keep `PING`/`PONG` in both builds, or the link watchdog's first real test is
-  in production.
+`/`, `/frame` and `/state` were written as development instrumentation on the
+assumption that the booth build would have no network. Under an HTTP production
+build they ship. That is mostly a benefit — `/state` and `/frame` are exactly
+what you want for on-site diagnosis, and there is no console over WiFi — but it
+means the preview page is reachable by anything on the AP. Keep the node on a
+dedicated network with the Pi, not on a venue SSID.
 
 ---
 
@@ -371,11 +385,11 @@ led-node/
                               transport_common.c  ← parse+enqueue+await reply,
                                             shared by both so the swap cannot
                                             change command semantics
-                              wifi_sta.c  ← dev only; the HTTP transport owns
-                                            its own connectivity, since the
-                                            booth build has no network
+                              wifi_sta.c  ← the HTTP transport owns its own
+                                            connectivity, so a UART build pulls
+                                            in no networking at all
     render/
-      canvas.[ch]             linear framebuffer, canvas_point/canvas_arc
+      canvas.[ch]             linear framebuffer, canvas_add_point/canvas_add_arc
       output.[ch]             brightness, gamma LUT, geometry, led_strip push
       modes.[ch]              mode manager, transitions, timeouts, watchdog
       anim_idle.c
@@ -459,7 +473,10 @@ unrepresentative of the wired transport this becomes.
 - **No dynamic allocation** in the render path. Fixed canvases (~1 KB for two
   60×4 linear buffers), fixed command struct.
 - **No JSON, no binary protocol.** ASCII lines until they demonstrably hurt.
-- **No OTA.** Dev flashing is over USB; the booth build has no network.
+- **No OTA.** The original reason — the booth build has no network — no longer
+  holds now that HTTP ships, so this is a live choice rather than a consequence.
+  It stays excluded: flashing is over USB, and an update path that can brick the
+  node over a congested link is a worse risk than the one it solves.
 - **No REST command surface.** One `/cmd` endpoint, one parser. `/`, `/frame`
   and `/state` are read-only dev instrumentation and exist only in the HTTP
   build.
