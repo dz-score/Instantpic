@@ -39,8 +39,12 @@ findings=""
 for doc in "$docs"/LED_NODE_*.md "$docs"/LED_SPEC.md; do
     [ -f "$doc" ] || continue
 
-    # Only backtick-delimited spans are checked, so prose using a word like
+    # Inline `spans` AND fenced code blocks. Prose is excluded, so a word like
     # "output" or a mode name in English is not a false positive.
+    #
+    # Fenced blocks were missed by the first version of this script, which let a
+    # stale canvas_point/canvas_arc reference survive inside the component
+    # layout tree through the very commit that fixed it everywhere else.
     while IFS= read -r hit; do
         lineno="${hit%%:*}"
         span="${hit#*:}"
@@ -54,7 +58,11 @@ for doc in "$docs"/LED_NODE_*.md "$docs"/LED_SPEC.md; do
                 findings+="${doc#"$repo_root"/}:${lineno}: undefined symbol in docs: ${sym}"$'\n'
             fi
         done < <(printf '%s' "$span" | grep -oE "$pattern" | sort -u)
-    done < <(grep -on '`[^`]*`' "$doc" 2>/dev/null)
+    done < <(
+        grep -on '`[^`]*`' "$doc" 2>/dev/null
+        # Lines inside ``` fences, with their real line numbers.
+        awk '/^```/ {inblock = !inblock; next} inblock {print NR ":" $0}' "$doc"
+    )
 done
 
 if [ -n "$findings" ]; then
