@@ -83,6 +83,27 @@ static void enter_mode(mode_id_t mode)
     s.params = (mode_params_t){0};
 }
 
+/* Advance the clock the way a live booth does: the Pi pings every ~2 s, so
+ * last_rx_ms keeps up and the watchdog stays quiet.
+ *
+ * This is not a convenience. The watchdog (10 s) is SHORTER than the capture
+ * (30 s) and printing (120 s) timeouts, so those two are only reachable on a
+ * live link — with a silent host the watchdog gets there first, which is the
+ * documented safety case and is asserted separately below. Advancing the clock
+ * without feeding it tests the watchdog, not the timeout you meant to test.
+ */
+static void advance_alive_ms(int64_t ms)
+{
+    const int64_t step = 2000;
+    for (int64_t done = 0; done < ms; ) {
+        const int64_t chunk = (ms - done) < step ? (ms - done) : step;
+        test_clock_advance_ms(chunk);
+        s.last_rx_ms = now_ms();   /* a PING landed */
+        check_deadlines(now_ms());
+        done += chunk;
+    }
+}
+
 static const char *send(const char *line)
 {
     command_t cmd;
@@ -205,24 +226,43 @@ TEST(reentering_a_mode_restarts_its_clock)
 
 TEST(capture_releases_itself_after_thirty_seconds)
 {
-    /* Full white is the highest-current, highest-heat state in the system. */
+    /* Full white is the highest-current, highest-heat state in the system, so a
+     * host that goes quiet mid-shot must not be able to leave it there. This is
+     * the LIVE-link path: the Pi is still pinging but never sent RELEASE. */
     enter_mode(MODE_CAPTURE);
-    test_clock_advance_ms(MODE_CAPTURE_TIMEOUT_MS - 1);
-    check_deadlines(now_ms());
+    advance_alive_ms(MODE_CAPTURE_TIMEOUT_MS - 2000);
     CHECK_INT(s.mode, MODE_CAPTURE);
 
-    test_clock_advance_ms(2);
-    check_deadlines(now_ms());
+    advance_alive_ms(4000);
     CHECK_INT(s.mode, MODE_IDLE);
 }
 
 TEST(printing_fails_to_error_after_two_minutes)
 {
+    /* A jammed printer would otherwise leave the ring cheerfully rolling ink
+     * forever. Live link, for the same reason as the capture timeout. */
     enter_mode(MODE_PRINTING);
-    test_clock_advance_ms(MODE_PRINTING_TIMEOUT_MS + 1);
-    check_deadlines(now_ms());
+    advance_alive_ms(MODE_PRINTING_TIMEOUT_MS - 2000);
+    CHECK_INT(s.mode, MODE_PRINTING);
+
+    advance_alive_ms(4000);
     CHECK_INT(s.mode, MODE_ERROR);
     CHECK_INT(s.params.code, 0);
+}
+
+TEST(the_watchdog_outruns_the_longer_timeouts_when_the_host_is_silent)
+{
+    /* The ordering that made the two tests above need a live link, asserted
+     * directly: with nothing arriving, Link Lost is reached long before either
+     * mode's own timeout, and a dead host therefore never waits 30 s or 120 s
+     * for the ring to stop. */
+    CHECK(MODE_LINK_TIMEOUT_MS < MODE_CAPTURE_TIMEOUT_MS);
+    CHECK(MODE_LINK_TIMEOUT_MS < MODE_PRINTING_TIMEOUT_MS);
+
+    enter_mode(MODE_PRINTING);
+    test_clock_advance_ms(MODE_LINK_TIMEOUT_MS + 1);
+    check_deadlines(now_ms());
+    CHECK_INT(s.mode, MODE_LINKLOST);
 }
 
 TEST(finished_returns_to_idle_after_its_duration)
@@ -306,6 +346,7 @@ int main(void)
     RUN(reentering_a_mode_restarts_its_clock);
     RUN(capture_releases_itself_after_thirty_seconds);
     RUN(printing_fails_to_error_after_two_minutes);
+    RUN(the_watchdog_outruns_the_longer_timeouts_when_the_host_is_silent);
     RUN(finished_returns_to_idle_after_its_duration);
     RUN(silence_trips_the_watchdog);
     RUN(any_inbound_line_holds_the_watchdog_off);

@@ -7,12 +7,20 @@ make compile  # build only
 
 Needs a C compiler and nothing else. No ESP-IDF, no board, no strip.
 
-> **Status: compiled, never executed.** These were written on a Windows machine
-> with no host C compiler and no emulator. Every file compiles warning-free and
-> links with all non-libc symbols resolved (verified with the `riscv32-esp-elf`
-> cross-compiler), but **no assertion in here has ever actually run**. Run
-> `make` on the Pi or any Linux box before trusting a green result — until then
-> a passing assertion and a wrong assertion look identical.
+**Status: 40 assertions, all passing** (parse 11, canvas 11, modes 18), on
+gcc 16.1 / MSYS2 UCRT64.
+
+> **On Windows with MSYS2**, use the UCRT64 toolchain and **`mingw32-make`**:
+>
+> ```
+> export PATH="/d/softwares/msys64/ucrt64/bin:$PATH"
+> mingw32-make check
+> ```
+>
+> MSYS2's `/usr/bin/make` fails here with `Cannot create temporary file in
+> C:\WINDOWS\: Permission denied` — it is `make` itself, not the compiler, and
+> `mingw32-make` from `ucrt64/bin` does not have the problem. The compiler is
+> fine either way; `cc` and `gcc` both work.
 
 ## What is covered
 
@@ -26,6 +34,22 @@ Needs a C compiler and nothing else. No ESP-IDF, no board, no strip.
 arriving in Link Lost returned `PONG` and left the mode unchanged, so a
 recovered host saw a healthy link while the ring kept showing the fault pattern.
 It is a four-line test, and it would have caught the bug the day it was written.
+
+### Two things the first run taught us
+
+Both were wrong assumptions in the tests, not firmware faults — which is what a
+first run is for.
+
+**Pixel `i` is centred at `(i + 0.5) * DEG_PER_PIXEL`.** Pixel 0 sits at 3°, not
+0°, so 0° is a *boundary* and 3° is a *centre*. The sub-pixel tests originally
+had these exactly backwards and asserted the opposite of what they set up.
+
+**The link watchdog is shorter than the capture and printing timeouts.** At 10 s
+versus 30 s and 120 s, advancing a fake clock with nothing arriving reaches Link
+Lost long before either timeout — so those tests need a live link
+(`advance_alive_ms`, which feeds `last_rx_ms` every 2 s the way the Pi's
+heartbeat does). This is real behaviour worth knowing: with a *dead* host the
+ring leaves full white after 10 s, not 30. Both orderings are now asserted.
 
 ## How it works
 
