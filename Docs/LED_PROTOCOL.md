@@ -26,7 +26,7 @@ transport. Nothing below the transport layer can tell which one is running.
 | `IDLE` | — | `OK IDLE` | → Idle |
 | `PHASE <hue>` | 0–359 | `OK PHASE` | → Playful, hue stored |
 | `COUNTDOWN <ms>` | 1–60000 | `OK COUNTDOWN` | → Countdown; node runs its own clock |
-| `CAPTURE` | — | `OK CAPTURE` | → Capture. **Wait for this reply, then fire the shutter.** |
+| `CAPTURE` | — | `OK CAPTURE` | → Capture. **Wait for this reply, then fire the shutter.** The full handshake is [here](LED_NODE_ARCHITECTURE.md#runtime-view-the-capture-handshake); note the reply means *applied*, not *lit* — the ring ramps for 100 ms after it. |
 | `RELEASE` | — | `OK RELEASE` | → Idle. Exact alias of `IDLE` — same `case` in `apply()` |
 | `PRINTING` | — | `OK PRINTING` | → Printing |
 | `FINISHED <ms>` | 1–60000 | `OK FINISHED` | → Finished; returns to Idle on its own |
