@@ -60,6 +60,12 @@ TEST(blend_midpoint_is_linear_not_gamma_encoded)
     CHECK_NEAR(out.px[0].w, 0.5, 0.0001);
 }
 
+/* Pixel i is centred at (i + 0.5) * DEG_PER_PIXEL, so pixel 0 sits at 3 degrees
+ * and the boundary between pixels 0 and 1 is at 6. Getting this backwards is
+ * easy and makes a test assert the opposite of what it sets up. */
+#define PIXEL_CENTRE(i)   (((float)(i) + 0.5f) * DEG_PER_PIXEL)
+#define PIXEL_BOUNDARY(i) (((float)(i) + 1.0f) * DEG_PER_PIXEL)
+
 TEST(a_point_between_pixels_lights_both)
 {
     /* Sub-pixel rendering, stated as a property rather than a pixel pattern:
@@ -68,21 +74,23 @@ TEST(a_point_between_pixels_lights_both)
      * snapping is plainly visible. */
     canvas_t c;
     canvas_clear(&c);
-    canvas_add_point(&c, DEG_PER_PIXEL * 0.5f, rgbw_white(1.0f), DEG_PER_PIXEL);
+    canvas_add_point(&c, PIXEL_BOUNDARY(0), rgbw_white(1.0f), DEG_PER_PIXEL * 1.5f);
 
     CHECK(c.px[0].w > 0.0f);
     CHECK(c.px[1].w > 0.0f);
-    CHECK_NEAR(c.px[0].w, c.px[1].w, 0.05);
+    CHECK_NEAR(c.px[0].w, c.px[1].w, 0.001);
 }
 
 TEST(a_point_on_a_pixel_centre_is_concentrated_there)
 {
     canvas_t c;
     canvas_clear(&c);
-    canvas_add_point(&c, 0.0f, rgbw_white(1.0f), DEG_PER_PIXEL);
+    canvas_add_point(&c, PIXEL_CENTRE(0), rgbw_white(1.0f), DEG_PER_PIXEL * 1.5f);
 
     CHECK(c.px[0].w > c.px[1].w);
     CHECK(c.px[0].w > c.px[RING_LEDS - 1].w);
+    /* Symmetric about the centre: neighbours on both sides match. */
+    CHECK_NEAR(c.px[1].w, c.px[RING_LEDS - 1].w, 0.001);
 }
 
 TEST(a_point_carries_the_same_light_wherever_it_sits)
@@ -124,10 +132,23 @@ TEST(white_uses_the_white_channel_alone)
     /* Mixing R+G+B to white gives a three-spike spectrum that renders skin
      * blotchy — the reason Capture drives W. */
     const rgbw_t w = rgbw_white(0.8f);
-    CHECK_NEAR(w.w, 0.8, 0.0001);
     CHECK_NEAR(w.r, 0.0, 0.0001);
     CHECK_NEAR(w.g, 0.0, 0.0001);
     CHECK_NEAR(w.b, 0.0, 0.0001);
+    CHECK(w.w > 0.0f);
+}
+
+TEST(white_linearizes_its_argument)
+{
+    /* rgbw_white takes a DISPLAY-referred level and returns linear light, so
+     * 0.8 comes back as 0.8^2.2, not 0.8. The canvas holds linear values
+     * throughout precisely so cross-fades do not duck dark at their midpoint;
+     * a helper that skipped this would quietly reintroduce that. */
+    CHECK_NEAR(rgbw_white(0.8f).w, pow(0.8, 2.2), 0.0001);
+    CHECK_NEAR(rgbw_white(1.0f).w, 1.0, 0.0001);
+    CHECK_NEAR(rgbw_white(0.0f).w, 0.0, 0.0001);
+    /* Negative levels are clamped rather than producing NaN from powf. */
+    CHECK_NEAR(rgbw_white(-1.0f).w, 0.0, 0.0001);
 }
 
 TEST(hue_returns_linear_light)
@@ -151,6 +172,7 @@ int main(void)
     RUN(a_point_carries_the_same_light_wherever_it_sits);
     RUN(an_arc_spans_from_start_across_span_degrees);
     RUN(white_uses_the_white_channel_alone);
+    RUN(white_linearizes_its_argument);
     RUN(hue_returns_linear_light);
     return test_report("canvas");
 }
