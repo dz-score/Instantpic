@@ -174,6 +174,105 @@ ignored.
 
 ---
 
+## Runtime view: the capture handshake
+
+The one flow with a hard real-time requirement, and the only one that spans both
+artifacts. Everything else is decoration; here the ring is photographic
+equipment, so the Pi waits for the node before it fires the shutter.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant UI as Browser
+    participant FSM as StateMachine
+    participant LED as LedController
+    participant W as led-worker
+    participant HT as LedHttpTransport
+    participant HD as esp_http_server
+    participant RT as render_task
+    participant CAM as CameraService
+
+    UI->>FSM: FIRE_SHOT
+    FSM->>LED: await capture()
+    LED->>W: queue CAPTURE + future
+    W->>HT: send(line, 250 ms)
+    HT->>HD: POST /cmd "CAPTURE"
+    HD->>RT: cmd_req_t on queue
+    Note over RT: drained at frame start,<br/>≤ 8 ms wait
+    RT->>RT: apply() → enter(MODE_CAPTURE)
+    Note over RT: ring begins ramping<br/>0 → full over 100 ms
+    RT-->>HD: "OK CAPTURE" via reply queue
+    HD-->>HT: HTTP 200, body "OK CAPTURE"
+    HT-->>W: reply line
+    W-->>LED: future resolves
+    LED-->>FSM: True
+    FSM->>CAM: enqueue_capture()
+    CAM->>CAM: worker thread trips the shutter
+    CAM-->>FSM: shot_completed()
+    FSM->>LED: _sync_led() → PHASE (Reveal)
+    LED->>W: queue PHASE
+    Note over RT: leaves Capture on its own —<br/>no explicit RELEASE on this path
+```
+
+### Budget
+
+| Interval | Value | Defined in |
+|---|---|---|
+| Pi's ack wait | 250 ms | `LedHttpConfig.capture_timeout_ms` |
+| Node's internal reply wait | 200 ms | `TRANSPORT_REPLY_TIMEOUT_MS` |
+| Queue → applied | ≤ 8 ms | `FRAME_MS` (125 Hz) |
+| Ring ramp to full | 100 ms | `RAMP_MS` in `anim_capture.c` |
+| Capture safety release | 30 s | `MODE_CAPTURE_TIMEOUT_MS` |
+| Link watchdog | 10 s | `MODE_LINK_TIMEOUT_MS` |
+
+The two timeouts are **nested on purpose**: at 200 ms the node gives up on its
+own render task and answers `ERR TIMEOUT`, which still reaches the Pi inside its
+250 ms budget — provided the round trip is under ~50 ms. On a congested link the
+Pi's own timeout fires first instead. Both outcomes make `capture()` return
+`False` and are handled identically; only the log line differs.
+
+> ### The ack does not mean the light is up
+>
+> `OK CAPTURE` is written when the mode is **entered**, which is ramp `t = 0`.
+> The ring then takes `RAMP_MS` (100 ms) to reach full. So the acknowledgement
+> proves the command was *applied*, not that the key light has *arrived*.
+>
+> Nothing in the current design closes that gap. It works today only because
+> `enqueue_capture()` hands off to a worker thread which then drives gphoto2,
+> and that path is almost certainly slower than 100 ms — but "almost certainly"
+> is doing real work in that sentence, and the figure has never been measured.
+> A faster camera path, or a mock, would photograph the ramp.
+>
+> The ramp itself is not negotiable: snapping from an idle animation to near-max
+> current is hard on the PSU and the inrush. The fix, if measurement shows one is
+> needed, is for the Pi to wait `RAMP_MS` after the ack before tripping the
+> shutter — cheap, and it makes the guarantee explicit rather than incidental.
+
+### When it does not go to plan
+
+`capture()` returns `False` for four different reasons, and the FSM treats them
+identically — it logs and fires anyway, because refusing to photograph a guest
+over a quiet peripheral is the worse failure.
+
+| Reason | What the ring is actually doing |
+|---|---|
+| `ERR TIMEOUT` from the node | **Unknown.** The render task may have applied it a moment later |
+| Transport timeout | **Unknown.** The request may have arrived |
+| Node unreachable | Not lit |
+| Ring disabled in config | Not lit, and nothing was sent |
+
+The first two are ambiguous by construction and cannot be resolved from the
+reply. `GET /state` would settle it, at the cost of another round trip on a link
+that has just demonstrated it is slow. See
+[LED_PROTOCOL.md](LED_PROTOCOL.md#errors).
+
+The safety net is the node's own: 30 s in Capture without a release drops it to
+Idle, and 10 s without any inbound line drops it to Link Lost. A host that dies
+mid-shot therefore leaves full white within 10 s, not 30 — the watchdog is
+deliberately the shorter of the two.
+
+---
+
 ## Layer stack
 
 ```
