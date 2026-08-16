@@ -339,14 +339,14 @@ def main():
             print("    bare retry is not evidence. Re-run with more --shots.")
         elif len(bare) >= len(fails) * 0.8:
             print("    The BARE retry recovers almost everything => the re-init is pure cost.")
-            print("    Drop `self.connected = False` from _attempt_capture's exception path")
-            print("    (backend/camera_service.py): a failed shot then costs the guest ~2.5s")
+            print("    Drop `self.connected = False` from trigger_capture's exception path")
+            print("    (backend/camera/device.py): a failed shot then costs the guest ~2.5s")
             print("    instead of ~7.8s.")
         elif not bare:
             print("    The bare retry never recovers. BEWARE THE CONFOUND: the re-init path")
             print("    also inserts ~3.2s before retrying, so it may simply be buying time for")
             print("    a moving subject to settle rather than resetting anything. Sweep")
-            print("    --bare-delay-s 1.5 to separate the two before touching camera_service.")
+            print("    --bare-delay-s 1.5 to separate the two before touching the camera package.")
         else:
             print("    Mixed. Sweep --bare-delay-s (0.1/0.3/1.5): if the failures that needed a")
             print("    re-init recover with a longer bare delay, it was only ever buying time.")
