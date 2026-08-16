@@ -9,26 +9,30 @@
 }
 
 /* ═══ Loading State ═══ */
+/* "Creating your keepsake" — shown on its own while the backend composites,
+   so like the countdown's loading/error cards this is centred content on an
+   otherwise empty panel rather than part of the reveal layout. Sized to match
+   that card exactly; the two read as the same card to a guest. */
 .reveal-loading {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--space-xs);
+  gap: clamp(var(--space-xs), 1.5vh, var(--space-md));
 }
 
 .reveal-spinner {
-  width: 120px;
-  height: 120px;
-  border: 8px solid var(--champagne);
+  width: clamp(120px, 10vw, 190px);
+  height: clamp(120px, 10vw, 190px);
+  border: clamp(8px, 0.7vw, 12px) solid var(--champagne);
   border-top-color: var(--gold);
   border-radius: 50%;
   animation: spin var(--duration-slower) linear infinite;
-  margin-bottom: var(--space-sm);
+  margin-bottom: clamp(var(--space-sm), 2vh, var(--space-lg));
 }
 
 .reveal-loading__kicker {
   font-family: var(--font-display);
-  font-size: var(--text-h1);
+  font-size: clamp(var(--text-h1), 5vw, 4.5rem);
   font-weight: 400;
   font-style: italic;
   color: var(--gold);
@@ -36,7 +40,7 @@
 
 .reveal-loading__sub {
   font-family: var(--font-display);
-  font-size: var(--text-h1);
+  font-size: clamp(var(--text-h1), 5vw, 4.5rem);
   font-weight: 400;
   font-style: italic;
   color: var(--gold);
@@ -272,16 +276,17 @@
 }
 
 /* ═══ Error ═══ */
+/* Same category as the loading card above: it replaces the whole reveal. */
 .reveal-error {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--space-md);
+  gap: clamp(var(--space-md), 3vh, var(--space-xl));
 }
 
 .reveal-error__text {
   font-family: var(--font-body);
-  font-size: var(--text-body);
+  font-size: clamp(var(--text-body), 2vw, var(--text-h2));
   color: var(--dusty-rose);
   text-align: center;
 }
