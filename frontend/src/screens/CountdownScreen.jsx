@@ -67,7 +67,12 @@ export default function CountdownScreen({
   const ringStartTime = COUNTDOWN_FROM >= 10 ? 0 : Math.max(0, (10 - COUNTDOWN_FROM) + 0.1);
   const flashEnabled = config?.flash_enabled !== false;
   const shotIntervalMs = config?.shot_interval_ms || 1000;
-  const [phase, setPhase] = useState('COUNTDOWN'); // COUNTDOWN | POSING | BETWEEN
+  // Starts IDLE, not COUNTDOWN: the ring's visibility gate below reads
+  // phase === 'COUNTDOWN' as "a round is running". A COUNTDOWN default is
+  // already true before startRound() has ever run, which paints the parked ring
+  // over the camera-loading spinner — and over the camera-error screen, where
+  // no round ever starts, so it would sit there frozen until the guest bails.
+  const [phase, setPhase] = useState('IDLE'); // IDLE | COUNTDOWN | POSING | BETWEEN
   const [count, setCount] = useState(COUNTDOWN_FROM);
   const [flashActive, setFlashActive] = useState(false);
   const [isCapturing, setIsCapturing] = useState(false);
@@ -481,13 +486,18 @@ export default function CountdownScreen({
         )}
 
         {/* Countdown video - always mounted for performance, toggled via opacity.
-            Shown only while phase === COUNTDOWN: the numbers and the ring now
-            share one clock (the tick starts from the video's own 'playing'
-            event), so the ring reaches its end just as the tick completes. The
-            phase gate is the hard guarantee on top of that timing — the instant
-            the count hits zero and phase flips to POSING, the ring is hidden, so
-            it is structurally impossible for it to paint over "Smile"/the flash
-            even if onEnded is late or dropped. z-index keeps it below the flash
+            Shown only while a round is actually running — phase === COUNTDOWN is
+            entered by runCountdown and is never the initial state — which keeps
+            the ring hidden at BOTH ends. Before the first round it cannot paint
+            over the camera-loading spinner or the camera-error screen (it sits
+            parked on this round's opening frame, and at z-index 10 it would
+            otherwise cover those overlays at z-index 5). And the instant the
+            count hits zero and phase flips to POSING it cannot paint over
+            "Smile"/the flash, even if onEnded is late or dropped.
+
+            Within a round the numbers and the ring share one clock (the tick
+            starts from the video's own 'playing' event), so the ring reaches its
+            end just as the tick completes. z-index keeps it below the flash
             (100). */}
         <div
           className="countdown-center"
