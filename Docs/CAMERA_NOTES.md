@@ -5,7 +5,7 @@ Hard-won facts about how **this specific camera body** behaves over USB/PTP
 "35s whine" saga, the "first preview always fails" fix, and the "~3s
 pre-shutter stall" characterization). Everything here is **log-proven on the
 booth hardware** unless marked otherwise. Read this
-before touching `backend/camera_service.py`. For step-by-step diagrams of
+before touching `backend/camera/`. For step-by-step diagrams of
 the startup and countdown→reveal flows, see
 [CAMERA_SEQUENCES.md](CAMERA_SEQUENCES.md).
 
