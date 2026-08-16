@@ -3,6 +3,7 @@ import base64
 from typing import List
 from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont, ImageOps
+from backend.logger import log
 from backend.settings import OverlayConfig
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -38,6 +39,49 @@ def decode_base64_image(base64_str: str) -> Image.Image:
         from backend.storage import PHOTOS_DIR
         filepath = os.path.join(PHOTOS_DIR, base64_str)
         return Image.open(filepath)
+
+# Longest edge of a screen preview, in pixels. The booth panel is 1920x1080 and
+# the reveal photo is capped at 58vh, so 1400 is already more than it can show.
+PREVIEW_MAX_EDGE = 1400
+
+
+def generate_previews(raw_filenames: List[str]) -> List[str]:
+    """Write a screen-sized copy of each raw capture; return their filenames.
+
+    REVEAL and PICK_FAVORITE show the guest their actual shots rather than the
+    print composite, because the composite bakes in the matte and the names/date
+    caption. But a raw off the M50 is 24MP / ~7MB, and the Pi's browser needs
+    1-2s to decode one — long enough that the gold frame paints empty and white
+    before the picture lands. These previews are the same picture at screen size
+    and carry no matte or caption either. The print and the download still use
+    the full-resolution composite.
+
+    `draft()` is what makes this cheap enough to run inside the job the guest is
+    already waiting on: on a JPEG it lets libjpeg downscale in the DCT domain
+    while decoding (1/2, 1/4, 1/8), so the full 24MP is never expanded into
+    memory at all.
+
+    Best-effort by design — a capture that fails to convert is skipped rather
+    than failing the whole job, and callers fall back to showing the raw.
+    """
+    previews: List[str] = []
+    for raw in raw_filenames:
+        try:
+            source = os.path.join(PHOTOS_DIR, raw)
+            with Image.open(source) as img:
+                img.draft("RGB", (PREVIEW_MAX_EDGE, PREVIEW_MAX_EDGE))
+                preview = img.convert("RGB")
+            preview.thumbnail((PREVIEW_MAX_EDGE, PREVIEW_MAX_EDGE), Image.LANCZOS)
+            name = f"preview_{raw}"
+            preview.save(os.path.join(PHOTOS_DIR, name), "JPEG", quality=82, optimize=True)
+            previews.append(name)
+        except Exception as e:
+            # Not fatal: the screens fall back to the raw, which is slow to
+            # paint but correct.
+            log.warn("photo_processor", "preview_failed",
+                     f"Could not build a preview for {raw}: {e}")
+    return previews
+
 
 def create_mock_overlay_png(filename: str, overlay_id: str):
     """Generate a mock transparent overlay PNG if it is missing."""

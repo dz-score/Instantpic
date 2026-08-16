@@ -10,6 +10,11 @@ class BoothState(BaseModel):
     layoutMode: str = "single"
     totalShots: int = 1                # How many shots this layout requires (FSM-owned)
     capturedImages: List[str] = []
+    # Screen-sized copies of capturedImages, produced by the processing job.
+    # REVEAL and PICK_FAVORITE render these instead of the raws, which are 24MP
+    # and take the Pi's browser 1-2s to decode. Empty until processing finishes
+    # (and stays empty if it failed), so the UI falls back to capturedImages.
+    previewImages: List[str] = []
     finalPhoto: Optional[str] = None
     retakeCount: int = 0
     allSessionPhotos: List[Dict[str, Any]] = []
@@ -100,6 +105,7 @@ class StateMachine:
                 self._state.totalShots = SHOTS_PER_LAYOUT.get(mode, 1)
                 self._state.screen = "COUNTDOWN"
                 self._state.capturedImages = []
+                self._state.previewImages = []
                 self._state.retakeCount = 0
                 self._state.finalPhoto = None
                 self._state.allSessionPhotos = []
@@ -129,6 +135,7 @@ class StateMachine:
             elif event_type == "RETAKE":
                 self._state.retakeCount += 1
                 self._state.capturedImages = []
+                self._state.previewImages = []
                 self._state.finalPhoto = None
                 self._state.screen = "COUNTDOWN"
                 
@@ -144,6 +151,7 @@ class StateMachine:
                 for p in self._state.allSessionPhotos:
                     if p["filename"] == filename:
                         self._state.capturedImages = p.get("rawImages", [])
+                        self._state.previewImages = p.get("previewImages", [])
                         break
                 await self._proceed_to_print_flow(settings)
 
@@ -283,7 +291,7 @@ class StateMachine:
                     images = list(self._state.capturedImages)
                     await self._job_queue.enqueue(jobs.process_photo_job(
                         images, self._state.layoutMode, settings,
-                        on_success=lambda filename: self.job_photo_processed(filename, images),
+                        on_success=lambda filename, previews: self.job_photo_processed(filename, images, previews),
                         on_failure=self.job_failed,
                     ))
             # Otherwise stay in COUNTDOWN; broadcasting the new state lets the
@@ -302,18 +310,23 @@ class StateMachine:
         # watchdog remains the floor if the guest walks away.
 
     # Job Completion Callbacks
-    async def job_photo_processed(self, filename: str, images: list):
+    async def job_photo_processed(self, filename: str, images: list, previews: list = None):
+        previews = previews or []
         async with self._get_lock():
             self._state.isProcessing = False
             self._state.finalPhoto = filename
+            self._state.previewImages = previews
             self._state.allSessionPhotos.append({
                 "filename": filename,
-                "rawImages": images
+                "rawImages": images,
+                "previewImages": previews
             })
             state_dict = self._state.model_dump()
         await self.broadcast_state(state_dict)
 
-    async def job_frame_processed(self, filename: str):
+    # `previews` is accepted and ignored: the queue reports every processing job
+    # the same way, and this one feeds PRINTING, which shows no individual shots.
+    async def job_frame_processed(self, filename: str, previews: list = None):
         async with self._get_lock():
             self._state.isProcessing = False
             self._state.finalPhoto = filename

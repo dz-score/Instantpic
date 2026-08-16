@@ -50,11 +50,45 @@ async def test_job_queue_photo_processing(queue):
                 ["raw1.jpg"], "single", "Hello", "none", AppSettings().overlays
             )
 
-            # Verify the success callback received the result; failure untouched
-            on_success.assert_awaited_once_with("final_photo.jpg")
+            # Verify the success callback received the result; failure untouched.
+            # No emit_previews on this job, so the preview list comes back empty
+            # and the screens fall back to the raws.
+            on_success.assert_awaited_once_with("final_photo.jpg", [])
             on_failure.assert_not_awaited()
 
             await queue.stop()
+
+
+@pytest.mark.anyio
+async def test_job_queue_emits_previews_when_asked(queue):
+    """emit_previews routes the raws through the preview generator and hands the
+    result to the submitter alongside the composite."""
+    with patch("backend.job_queue.process_photo_layout") as mock_process:
+        with patch("backend.job_queue.generate_previews") as mock_previews:
+            with patch("backend.job_queue.enforce_circular_storage"):
+                mock_process.return_value = "final_photo.jpg"
+                mock_previews.return_value = ["preview_raw1.jpg"]
+
+                on_success = AsyncMock()
+                queue.start()
+
+                await queue.enqueue({
+                    "type": "PROCESS_PHOTO",
+                    "images": ["raw1.jpg"],
+                    "layout": "single",
+                    "text": "Hello",
+                    "overlay_id": "none",
+                    "emit_previews": True,
+                    "on_success": on_success,
+                    "on_failure": AsyncMock(),
+                })
+
+                await queue._get_queue().join()
+
+                mock_previews.assert_called_once_with(["raw1.jpg"])
+                on_success.assert_awaited_once_with("final_photo.jpg", ["preview_raw1.jpg"])
+
+                await queue.stop()
 
 @pytest.mark.anyio
 async def test_job_queue_unknown_job(queue):

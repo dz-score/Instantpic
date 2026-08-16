@@ -47,12 +47,16 @@ export default function PickFavoriteScreen({
       {/* ── Photo grid ── */}
       <div className="pick-fav__grid">
         {photos.map((photo, index) => {
-          // Show the raw capture(s), not the print composite (which bakes in
-          // the matte + names/date caption). Fall back to the composite if the
-          // raw shots aren't present.
-          const raws = (photo.rawImages && photo.rawImages.length)
-            ? photo.rawImages
-            : [photo.filename];
+          // Show the captured shot(s), not the print composite (which bakes in
+          // the matte + names/date caption). Prefer the backend's screen-sized
+          // previews — this screen can hold several takes at once, so pointing
+          // it at the 24MP raws meant decoding a handful of them together. Fall
+          // back to the raws, then the composite.
+          const raws = (photo.previewImages && photo.previewImages.length)
+            ? photo.previewImages
+            : ((photo.rawImages && photo.rawImages.length)
+              ? photo.rawImages
+              : [photo.filename]);
           return (
             <div className="pick-fav__item" key={photo.filename}>
               <button
@@ -68,6 +72,7 @@ export default function PickFavoriteScreen({
                         src={`/photos/${f}?t=${cacheKey.current}`}
                         alt=""
                         className="pick-fav__collage-img"
+                        decoding="async"
                       />
                     ))}
                   </div>
@@ -76,6 +81,7 @@ export default function PickFavoriteScreen({
                     src={`/photos/${raws[0]}?t=${cacheKey.current}`}
                     alt={`Photo ${index + 1}`}
                     className="pick-fav__img"
+                    decoding="async"
                   />
                 )}
               </button>
