@@ -234,6 +234,7 @@ export default function App() {
           onCancel={() => api.sendEvent('FINISH')}
           language={language}
           rawImages={appState?.capturedImages || []}
+          previewImages={appState?.previewImages || []}
         />
       )}
 

@@ -14,8 +14,12 @@ def test_process_job_keys_match_worker_contract():
     photo = jobs.process_photo_job(["a.jpg"], "single", AppSettings(), _noop, _noop)
     frame = jobs.process_frame_job(["a.jpg"], "collage", "blush_floral", AppSettings(), _noop, _noop)
 
-    assert set(photo.keys()) == expected
+    # Only the capture pass asks for screen previews: its output is what REVEAL
+    # and PICK_FAVORITE render. The frame pass feeds PRINTING, which shows no
+    # individual shots, so it would be paying for previews nobody looks at.
+    assert set(photo.keys()) == expected | {"emit_previews"}
     assert set(frame.keys()) == expected
+    assert photo["emit_previews"] is True
     assert photo["type"] == "PROCESS_PHOTO"
     assert frame["type"] == "PROCESS_FRAME"
     assert frame["overlay_id"] == "blush_floral"

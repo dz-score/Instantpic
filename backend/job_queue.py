@@ -2,7 +2,7 @@ import asyncio
 import os
 from backend.settings import SettingsService
 from backend.logger import log
-from backend.photo_processor import process_photo_layout
+from backend.photo_processor import generate_previews, process_photo_layout
 from backend.print_service import PrintService
 from backend import storage
 from backend.storage import enforce_circular_storage
@@ -67,6 +67,15 @@ class JobQueue:
                             self._settings.get().overlays,
                         )
 
+                        # Screen previews of the individual shots, for the jobs
+                        # whose output the guest actually looks at. Same thread
+                        # pool, still inside the wait the REVEAL spinner covers.
+                        previews = []
+                        if job_data.get("emit_previews"):
+                            previews = await loop.run_in_executor(
+                                None, generate_previews, images
+                            )
+
                         # Cleanup storage in background
                         task = asyncio.create_task(self._run_cleanup())
                         self._background_tasks.add(task)
@@ -74,7 +83,7 @@ class JobQueue:
 
                         # Hand the result back to whoever submitted the job.
                         if on_success:
-                            await on_success(filename)
+                            await on_success(filename, previews)
 
                     elif job_type == "PRINT_PHOTO":
                         # Printing blocks (mock sleeps; CUPS shells out for up to

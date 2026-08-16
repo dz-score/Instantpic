@@ -20,13 +20,20 @@ def compose_banner_text(settings: AppSettings) -> str:
 
 def process_photo_job(images: list, layout: str, settings: AppSettings,
                       on_success, on_failure) -> dict:
-    """Initial capture processing; the result lands on the REVEAL screen."""
+    """Initial capture processing; the result lands on the REVEAL screen.
+
+    Asks for screen previews too: this is the only processing pass whose output
+    the guest looks at on screen. The frame re-processing below feeds PRINTING,
+    where nothing shows the individual shots, so it would be paying for previews
+    nobody sees.
+    """
     return {
         "type": "PROCESS_PHOTO",
         "images": images,
         "layout": layout,
         "text": compose_banner_text(settings),
         "overlay_id": settings.selected_overlay or "none",
+        "emit_previews": True,
         "on_success": on_success,
         "on_failure": on_failure,
     }

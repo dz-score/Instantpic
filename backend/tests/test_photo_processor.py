@@ -1,7 +1,7 @@
 import os
 from PIL import Image
 from backend.settings import AppSettings
-from backend.photo_processor import process_photo_layout
+from backend.photo_processor import PREVIEW_MAX_EDGE, generate_previews, process_photo_layout
 
 # The overlay catalogue is passed in now rather than read from a global.
 OVERLAYS = AppSettings().overlays
@@ -57,3 +57,44 @@ def test_process_photo_layout_overlay_resilience(temp_workspace, temp_config, mo
     
     filepath = os.path.join(temp_workspace["photos_dir"], filename)
     assert os.path.exists(filepath)
+
+
+def test_generate_previews_downscales_and_names(temp_workspace):
+    """Previews are screen-sized copies of the raws, named off the source."""
+    photos_dir = temp_workspace["photos_dir"]
+    # Stand in for a capture straight off the camera: far larger than the panel.
+    raw = Image.new("RGB", (6000, 4000), (120, 90, 60))
+    raw.save(os.path.join(photos_dir, "capture_abc.jpg"), "JPEG")
+
+    previews = generate_previews(["capture_abc.jpg"])
+
+    assert previews == ["preview_capture_abc.jpg"]
+    out = Image.open(os.path.join(photos_dir, previews[0]))
+    assert max(out.size) == PREVIEW_MAX_EDGE
+    # Aspect ratio preserved — these are shown inside a frame that hugs them.
+    assert abs((out.size[0] / out.size[1]) - 1.5) < 0.01
+
+
+def test_generate_previews_skips_unreadable_sources(temp_workspace):
+    """A raw that cannot be converted is skipped, not fatal: the screens fall
+    back to the raw itself, which is slow to paint but correct."""
+    photos_dir = temp_workspace["photos_dir"]
+    raw = Image.new("RGB", (800, 600), (10, 10, 10))
+    raw.save(os.path.join(photos_dir, "capture_ok.jpg"), "JPEG")
+
+    previews = generate_previews(["missing.jpg", "capture_ok.jpg"])
+
+    assert previews == ["preview_capture_ok.jpg"]
+
+
+def test_generate_previews_does_not_upscale(temp_workspace):
+    """A capture already smaller than the cap is copied at its own size."""
+    photos_dir = temp_workspace["photos_dir"]
+    Image.new("RGB", (640, 480), (200, 200, 200)).save(
+        os.path.join(photos_dir, "capture_small.jpg"), "JPEG"
+    )
+
+    previews = generate_previews(["capture_small.jpg"])
+
+    out = Image.open(os.path.join(photos_dir, previews[0]))
+    assert out.size == (640, 480)

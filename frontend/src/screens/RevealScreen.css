@@ -106,8 +106,14 @@
   margin-bottom: clamp(var(--space-sm), 3vh, var(--space-lg));
 }
 
-/* Gold frame hugging the raw photo(s). Sizes to its content so the frame
-   surrounds the picture with no matte. */
+/* Gold frame hugging the photo(s). Sizes to its content so the frame
+   surrounds the picture with no matte.
+
+   Held invisible until the pictures have actually painted (JS adds --loaded on
+   the last onLoad), then the frame and its contents animate up together. The
+   frame is opaque white, so revealing it early meant the browser painted an
+   empty white card in the final layout for as long as the decode took — a
+   second or more back when these pointed at the 24MP raws. */
 .reveal-photo {
   display: inline-flex;
   border: 3px solid var(--gold);
@@ -115,6 +121,10 @@
   box-shadow: 0 8px 40px rgba(45, 36, 32, 0.12), var(--shadow-glow);
   background: var(--bg-elevated);
   overflow: hidden;
+  opacity: 0;
+}
+
+.reveal-photo--loaded {
   animation: reveal-up var(--duration-dramatic) var(--ease-dramatic) forwards;
 }
 
