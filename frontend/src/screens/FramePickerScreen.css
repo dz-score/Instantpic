@@ -45,55 +45,7 @@
   color: var(--gold-dark);
 }
 
-/* ═══ Flourish ═══ */
-.frame__flourish {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-2xs);
-  margin-bottom: var(--space-2xs);
-}
-
-.frame__flourish-hearts {
-  font-size: var(--text-body);
-  color: var(--dusty-rose);
-  letter-spacing: var(--tracking-lg);
-  opacity: 0.7;
-}
-
-.frame__flourish-line {
-  display: flex;
-  align-items: center;
-  gap: var(--space-xs);
-}
-
-.frame__flourish-curl {
-  font-size: var(--text-body);
-  color: var(--gold);
-  opacity: 0.6;
-}
-
-.frame__flourish-curl--flip {
-  transform: scaleX(-1);
-}
-
-.frame__flourish-dash {
-  width: 80px;
-  height: 1px;
-  background: var(--gold-light);
-}
-
 /* ═══ Heading ═══ */
-.frame__kicker {
-  font-family: var(--font-body);
-  font-size: var(--text-label);
-  font-weight: 500;
-  letter-spacing: var(--tracking-md);
-  text-transform: uppercase;
-  color: var(--gold);
-  margin-bottom: 2px;
-}
-
 .frame__title {
   font-family: var(--font-script);
   font-size: clamp(var(--text-h1), 7vw, 6.5rem);
@@ -160,29 +112,6 @@
   flex-direction: column;
   align-items: center;
   gap: clamp(var(--space-sm), 2vh, var(--space-lg));
-}
-
-.frame__options-header {
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm);
-  margin-bottom: var(--space-xs);
-}
-
-.frame__options-dash {
-  width: 40px;
-  height: 1px;
-  background: var(--gold-light);
-}
-
-.frame__options-label {
-  font-family: var(--font-body);
-  font-size: var(--text-label);
-  font-weight: 600;
-  letter-spacing: var(--tracking-md);
-  text-transform: uppercase;
-  color: var(--text-secondary);
-  white-space: nowrap;
 }
 
 /* ── Frame Cards Grid ── */
@@ -322,18 +251,6 @@
   font-weight: 700;
   letter-spacing: var(--tracking-md);
   text-transform: uppercase;
-}
-
-/* ═══ Footer ═══ */
-.frame__footer {
-  font-family: var(--font-body);
-  font-size: 0.75rem;
-  font-weight: 400;
-  letter-spacing: var(--tracking-md);
-  text-transform: uppercase;
-  color: var(--text-secondary);
-  opacity: 0.7;
-  margin-top: var(--space-xs);
 }
 
 /* Reuse pop-in from PickFavorite */
