@@ -1,4 +1,4 @@
-# Gravity Booth
+# Instant Booth
 
 A self-contained wedding photo booth. A FastAPI backend drives a Canon M50 over gphoto2, composites the shots into a printable layout, sends them to a dye-sub printer via CUPS, and serves a React kiosk UI — all from a single uvicorn process on a Raspberry Pi (or any Linux host).
 
