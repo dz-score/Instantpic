@@ -1,6 +1,6 @@
-# Instant Booth
+# Instantpic
 
-A self-contained wedding photo booth. A FastAPI backend drives a Canon M50 over gphoto2, composites the shots into a printable layout, sends them to a dye-sub printer via CUPS, and serves a React kiosk UI — all from a single uvicorn process on a Raspberry Pi (or any Linux host).
+A self-contained wedding photo booth. A FastAPI backend drives a Canon M50 over gphoto2, composites the shots into a printable layout, sends them to a dye-sub printer via CUPS, and serves a React kiosk UI, all from a single uvicorn process on a Raspberry Pi (or any Linux host).
 
 ## How it works
 
@@ -18,7 +18,7 @@ Blocking work (Pillow compositing, shelling out to `lp`) goes to an async job qu
 
 | Path | What it is |
 |---|---|
-| `backend/` | FastAPI app. `main.py` is the composition root — it constructs every service and wires the FSM. |
+| `backend/` | FastAPI app. `main.py` is the composition root, it constructs every service and wires the FSM. |
 | `backend/routers/` | HTTP routes (booth, camera, config, logs, photos, sse, system). |
 | `backend/tests/` | pytest suite covering the FSM, camera worker, job queue, settings, printing, storage. |
 | `frontend/` | React + Vite SPA. Eight screens under `src/screens/`, three hooks (`useSse`, `useCamera`, `useApi`). |
@@ -46,12 +46,12 @@ cd frontend && npm install && npm run dev
 ## Hardware notes
 
 - **gphoto2 must be built from source against the system libgphoto2.** The `--no-binary gphoto2` line in `backend/requirements.txt` is load-bearing: the bundled 2.5.34 wheel stalls M50 live view (~3s dead grab every 6s) and blocks the shutter mid-countdown. Requires `libgphoto2-dev` and `pkg-config`.
-- With no camera or printer attached, set `camera_backend: "mock"` and `printer_name: "mock"` — both have drop-in mock drivers.
+- With no camera or printer attached, set `camera_backend: "mock"` and `printer_name: "mock"`, both have drop-in mock drivers.
 - [Docs/CAMERA_NOTES.md](Docs/CAMERA_NOTES.md) records how this specific M50 body behaves. Read it before touching `camera_service.py`.
 
 ## Admin
 
-Five rapid taps on the "L'Etoile" watermark opens a PIN-gated panel for settings, diagnostics, recent logs, and emergency actions (restart booth/camera/printer, clear the print queue). The PIN lives in `config.json` in plaintext — this is a LAN-only kiosk appliance, not an internet-facing service.
+Five rapid taps on the "L'Etoile" watermark opens a PIN-gated panel for settings, diagnostics, recent logs, and emergency actions (restart booth/camera/printer, clear the print queue). The PIN lives in `config.json`.
 
 ## Further reading
 
