@@ -49,7 +49,7 @@
 |  |  |                  |            |               |  | |
 |  |  |  main.py  -------+-----------+               |  | |
 |  |  |   +-- state_machine.py  (booth FSM)          |  | |
-|  |  |   +-- job_queue.py      (async worker)       |  | |
+|  |  |   +-- job_queue.py      (2 lane workers)     |  | |
 |  |  |   +-- sse_service.py    (push events)        |  | |
 |  |  |   +-- camera/           (gphoto2 package)    |  | |
 |  |  |   +-- photo_processor.py (Pillow compositing)|  | |
@@ -102,7 +102,7 @@ state_machine = StateMachine(sse_svc, job_queue, camera_svc)   # last: needs the
 app.state.sse / .settings / .print_svc / .camera / .state_machine = ...   # routes read these
 
 sse_svc.bind_loop()   # bind event loop BEFORE camera threads start dispatching SSE
-job_queue.start()     # launch asyncio worker task
+job_queue.start()     # launch both lane workers
 camera_svc.init()     # connect to gphoto2 camera
 # SIGINT/SIGTERM -> graceful shutdown
 ```
@@ -189,20 +189,28 @@ Each state change broadcasts via `sse_svc.dispatch_event("state_update", ...)`. 
 ### `job_queue.py` — Async Work Queue
 **Responsibility:** Offloads blocking work (CPU-bound image processing, shelling out to CUPS) from the asyncio event loop to a thread pool, then reports the result through per-job `on_success`/`on_failure` coroutines supplied by the submitter. The queue does not know or import whoever consumes the results — the submitter owns that wiring.
 
+**Two lanes.** Printing and processing have opposite latency profiles, and
+processing is the one the guest is watching. A print blocks its worker for up
+to ~63s (CUPS 30s timeout + retry delay + 30s retry); on a shared lane a guest
+who tapped "Another" could queue their processing job behind the *previous*
+guest's retrying print and watch the REVEAL spinner through someone else's
+paper jam. Each lane is still strictly serial in itself.
+
 **Architecture:**
 ```
-asyncio.Queue -> _worker() task
-                    |
-                    +-- PROCESS_PHOTO / PROCESS_FRAME
-                    |     +-- loop.run_in_executor(process_photo_layout)
-                    |           +-- await on_success(filename)   # supplied by submitter
-                    |               await on_failure(error)
-                    |
-                    +-- PRINT_PHOTO
-                    |     +-- loop.run_in_executor(print_svc.print)
-                    |           +-- await on_success / on_failure with the real outcome
-                    |
-                    +-- After each processing job: asyncio.create_task(_run_cleanup())
+enqueue(job) -> _lane_for(type)
+    |
+    +-- process lane: asyncio.Queue -> _worker("process")
+    |     +-- PROCESS_PHOTO / PROCESS_FRAME  (and any unknown type)
+    |     |     +-- loop.run_in_executor(process_photo_layout)
+    |     |           +-- await on_success(filename)   # supplied by submitter
+    |     |               await on_failure(error)
+    |     +-- After each processing job: asyncio.create_task(_run_cleanup())
+    |
+    +-- print lane:   asyncio.Queue -> _worker("print")
+          +-- PRINT_PHOTO
+                +-- loop.run_in_executor(print_svc.print)
+                      +-- await on_success / on_failure with the real outcome
                                                       +-- enforce_circular_storage()
 ```
 
