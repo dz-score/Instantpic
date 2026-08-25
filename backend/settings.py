@@ -48,6 +48,10 @@ class AppSettings(BaseModel):
     shot_interval_ms: int = 500
     flash_enabled: bool = True
     max_photos_per_session: int = 3
+    # Browser-side inactivity timeout. The frontend timer is the precise one —
+    # it resets on touch, which the backend cannot see — but the FSM arms a
+    # floor at session_timeout + SESSION_WATCHDOG_GRACE_S for the case that
+    # timer never fires at all (dead kiosk tab). See _manage_watchdog.
     session_timeout: int = 120
     # Floor for a stalled capture sequence: if the browser or camera dies
     # mid-session, COUNTDOWN would strand forever. After this many seconds

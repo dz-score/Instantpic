@@ -276,7 +276,8 @@ Only shown when `config.overlays` contains at least one non-"none" entry.
 
 ### 7. Inactivity Timeout
 
-Fires when a guest walks away mid-session.
+Fires when a guest walks away mid-session. Two layers: the browser's timer is
+the precise one, the backend's watchdog is the floor underneath it.
 
 ```
 Any screen (except ATTRACT, DOWNLOAD, LOADING):
@@ -292,10 +293,28 @@ Any screen (except ATTRACT, DOWNLOAD, LOADING):
       → FSM: any screen → ATTRACT (full BoothState reset)
       → SSE state_update → AttractScreen renders
 
-  Camera auto-standby (independent):
-    camera preview watchdog fires if no preview request in 10s
-    camera enters low-power standby automatically
-    resumes when next /api/camera/preview request arrives
+BACKEND FLOOR (state_machine._manage_watchdog), armed on every screen but ATTRACT:
+  COUNTDOWN            → capture_stall_timeout   (tight; a shot lands or it doesn't)
+  every other screen   → session_timeout + SESSION_WATCHDOG_GRACE_S (60s)
+
+  Re-armed on every transition. Fires only if the browser never sent TIMEOUT
+  at all — i.e. the kiosk tab crashed, froze, or lost the network. It cannot
+  see pointerdown, which is exactly why it waits out a full grace period
+  rather than racing the frontend: a guest who is merely reading the screen
+  must never be reset out from under a live browser.
+      → FSM: any screen → ATTRACT, and log session_abandoned / capture_stalled
+```
+
+> Ending a session is workflow, and workflow is backend-owned (Rule 1). Before
+> the floor was generalized only COUNTDOWN had one, so a browser that died at
+> REVEAL or PICK_FAVORITE stranded the booth there indefinitely and the next
+> guest walked up to the previous guest's photos.
+
+```
+Camera auto-standby (independent of both timers):
+  camera preview watchdog fires if no preview request in 10s
+  camera enters low-power standby automatically
+  resumes when next /api/camera/preview request arrives
 ```
 
 ---
