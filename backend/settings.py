@@ -63,8 +63,19 @@ class AppSettings(BaseModel):
     show_names_on_photo: bool = True
     printer_name: str = "mock"
     printer_options: str = "fit-to-page media=4x6"
+    # Cap on FILES in the photos dir, not on sessions or on keepsakes. One
+    # 3-shot session that prints leaves 7: three raws (capture_*.jpg), three
+    # screen previews (preview_capture_*.jpg) and one composite (photo_*.jpg).
+    # So 1000 is roughly 140 sessions, not 1000 photos — size it from that,
+    # or an SD card gets sized about 7x too small.
     max_photos: int = 1000
     disk_min_free_gb: float = 2.0
+    # Circular storage will not delete a file younger than this. It runs after
+    # every processing job and cannot ask the FSM what is on screen, so age is
+    # its proxy for "still in use" — long enough to cover the session in front
+    # of the guest plus a QR code they have not scanned yet. See
+    # storage.enforce_circular_storage.
+    storage_protect_recent_s: int = 1800
     couple_names: str = "Sarah & Michael"
     event_date: str = "June 14, 2026"
     default_text: str = "Sarah & Michael \u00b7 June 14, 2026"
