@@ -196,12 +196,19 @@ Put the node on the booth's own AP as its only client, and hand-pick the
 channel. A wedding venue is a hostile 2.4 GHz environment, and retries land
 exactly in the countdown-to-shutter window (`Docs/LED_UART_SWITCH.md`).
 
-**4. Point the booth at it.** Admin → System → LED Ring: turn the ring on, enter
-the address (host or IP only — no scheme, no port), then tap **Test Ring**.
-A healthy node answers `PONG` in a few milliseconds. Changes apply immediately;
-there is no restart.
+**4. Point the booth at it.** Admin → **LEDs**: turn the ring on, enter the
+address (host or IP only — no scheme, no port), then tap **Ping Node**. A healthy
+node answers `PONG` in a few milliseconds. Changes apply immediately; there is no
+restart.
 
-**5. Confirm the card.** The LED Ring card in Live Diagnostics goes green and
+**5. Check the strip.** Still on the LEDs tab, tap All Red, All Green, All Blue
+and All White in turn and walk the ring. Each lights one physical die flat at
+full brightness, so a pixel that is dead, miswired or has one channel out is
+obvious — which it is not under any of the booth patterns, since they all mix
+dies. Tap **Back to Idle** when done (the node returns on its own after two
+minutes either way). These are refused unless the booth is on its idle screen.
+
+**6. Confirm the card.** The LED Ring card in System → Live Diagnostics goes green and
 starts reporting CAPTURE p95 once a session has run. That number is the one the
 transport decision rests on — see `Docs/LED_UART_SWITCH.md` for the thresholds
 that would trigger a move to UART, and record it at the venue rather than in a
@@ -230,7 +237,7 @@ the heartbeat alone — a `PING` is enough. So:
 - [ ] Chromium kiosk autostart configured
 - [ ] (Optional) VNC/Xvfb for headless operation
 - [ ] (Optional) Wi‑Fi AP & captive portal configured
-- [ ] (Optional) LED ring: own 5 V supply, DHCP reservation, address entered, Test Ring green
+- [ ] (Optional) LED ring: own 5 V supply, DHCP reservation, address entered, ping green, all four dies checked
 
 ---
 **You can now power the Pi, let it boot, and the photo‑booth UI will appear automatically in kiosk mode.**

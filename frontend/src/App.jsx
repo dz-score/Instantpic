@@ -322,6 +322,7 @@ export default function App() {
           onClose={() => setShowAdmin(false)}
           getDiagnostics={api.getDiagnostics}
           testLed={api.testLed}
+          testLedChannel={api.testLedChannel}
           emergencyAction={api.emergencyAction}
           changePin={api.changePin}
           getRecentLogs={api.getRecentLogs}

@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import ToggleSwitch from '../controls/ToggleSwitch';
 import './SystemTab.css';
 
 /**
@@ -14,7 +13,7 @@ import './SystemTab.css';
  * logs, only when the operator opts into Auto), and every interval is cleared
  * on unmount.
  */
-export default function SystemTab({ getDiagnostics, emergencyAction, changePin, currentPin, getRecentLogs, cameraStatus, testLed, ledConfig, onSaveLed }) {
+export default function SystemTab({ getDiagnostics, emergencyAction, changePin, currentPin, getRecentLogs, cameraStatus }) {
   const [diagnostics, setDiagnostics] = useState(null);
   const [loading, setLoading] = useState({});
   const [confirmAction, setConfirmAction] = useState(null);
@@ -27,44 +26,12 @@ export default function SystemTab({ getDiagnostics, emergencyAction, changePin, 
   const [pinError, setPinError] = useState('');
   const [pinSuccess, setPinSuccess] = useState(false);
 
-  // LED ring state. Kept out of the panel's shared form because this section
-  // saves on its own: the backend applies a ring change immediately, and the
-  // point of the Test button is to see the result of what you just typed.
-  const [ledHost, setLedHost] = useState('');
-  const [ledSaving, setLedSaving] = useState(false);
-  const [ledTest, setLedTest] = useState(null);
-
   // Log viewer state
   const [logs, setLogs] = useState([]);
   const [logSource, setLogSource] = useState('both');
   const [logLevel, setLogLevel] = useState('all');
   const [logLoading, setLogLoading] = useState(false);
   const [logAutoRefresh, setLogAutoRefresh] = useState(false);
-
-  useEffect(() => {
-    setLedHost(ledConfig?.http?.host || '');
-  }, [ledConfig?.http?.host]);
-
-  const saveLed = useCallback(async (patch) => {
-    setLedSaving(true);
-    setLedTest(null);
-    try {
-      await onSaveLed(patch);
-    } catch {
-      setLedTest({ ok: false, detail: 'Could not save' });
-    } finally {
-      setLedSaving(false);
-    }
-  }, [onSaveLed]);
-
-  const runLedTest = useCallback(async () => {
-    setLedTest({ pending: true });
-    try {
-      setLedTest(await testLed());
-    } catch {
-      setLedTest({ ok: false, detail: 'Test failed' });
-    }
-  }, [testLed]);
 
   // Fetch diagnostics on mount and every 5s.
   // Rule 7 escape hatch: printer/storage health has no SSE channel (they are
@@ -254,63 +221,12 @@ export default function SystemTab({ getDiagnostics, emergencyAction, changePin, 
                 : 'Unreachable'}
             </span>
             <span className="sys-diag-card__sub">
-              {!led?.enabled ? 'No ring configured'
+              {!led?.enabled ? 'Configure in the LEDs tab'
                 : led.connected ? (led.description || '')
                 : (led.last_error || 'No reply from the node')}
             </span>
           </div>
         </div>
-      </section>
-
-      {/* ═══ LED Ring ═══ */}
-      <section className="sys-section">
-        <h3 className="sys-section__title">LED Ring</h3>
-
-        <ToggleSwitch
-          id="led-enabled"
-          label="Ring enabled"
-          checked={!!ledConfig?.enabled}
-          onChange={(v) => saveLed({ enabled: v })}
-        />
-
-        <div className="sys-led-row">
-          <label className="admin-field sys-led-host">
-            <span className="admin-field__label">Node address</span>
-            <input
-              className="admin-field__input"
-              type="text"
-              value={ledHost}
-              onChange={(e) => setLedHost(e.target.value)}
-              onBlur={() => {
-                if (ledHost !== (ledConfig?.http?.host || '')) saveLed({ http: { host: ledHost } });
-              }}
-              placeholder="192.168.4.50"
-              inputMode="decimal"
-              autoCapitalize="off"
-              autoCorrect="off"
-              spellCheck={false}
-            />
-          </label>
-          <button
-            className="sys-led-test"
-            onClick={runLedTest}
-            disabled={ledSaving || ledTest?.pending || !ledConfig?.enabled}
-          >
-            {ledTest?.pending ? 'Pinging…' : 'Test Ring'}
-          </button>
-        </div>
-
-        {ledTest && !ledTest.pending && (
-          <div className={`sys-action-result sys-action-result--${ledTest.ok ? 'ok' : 'err'}`}>
-            {ledTest.ok
-              ? `Node answered ${ledTest.reply} in ${ledTest.elapsed_ms} ms`
-              : (ledTest.detail || 'No reply from the node')}
-          </div>
-        )}
-
-        <p className="sys-led-hint">
-          Host or IP only — no http:// and no port. Changes apply immediately; no restart.
-        </p>
       </section>
 
       {/* ═══ Emergency Controls ═══ */}

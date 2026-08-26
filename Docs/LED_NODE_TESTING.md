@@ -110,6 +110,8 @@ Open `http://IP/` and leave the heartbeat box checked.
 | `FINISHED 4000` | Sparkles over a warm base, thinning as it goes, then **auto-returns to IDLE** after 4 s. |
 | `ERROR 1` | One double-pulse, then a long pause. |
 | `ERROR 3` | Three double-pulse groups, then the pause. Count them — that is the on-site diagnostic. |
+| `TEST 1` / `2` / `3` / `4` | Every pixel lit on one die only — red, green, blue, then the separate white die. Flat, full scale, no animation. **Walk the ring and look at each pixel**: this is the one view that shows a single dead or miswired channel. |
+| `TEST 0` | All four dies at once — catches a die that works alone but is shorted to a neighbour. |
 
 **Press the board's reset button** to watch Boot again: red, green, blue, white
 laps at ~500 ms each, then the slow orbiting dot at 4 s per lap.

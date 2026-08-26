@@ -4,12 +4,14 @@ import EventTab from './tabs/EventTab';
 import BoothTab from './tabs/BoothTab';
 import SystemTab from './tabs/SystemTab';
 import CameraTab from './tabs/CameraTab';
+import LedTab from './tabs/LedTab';
 import './AdminPanel.css';
 
 const TABS = [
   { id: 'event', icon: '♡', label: 'Event' },
   { id: 'booth', icon: '◎', label: 'Booth' },
   { id: 'camera', icon: '📷', label: 'Camera' },
+  { id: 'leds', icon: '◍', label: 'LEDs' },
   { id: 'system', icon: '⚙', label: 'System' },
 ];
 
@@ -26,6 +28,7 @@ export default function AdminPanel({
   onClose,
   getDiagnostics,
   testLed,
+  testLedChannel,
   emergencyAction,
   changePin,
   getRecentLogs,
@@ -173,12 +176,18 @@ export default function AdminPanel({
               saveCameraConfig={saveCameraConfig}
             />
           )}
+          {activeTab === 'leds' && (
+            <LedTab
+              getDiagnostics={getDiagnostics}
+              testLed={testLed}
+              testLedChannel={testLedChannel}
+              ledConfig={config?.led}
+              onSaveLed={(led) => onSave({ led })}
+            />
+          )}
           {activeTab === 'system' && (
             <SystemTab
               getDiagnostics={getDiagnostics}
-              testLed={testLed}
-              ledConfig={config?.led}
-              onSaveLed={(led) => onSave({ led })}
               emergencyAction={emergencyAction}
               changePin={changePin}
               currentPin={adminPin}

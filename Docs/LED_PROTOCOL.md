@@ -32,6 +32,7 @@ transport. Nothing below the transport layer can tell which one is running.
 | `PRINTING` | — | `OK PRINTING` | → Printing |
 | `FINISHED <ms>` | 1–60000 | `OK FINISHED` | → Finished; returns to Idle on its own |
 | `ERROR <code>` | ≥ 0, effective 1–9 | `OK ERROR` | → Error; code = heartbeat groups |
+| `TEST <channel>` | ≥ 0, effective 0–4 | `OK TEST` | → Test; 1=R 2=G 3=B 4=W, anything else all four. Bench instrument — see below |
 | `PING` | — | `PONG` | No mode change, **except** from Boot or Link Lost → Idle |
 
 **`READY` then `COUNTDOWN`, and the timing of the second one matters.** Send
@@ -43,6 +44,15 @@ node seconds ahead of the numbers the guest was reading — and since
 `anim_countdown` clamps elapsed to duration, the ring had already frozen at the
 end of its sweep before the guest saw the last number. Ready holds forever by
 design so the host can take as long as it needs to reach that instant.
+
+**`TEST <channel>` is a bench instrument, not a booth mode.** It fills the ring
+with a single physical die at full scale, global brightness bypassed, flat and
+unanimated — the only way to find a pixel that is dead, miswired, or has one
+channel out. `PHASE` cannot substitute: `rgbw_hue` never lights W and
+desaturates below `sat 1.0`, so it always mixes dies. Like `ERROR` it clamps
+rather than rejects, because an out-of-range channel lighting all four is still
+a useful answer to "is this pixel alive". It returns to Idle on its own after
+120 s: `TEST 4` draws the same current as `CAPTURE`, and it waits on a human.
 
 **`ERROR <code>` clamps rather than rejects.** Any non-negative integer parses.
 `anim_error` renders `code` as the number of double-pulse groups, treating 0 as

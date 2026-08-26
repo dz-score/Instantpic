@@ -162,6 +162,61 @@ def test_led_test_route_is_refused_mid_session(client):
     assert r.status_code == 409
     assert led.pings == 0
 
+def test_led_channel_route_lights_one_die(client):
+    class _Led:
+        enabled = True
+        def __init__(self):
+            self.sent = []
+        async def test_channel(self, ch):
+            self.sent.append(ch)
+            return "OK TEST"
+        async def idle(self):
+            self.sent.append("idle")
+        async def drain(self, timeout_s=2.0):
+            return True
+
+    led = _Led()
+    client.app.state.led = led
+
+    for name, arg in [("red", 1), ("green", 2), ("blue", 3), ("white", 4)]:
+        r = client.post("/api/led/channel", json={"channel": name})
+        assert r.status_code == 200, name
+        assert r.json()["ok"] is True
+
+    assert led.sent == [1, 2, 3, 4]
+
+    client.post("/api/led/channel", json={"channel": "off"})
+    assert led.sent[-1] == "idle"
+
+def test_led_channel_route_rejects_an_unknown_colour(client):
+    class _Led:
+        enabled = True
+        async def test_channel(self, ch):
+            raise AssertionError("should not be reached")
+
+    client.app.state.led = _Led()
+    r = client.post("/api/led/channel", json={"channel": "puce"})
+    assert r.status_code == 400
+
+def test_led_channel_route_is_refused_mid_session(client):
+    """Full white for two minutes is not something the admin panel should be
+    able to start underneath a guest."""
+    class _Led:
+        enabled = True
+        def __init__(self):
+            self.calls = 0
+        async def test_channel(self, ch):
+            self.calls += 1
+            return "OK TEST"
+
+    led = _Led()
+    client.app.state.led = led
+    client.post("/api/events", json={"type": "START_SESSION", "payload": {}})
+
+    r = client.post("/api/led/channel", json={"channel": "red"})
+    assert r.status_code == 409
+    assert led.calls == 0
+
 def test_camera_route_uses_injected_service(client, mocker):
     """The camera is whatever the composition root put on app.state, so a double
     goes in the same way — no monkeypatching a module global to reach the

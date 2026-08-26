@@ -86,7 +86,7 @@ ASCII, newline-terminated, identical on both transports. The vocabulary:
 
 ```
 IDLE   PHASE <hue>   READY   COUNTDOWN <ms>   CAPTURE   RELEASE
-PRINTING   FINISHED <ms>   ERROR <code>   PING
+PRINTING   FINISHED <ms>   ERROR <code>   TEST <channel>   PING
 ```
 
 **The specification is [`Docs/LED_PROTOCOL.md`](../Docs/LED_PROTOCOL.md)** —

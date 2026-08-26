@@ -479,6 +479,22 @@ class LedController:
     async def error(self, code: int = 1) -> None:
         await self._submit(f"ERROR {max(0, int(code))}")
 
+    # --- bench instrument ---------------------------------------------------
+
+    async def test_channel(self, channel: int) -> Optional[str]:
+        """Light one physical die across the whole ring, and wait for the reply.
+
+        Not a booth semantic — an operator holding a screwdriver. Waits, because
+        the person who tapped the button needs to know whether the node took it,
+        and unlike a screen command there is no next transition to reveal that.
+
+        Not routed through _submit_screen: this deliberately overrides whatever
+        is showing, including a latched fault. Diagnosing the strip is the one
+        job that outranks reporting that something else is broken.
+        """
+        return await self._submit(f"TEST {max(0, int(channel))}",
+                                  self._capture_timeout_s, wait=True)
+
 
 def create_led_controller(settings, fault_source=None) -> LedController:
     """Build the controller from config. Called by the composition root only.

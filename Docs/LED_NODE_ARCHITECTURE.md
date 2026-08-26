@@ -88,7 +88,7 @@ timeout, which is an error detector rather than an expected wait.
 
 ## Mode state machine
 
-Ten modes, in [`modes.h`](../led-node/components/render/include/modes.h).
+Eleven modes, in [`modes.h`](../led-node/components/render/include/modes.h).
 Every edge is either a command from the Pi or a deadline the node evaluates
 itself in `check_deadlines()`.
 
@@ -105,6 +105,7 @@ stateDiagram-v2
     PRINTING : PRINTING
     FINISHED : FINISHED
     ERROR : ERROR<br/>host-reported fault
+    TEST : TEST<br/>one die, full scale, bench only
     LINKLOST : LINKLOST<br/>node noticed the host went silent
 
     BOOT --> IDLE : any command,<br/>PING included
@@ -120,6 +121,8 @@ stateDiagram-v2
     PRINTING --> ERROR : after 120 s
     CAPTURE --> IDLE : after 30 s
     ERROR --> IDLE : IDLE / RELEASE
+    IDLE --> TEST : TEST
+    TEST --> IDLE : after 120 s
     LINKLOST --> IDLE : any command,<br/>PING included
     IDLE --> LINKLOST : 10 s silence
 ```
@@ -141,6 +144,7 @@ likewise fires from any mode except `BOOT` and `LINKLOST` itself.
 | any | `PRINTING` | Printing | |
 | any | `FINISHED <ms>` | Finished | |
 | any | `ERROR <code>` | Error | |
+| any | `TEST <channel>` | Test | bench instrument; full scale, brightness bypassed, returns to Idle after 120 s |
 | Boot, Link Lost | `PING` | Idle | the heartbeat is how the link comes back |
 | any other | `PING` | *no change* | feeds the watchdog only |
 | Printing | 120 s elapsed | Error (`code 0`) | a jammed printer must not roll ink forever |
@@ -226,6 +230,7 @@ sequenceDiagram
 | Queue → applied | ≤ 8 ms | `FRAME_MS` (125 Hz) |
 | Ring ramp to full | 100 ms | `RAMP_MS` in `anim_capture.c` |
 | Capture safety release | 30 s | `MODE_CAPTURE_TIMEOUT_MS` |
+| Test mode release | 120 s | `MODE_TEST_TIMEOUT_MS` |
 | Link watchdog | 10 s | `MODE_LINK_TIMEOUT_MS` |
 
 The two timeouts are **nested on purpose**: at 200 ms the node gives up on its
