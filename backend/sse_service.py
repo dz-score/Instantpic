@@ -10,6 +10,11 @@ class SseClient:
     def __init__(self, request: Request):
         self.request = request
         self.queue: asyncio.Queue = asyncio.Queue(maxsize=100)
+        # Events discarded because this client stopped draining. Counted rather
+        # than logged per-event: a wedged client would otherwise emit a line per
+        # dispatch (camera_status, camera_job, state_update...) and drown the log
+        # it is supposed to be explaining.
+        self.dropped = 0
 
 class SseService:
     def __init__(self):
@@ -31,6 +36,12 @@ class SseService:
         if client in self._clients:
             self._clients.remove(client)
             log.debug("sse", "client_disconnected", f"SSE client disconnected. Total clients: {len(self._clients)}")
+            if client.dropped:
+                # The per-client total, reported once, so a session postmortem
+                # can tell "the UI was stale" from "the UI never got told".
+                log.warn("sse", "client_dropped_events",
+                         f"SSE client disconnected after dropping {client.dropped} event(s)",
+                         data={"dropped": client.dropped})
 
     def request_shutdown(self):
         self._shutdown = True
@@ -47,9 +58,23 @@ class SseService:
         try:
             client.queue.put_nowait(payload)
         except asyncio.QueueFull:
-            # If a client is too slow, we might drop events.
-            # This usually means a stale connection.
-            pass
+            # A full queue means this client has stopped draining — a stale
+            # connection, or a browser that is backgrounded or wedged. Dropping
+            # is still the right call (the alternative is blocking every other
+            # client behind this one), but it must not be SILENT: the dropped
+            # payload can be a state_update, and that is the only thing driving
+            # the guest's screen. A booth stuck on the wrong screen with nothing
+            # in the log to explain it is exactly the kind of ghost this project
+            # has burned days on before.
+            #
+            # Recovery is real but not immediate: the client resyncs on its next
+            # reconnect (the /api/sse handler seeds state), so this warning marks
+            # the window in which the UI may have been out of date.
+            client.dropped += 1
+            if client.dropped == 1:
+                log.warn("sse", "client_queue_full",
+                         "SSE client queue full — dropping events; this client is not draining",
+                         data={"event": payload.get("event"), "queue_maxsize": client.queue.maxsize})
 
     def _enqueue_all(self, payload: dict):
         for client in self._clients:
