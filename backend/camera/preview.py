@@ -240,16 +240,26 @@ class PreviewService:
 
             time_since_last = time.perf_counter() - self._last_frame_time
 
-            # Broadcast metrics
-            self._sse.dispatch_event("camera_metrics", {
-                "fps": fps,
-                "latency_ms": round(self._last_cap_time * 1000, 1),
-                "time_since_last_frame_ms": round(time_since_last * 1000, 1),
-                "connected": self._device.connected,
-                "is_capturing": self._gate.capture_in_progress,
-                "worker_running": self._worker_running,
-                "allowed": self._gate.preview_armed()
-            })
+            # Logged, not broadcast. This used to go out over SSE to every
+            # connected client once a second — including every guest phone
+            # parked on the download page, which mounts the same App — and
+            # nothing anywhere consumed it: useSse exposed `cameraMetrics` and
+            # no component ever read it. The diagnostic value is real (the gate
+            # and worker flags are not visible anywhere else; fps and latency
+            # corroborate worker_cycle), so it lands in the log where a session
+            # postmortem can actually use it, per Rule 16.
+            log.debug("camera_timing", "camera_metrics",
+                      f"fps={fps} latency={self._last_cap_time * 1000:.1f}ms "
+                      f"since_last_frame={time_since_last * 1000:.1f}ms",
+                      data={
+                          "fps": fps,
+                          "latency_ms": round(self._last_cap_time * 1000, 1),
+                          "time_since_last_frame_ms": round(time_since_last * 1000, 1),
+                          "connected": self._device.connected,
+                          "is_capturing": self._gate.capture_in_progress,
+                          "worker_running": self._worker_running,
+                          "allowed": self._gate.preview_armed(),
+                      })
 
     # ─── MJPEG Stream (HTTP consumer) ─────────────────────────────
 

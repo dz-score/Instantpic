@@ -3,7 +3,18 @@ import { logger } from '../utils/logger';
 
 const SSE_URL = '/api/sse';
 
-export default function useSse() {
+/**
+ * The app's single SSE connection.
+ *
+ * `enabled` exists for the guest download page (/download/:filename), which
+ * mounts this same App component but needs none of the booth's live state.
+ * Every phone that scanned the QR used to hold an EventSource open for as
+ * long as the tab lived, taking every state_update and camera_job the booth
+ * emitted — dozens of connections at a wedding, each with its own 100-slot
+ * queue, and the ones most likely to fall behind (phones on venue wifi,
+ * backgrounded tabs) were exactly the ones with no reason to be connected.
+ */
+export default function useSse(enabled = true) {
   const [cameraStatus, setCameraStatus] = useState({
     connected: false,
     is_capturing: false,
@@ -12,11 +23,11 @@ export default function useSse() {
   const [backendState, setBackendState] = useState(null);
   const [config, setConfig] = useState(null);
   const [cameraJob, setCameraJob] = useState(null);
-  const [cameraMetrics, setCameraMetrics] = useState(null);
   const [isOnline, setIsOnline] = useState(false);
   const eventSourceRef = useRef(null);
 
   useEffect(() => {
+    if (!enabled) return;
     let reconnectTimer;
 
     const connect = () => {
@@ -81,14 +92,6 @@ export default function useSse() {
         }
       });
 
-      eventSource.addEventListener('camera_metrics', (e) => {
-        try {
-          setCameraMetrics(JSON.parse(e.data));
-        } catch (err) {
-          console.error('Failed to parse camera_metrics SSE:', err);
-        }
-      });
-
       eventSource.onerror = (e) => {
         console.error('SSE connection error, attempting to reconnect...', e);
         // ERROR level flushes the log buffer immediately rather than waiting
@@ -111,7 +114,7 @@ export default function useSse() {
         eventSourceRef.current.close();
       }
     };
-  }, []);
+  }, [enabled]);
 
-  return { cameraStatus, isOnline, backendState, config, cameraJob, cameraMetrics };
+  return { cameraStatus, isOnline, backendState, config, cameraJob };
 }

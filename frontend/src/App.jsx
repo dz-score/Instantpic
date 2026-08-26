@@ -23,7 +23,17 @@ export default function App() {
   const [adminTapCount, setAdminTapCount] = useState(0);
   const [appState, setAppState] = useState(null);
 
-  const sse = useSse();
+  // ─── URL Routing (mobile download) ───
+  // Decided before the hooks run, because it gates them: /download/:filename is
+  // the guest's phone, a standalone page that needs no booth state. It is read
+  // from the URL, which is fixed for the life of this mount, so the hook order
+  // below is stable.
+  const downloadFilename = window.location.pathname.startsWith('/download/')
+    ? window.location.pathname.replace('/download/', '')
+    : null;
+  const isBooth = !downloadFilename;
+
+  const sse = useSse(isBooth);
   const api = useApi(sse.isOnline);
   const config = sse.config;   // pushed over SSE (connect + on change)
   const inactivityTimer = useRef(null);
@@ -40,17 +50,12 @@ export default function App() {
   // fresh object every render (useApi returns a new literal each call), so it
   // can't be a dependency here without re-firing this fetch on every render.
   useEffect(() => {
+    if (!isBooth) return;
     api.fetchState().then(state => {
       if (state) setAppState(prev => prev || state);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // ─── URL Routing (mobile download) ───
-  // We still handle /download/ locally since it's just a static page
-  const downloadFilename = window.location.pathname.startsWith('/download/')
-    ? window.location.pathname.replace('/download/', '')
-    : null;
+  }, [isBooth]);
 
   const currentScreen = downloadFilename ? 'DOWNLOAD' : (appState?.screen || 'LOADING');
 
