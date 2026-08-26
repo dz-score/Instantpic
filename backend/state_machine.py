@@ -271,7 +271,7 @@ class StateMachine:
         # Broadcast outside the lock to avoid blocking
         await self.broadcast_state(state_dict)
 
-    async def _sync_led(self, settings: AppSettings):
+    async def _sync_led(self, settings: Optional[AppSettings] = None):
         """Point the ring at whatever screen the transition landed on.
 
         Driven from the resulting screen rather than from each event branch, so
@@ -281,11 +281,17 @@ class StateMachine:
 
         These are fire-and-forget — the controller serializes them on its own
         task, so this does not put a round trip inside the handler lock.
+
+        `settings` is optional for the same reason _manage_watchdog's is: job
+        callbacks land the guest on a new screen without being handed settings,
+        so they fall back to the snapshot that armed the session. Only COUNTDOWN
+        reads it at all.
         """
+        settings = settings or self._watchdog_settings
         screen = self._state.screen
         if screen == "ATTRACT":
             await self._led.idle()
-        elif screen == "COUNTDOWN":
+        elif screen == "COUNTDOWN" and settings is not None:
             await self._led.countdown(countdown_ms(settings))
         elif screen == "PRINTING":
             await self._led.printing()
@@ -471,8 +477,11 @@ class StateMachine:
             self._state.finalPhoto = filename
             await self._enter_printing()
             # Screen changed outside handle_event, so re-arm here too — this is
-            # the one callback path that lands the guest on a new screen.
+            # the one callback path that lands the guest on a new screen. The
+            # ring needs the same treatment for the same reason: without this it
+            # would sit on the frame-picker hue for the whole print.
             self._manage_watchdog()
+            await self._sync_led()
             state_dict = self._state.model_dump()
         await self.broadcast_state(state_dict)
 

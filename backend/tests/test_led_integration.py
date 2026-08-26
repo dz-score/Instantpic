@@ -183,6 +183,32 @@ async def test_completed_shot_leaves_capture_without_an_explicit_release():
 
 
 @pytest.mark.anyio
+async def test_ring_enters_printing_on_the_frame_processed_path():
+    """PRINTING is reached from a job callback, not from handle_event.
+
+    That callback is the one path that lands the guest on a new screen without
+    going through the transition that normally syncs the ring, so without an
+    explicit sync there the ring would hold the frame-picker hue for the whole
+    print.
+    """
+    led = RecordingLed()
+    sm, q, cam, _ = make_sm(led)
+
+    await sm.handle_event("START_SESSION", {}, SETTINGS)
+    await sm.handle_event("SELECT_LAYOUT", {"mode": "single"}, SETTINGS)
+    await sm.handle_event("FIRE_SHOT", {}, SETTINGS)
+    await cam.complete("shot1.jpg")
+    await sm.handle_event("PRINT_FROM_REVEAL", {}, SETTINGS)
+    assert (await sm.get_state()).screen == "FRAME_PICKER"
+
+    await sm.handle_event("FRAME_SELECT", {"overlay_id": "blush_floral"}, SETTINGS)
+    await sm.job_frame_processed("final.jpg")
+
+    assert (await sm.get_state()).screen == "PRINTING"
+    assert led.calls[-1] == "PRINTING"
+
+
+@pytest.mark.anyio
 async def test_booth_runs_with_no_ring_injected():
     """The default. StateMachine substitutes an inert stand-in."""
     sm = StateMachine(FakeSse(), MockQueue(), MockCamera())
