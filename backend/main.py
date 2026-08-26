@@ -47,7 +47,18 @@ async def lifespan(app: FastAPI):
     camera_svc = create_camera(settings_svc.get(), sse_svc)
     # Inert when no ring is configured, so the FSM needs no null check and the
     # booth behaves identically with and without one.
-    led_svc = create_led_controller(settings_svc.get())
+    #
+    # The fault source is introduced here rather than by either party: the
+    # camera must not learn that a ring exists (Rule 18), and the ring must not
+    # know what a camera is. Code 1 is the camera; anim_error draws the code as
+    # that many double-pulse groups, so 2..9 stay free for the printer and the
+    # disk without renumbering anything.
+    def camera_fault():
+        if camera_svc is None:
+            return 1     # no usable backend at all — the booth cannot shoot
+        return 1 if camera_svc.get_status().get("error") else None
+
+    led_svc = create_led_controller(settings_svc.get(), fault_source=camera_fault)
     state_machine = StateMachine(sse_svc, job_queue, camera_svc, led_svc)
 
     app.state.sse = sse_svc

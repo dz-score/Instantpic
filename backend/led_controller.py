@@ -33,7 +33,7 @@ caller decides. That decision is workflow, and workflow belongs to the FSM
 import asyncio
 import time
 from collections import deque
-from typing import Optional
+from typing import Callable, Optional
 
 from backend.led_transport import LedHttpTransport, LedLinkError, LedTransport
 from backend.logger import log
@@ -65,7 +65,8 @@ class LedController:
 
     def __init__(self, transport: Optional[LedTransport], *, enabled: bool,
                  heartbeat_s: float, capture_timeout_s: float,
-                 default_timeout_s: float, config_key: Optional[tuple] = None):
+                 default_timeout_s: float, config_key: Optional[tuple] = None,
+                 fault_source: Optional[Callable[[], Optional[int]]] = None):
         self._transport = transport
         self._enabled = enabled and transport is not None
         self._heartbeat_s = heartbeat_s
@@ -90,6 +91,17 @@ class LedController:
         # evaluation would corrupt the numbers the evaluation depends on.
         self._last_ok: Optional[float] = None
         self._last_error: Optional[str] = None
+
+        # Fault latch. `fault_source` is polled by the owner task and returns an
+        # ERROR code, or None when the booth is healthy. Injected rather than
+        # imported: the camera must not learn that a ring exists (Rule 18), so
+        # the composition root does the introducing.
+        self._fault_source = fault_source
+        self._fault: Optional[int] = None
+        # The screen command that would be showing if nothing were wrong. Held
+        # so the ring can be put back where the booth actually is when the fault
+        # clears, rather than waiting for the next transition to repaint it.
+        self._screen_line: Optional[str] = None
 
     @property
     def enabled(self) -> bool:
@@ -183,6 +195,43 @@ class LedController:
         await self.start()
         return True
 
+    async def set_fault(self, code: Optional[int]) -> None:
+        """Latch or clear a booth fault. Idempotent — only edges do anything.
+
+        A fault outranks the screen: while one is latched, screen commands are
+        recorded but not sent, because the next FSM transition would otherwise
+        paint straight over the error pattern and the operator would never see
+        it. Clearing puts the ring back where the booth actually is rather than
+        waiting for a transition that may be minutes away.
+
+        Capture and Release are deliberately not suppressed. They bracket the
+        shutter rather than a screen, and if a photo is somehow still being
+        taken it needs its key light more than the operator needs the red.
+        """
+        if code == self._fault:
+            return
+
+        self._fault = code
+        if code is not None:
+            log.warn("led", "led_fault", f"Ring showing fault code {code}")
+            await self._submit(f"ERROR {max(1, int(code))}")
+        else:
+            log.info("led", "led_fault_clear", "Ring fault cleared")
+            await self._submit(self._screen_line or "IDLE")
+
+    async def _poll_fault(self) -> None:
+        if self._fault_source is None:
+            return
+        try:
+            code = self._fault_source()
+        except Exception as e:
+            # A health probe that throws must not take the ring's owner task
+            # down with it — that would strand the heartbeat and the node would
+            # drop to Link Lost at a booth that is merely confused.
+            log.warn("led", "led_fault_source_error", f"fault source raised: {e}")
+            return
+        await self.set_fault(code)
+
     # --- the single owner --------------------------------------------------
 
     async def _run(self) -> None:
@@ -195,6 +244,12 @@ class LedController:
         countdown window, which is the one place latency is visible.
         """
         while not self._shutdown:
+            # Before the wait, not inside _heartbeat(): that only fires when the
+            # wire has been idle, so a busy session would never check at all.
+            # This way the check happens at least every heartbeat interval, and
+            # again whenever a command arrives.
+            await self._poll_fault()
+
             try:
                 req = await asyncio.wait_for(self._queue.get(),
                                              timeout=self._heartbeat_s)
@@ -311,6 +366,7 @@ class LedController:
             "connected": connected,
             "last_ok_age_s": age,
             "last_error": self._last_error,
+            "fault": self._fault,
             **self.stats(),
         }
 
@@ -336,6 +392,16 @@ class LedController:
                 "elapsed_ms": elapsed_ms, "detail": None}
 
     # --- command plumbing --------------------------------------------------
+
+    async def _submit_screen(self, line: str) -> None:
+        """Queue a screen command, unless a fault is currently showing.
+
+        Recorded either way, so set_fault(None) can restore the right one.
+        """
+        self._screen_line = line
+        if self._fault is not None:
+            return
+        await self._submit(line)
 
     async def _submit(self, line: str, timeout_s: Optional[float] = None, *,
                       wait: bool = False) -> Optional[str]:
@@ -367,10 +433,10 @@ class LedController:
     # --- booth semantics ---------------------------------------------------
 
     async def idle(self) -> None:
-        await self._submit("IDLE")
+        await self._submit_screen("IDLE")
 
     async def phase(self, hue: int) -> None:
-        await self._submit(f"PHASE {int(hue) % 360}")
+        await self._submit_screen(f"PHASE {int(hue) % 360}")
 
     async def ready(self) -> None:
         """Park the ring, poised, for the beat before the count starts.
@@ -378,7 +444,7 @@ class LedController:
         That beat is the camera warming up, whose length only the browser can
         observe, so nothing here or in the FSM can predict it.
         """
-        await self._submit("READY")
+        await self._submit_screen("READY")
 
     async def countdown(self, duration_ms: int) -> None:
         # Sent when the guest-visible count actually starts, not when the FSM
@@ -386,7 +452,7 @@ class LedController:
         # Both sides then run the same duration from the same instant; the
         # firmware still clamps elapsed to duration, so any residual skew
         # degrades to a frozen head rather than a glitch (anim_countdown.c).
-        await self._submit(f"COUNTDOWN {_clamp_ms(duration_ms)}")
+        await self._submit_screen(f"COUNTDOWN {_clamp_ms(duration_ms)}")
 
     async def capture(self) -> bool:
         """Take the ring to full white. True if the node acknowledged.
@@ -405,21 +471,25 @@ class LedController:
         await self._submit("RELEASE")
 
     async def printing(self) -> None:
-        await self._submit("PRINTING")
+        await self._submit_screen("PRINTING")
 
     async def finished(self, duration_ms: int) -> None:
-        await self._submit(f"FINISHED {_clamp_ms(duration_ms)}")
+        await self._submit_screen(f"FINISHED {_clamp_ms(duration_ms)}")
 
     async def error(self, code: int = 1) -> None:
         await self._submit(f"ERROR {max(0, int(code))}")
 
 
-def create_led_controller(settings) -> LedController:
+def create_led_controller(settings, fault_source=None) -> LedController:
     """Build the controller from config. Called by the composition root only.
 
     Returns an inert controller rather than None when the ring is disabled or
     misconfigured, so no call site needs a null check and the booth behaves
     identically either way.
+
+    `fault_source` is an optional callable returning an ERROR code, or None when
+    the booth is healthy. The composition root supplies it; nothing here knows
+    what a fault is made of.
     """
     cfg = settings.led
 
@@ -430,6 +500,7 @@ def create_led_controller(settings) -> LedController:
         capture_timeout_s=cfg.http.capture_timeout_ms / 1000.0,
         default_timeout_s=cfg.http.timeout_ms / 1000.0,
         config_key=_config_key(cfg),
+        fault_source=fault_source,
     )
 
 

@@ -434,3 +434,126 @@ async def test_ping_on_a_disabled_ring_says_so():
     result = await led.ping()
     assert result["ok"] is False
     assert "disabled" in result["detail"]
+
+
+# --- the fault latch ------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_a_fault_puts_the_ring_on_the_error_pattern():
+    fault = {"code": None}
+    t = FakeTransport()
+    led = make(t, heartbeat_s=0.01, fault_source=lambda: fault["code"])
+    await led.start()
+
+    fault["code"] = 1
+    await asyncio.sleep(0.05)
+    await led.stop()
+
+    assert "ERROR 1" in t.sent
+
+
+@pytest.mark.anyio
+async def test_a_fault_survives_the_next_screen_transition():
+    """Without this the ring shows red for one transition and is then painted
+    over by whatever screen the booth moved to, so the operator never sees it."""
+    t = FakeTransport()
+    led = make(t)
+    await led.start()
+
+    await led.set_fault(1)
+    await led.phase(200)
+    await led.printing()
+    await led.drain()
+    await led.stop()
+
+    assert t.sent == ["ERROR 1"]
+
+
+@pytest.mark.anyio
+async def test_clearing_a_fault_restores_the_screen_the_booth_is_on():
+    """The booth does not transition just because the camera came back, so
+    without this the ring would hold red until the next guest touched it."""
+    t = FakeTransport()
+    led = make(t)
+    await led.start()
+
+    await led.set_fault(1)
+    await led.phase(200)     # suppressed, but remembered
+    await led.set_fault(None)
+    await led.drain()
+    await led.stop()
+
+    assert t.sent == ["ERROR 1", "PHASE 200"]
+
+
+@pytest.mark.anyio
+async def test_an_unchanged_fault_is_not_resent():
+    """It is polled every heartbeat interval; re-entering the mode each time
+    would restart the pattern's cycle and make the pulse count unreadable."""
+    t = FakeTransport()
+    led = make(t)
+    await led.start()
+
+    await led.set_fault(1)
+    await led.set_fault(1)
+    await led.set_fault(1)
+    await led.drain()
+    await led.stop()
+
+    assert t.sent == ["ERROR 1"]
+
+
+@pytest.mark.anyio
+async def test_capture_still_lights_the_ring_during_a_fault():
+    """CAPTURE brackets the shutter, not a screen. If a photo is somehow still
+    being taken it needs its key light more than the operator needs the red."""
+    t = FakeTransport()
+    led = make(t)
+    await led.start()
+
+    await led.set_fault(1)
+    acked = await led.capture()
+    await led.stop()
+
+    assert acked is True
+    assert "CAPTURE" in t.sent
+
+
+@pytest.mark.anyio
+async def test_the_fault_source_is_polled_even_when_the_queue_is_busy():
+    """Polling inside _heartbeat would only run when the wire had gone idle, so
+    a session sending commands would never notice the camera had died."""
+    fault = {"code": None}
+    t = FakeTransport()
+    led = make(t, heartbeat_s=30.0, fault_source=lambda: fault["code"])
+    await led.start()
+
+    fault["code"] = 1
+    # No idle gap anywhere — every loop iteration has work waiting.
+    for _ in range(3):
+        await led.idle()
+    await led.drain()
+    await led.stop()
+
+    assert "ERROR 1" in t.sent
+
+
+@pytest.mark.anyio
+async def test_a_throwing_fault_source_does_not_kill_the_owner_task():
+    """It would strand the heartbeat, and the node would drop to Link Lost at a
+    booth whose only real problem was a confused health probe."""
+    def boom():
+        raise RuntimeError("probe exploded")
+
+    t = FakeTransport()
+    led = make(t, heartbeat_s=0.01, fault_source=boom)
+    await led.start()
+    await asyncio.sleep(0.05)
+
+    await led.idle()
+    await led.drain()
+    await led.stop()
+
+    assert "IDLE" in t.sent
+    assert "PING" in t.sent      # the heartbeat kept running
