@@ -8,7 +8,18 @@ from backend import storage
 from backend.storage import enforce_circular_storage
 
 class JobQueue:
-    """Async worker that runs photo-processing jobs off the event loop.
+    """Async workers that run photo-processing and print jobs off the event loop.
+
+    Two lanes, not one, because the two workloads have opposite profiles.
+    Processing sits on the guest's critical path — the REVEAL spinner is
+    waiting on it — and takes seconds. A print shells out to CUPS and blocks
+    for up to ~63s in the worst case (30s timeout + RETRY_DELAY_S + a 30s
+    retry). Sharing a single serial lane meant a guest who tapped "Another"
+    could queue their processing job behind the *previous* guest's retrying
+    print and sit watching the spinner for a minute over someone else's paper
+    jam. Splitting them decouples the guest-visible path from the slow external
+    device; each lane stays strictly serial in itself, so two prints still
+    never overlap and neither do two processing jobs.
 
     The queue reports results through per-job ``on_success`` / ``on_failure``
     coroutines supplied by the submitter. It does not know or import whoever
@@ -19,29 +30,47 @@ class JobQueue:
     imported, so a test can drive the queue against doubles.
     """
 
+    PROCESS_LANE = "process"
+    PRINT_LANE = "print"
+    LANES = (PROCESS_LANE, PRINT_LANE)
+
     def __init__(self, print_svc: PrintService, settings: SettingsService):
         self._print_svc = print_svc
         self._settings = settings
-        self._queue = None
-        self._worker_task = None
+        self._queues = {lane: None for lane in self.LANES}
+        self._worker_tasks = []
         self._shutdown = False
         self._background_tasks = set()
 
-    def _get_queue(self):
-        if self._queue is None:
-            self._queue = asyncio.Queue()
-        return self._queue
+    @classmethod
+    def _lane_for(cls, job_type: str) -> str:
+        """Which lane a job type runs in. Printing is the slow external one;
+        everything else is guest-facing processing."""
+        return cls.PRINT_LANE if job_type == "PRINT_PHOTO" else cls.PROCESS_LANE
+
+    def _get_queue(self, lane: str):
+        if self._queues[lane] is None:
+            self._queues[lane] = asyncio.Queue()
+        return self._queues[lane]
 
     async def enqueue(self, job_data: dict):
-        log.debug("job_queue", "enqueue_job", f"Enqueuing job type: {job_data.get('type')}")
-        await self._get_queue().put(job_data)
+        job_type = job_data.get("type")
+        lane = self._lane_for(job_type)
+        log.debug("job_queue", "enqueue_job", f"Enqueuing job type: {job_type} on {lane} lane")
+        await self._get_queue(lane).put(job_data)
 
-    async def _worker(self):
-        log.info("job_queue", "worker_start", "Job Queue worker started")
+    async def join(self):
+        """Block until every lane has drained. For shutdown and for tests —
+        callers should not have to know how many lanes there are."""
+        for lane in self.LANES:
+            await self._get_queue(lane).join()
+
+    async def _worker(self, lane: str):
+        log.info("job_queue", "worker_start", f"Job Queue worker started ({lane} lane)")
         while not self._shutdown:
             try:
                 # Wait for a job
-                job_data = await self._get_queue().get()
+                job_data = await self._get_queue(lane).get()
                 if self._shutdown:
                     break
                     
@@ -109,7 +138,7 @@ class JobQueue:
                     if on_failure:
                         await on_failure(str(e))
                 finally:
-                    self._get_queue().task_done()
+                    self._get_queue(lane).task_done()
                     
             except asyncio.CancelledError:
                 break
@@ -117,7 +146,7 @@ class JobQueue:
                 log.error("job_queue", "worker_error", f"Job Queue worker encountered an error: {e}")
                 await asyncio.sleep(1)
                 
-        log.info("job_queue", "worker_stop", "Job Queue worker stopped")
+        log.info("job_queue", "worker_stop", f"Job Queue worker stopped ({lane} lane)")
 
     async def _run_cleanup(self):
         loop = asyncio.get_running_loop()
@@ -125,17 +154,24 @@ class JobQueue:
 
     def start(self):
         self._shutdown = False
-        self._queue = asyncio.Queue()
-        self._worker_task = asyncio.create_task(self._worker())
+        self._worker_tasks = []
+        for lane in self.LANES:
+            self._queues[lane] = asyncio.Queue()
+            self._worker_tasks.append(asyncio.create_task(self._worker(lane)))
 
     async def stop(self):
         self._shutdown = True
-        if self._worker_task:
-            self._worker_task.cancel()
+        # Cancel every lane first, then await them: cancelling one at a time
+        # would let a lane keep running while an earlier one is still winding
+        # down, which on shutdown is just a longer window for new work to land.
+        for task in self._worker_tasks:
+            task.cancel()
+        for task in self._worker_tasks:
             try:
-                await self._worker_task
+                await task
             except asyncio.CancelledError:
                 pass
-                
+        self._worker_tasks = []
+
         if self._background_tasks:
             await asyncio.gather(*self._background_tasks, return_exceptions=True)

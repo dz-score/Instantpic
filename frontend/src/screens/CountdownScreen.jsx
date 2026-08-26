@@ -50,10 +50,9 @@ export default function CountdownScreen({
   language,
 }) {
   // Numbers shown, and how fast they tick. The guest sees COUNTDOWN_FROM
-  // numbers either way; SPEED just compresses them. 5 @ 1.25 = a full
-  // 5,4,3,2,1 in 4.0s. See backend/config.py — the effective length feeds the
-  // shot-spacing budget that keeps the next shot inside the M50's live-view
-  // window, and speeding the count buys that time without dropping a number.
+  // numbers either way; SPEED just compresses them (5 @ 1.25 = a full
+  // 5,4,3,2,1 in 4.0s). Both are pure pacing knobs from backend/settings.py —
+  // there is no hardware constraint on the effective length.
   const COUNTDOWN_FROM = config?.countdown_duration || 3;
   const COUNTDOWN_SPEED = config?.countdown_speed || 1;
   // The tick and the decrement are the same quantity in different units:
@@ -247,17 +246,10 @@ export default function CountdownScreen({
       if (c > 0) {
         if (c % 1 === 0) setCount(c);
       } else {
-        // Countdown done — fire straight away.
-        //
-        // There used to be an extra 250ms beat here, during which the frontend
-        // called standbyPreview() to "let the USB bus settle" before the heavy
-        // capture command. The backend has owned that since it became
-        // capture-authoritative: camera_service sets _capture_in_progress at
-        // enqueue, before the job is even queued, with its own 15ms settle.
-        // So the beat bought nothing — it only froze the live view 250ms early
-        // and padded the shot-to-shot gap, which is the gap that decides
-        // whether the next shot lands inside the M50's healthy live-view
-        // window (~6s after the previous capture).
+        // Countdown done — fire straight away. Any pre-capture settling is
+        // backend-owned: the camera service gates the preview worker at enqueue
+        // and applies its own settle, so a beat here would only freeze the
+        // live view early for nothing.
         clearInterval(timerRef.current);
         timerRef.current = null;
         setPhase('POSING');

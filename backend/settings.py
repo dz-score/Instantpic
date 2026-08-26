@@ -20,9 +20,9 @@ from typing import List, Dict, Literal, Optional
 
 from backend.logger import log
 
-# Paths
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
+# Re-exported as a module attribute so tests can monkeypatch it
+# (conftest.isolate_config).
+from backend.paths import CONFIG_PATH
 
 class OverlayConfig(BaseModel):
     id: str
@@ -48,6 +48,10 @@ class AppSettings(BaseModel):
     shot_interval_ms: int = 500
     flash_enabled: bool = True
     max_photos_per_session: int = 3
+    # Browser-side inactivity timeout. The frontend timer is the precise one —
+    # it resets on touch, which the backend cannot see — but the FSM arms a
+    # floor at session_timeout + SESSION_WATCHDOG_GRACE_S for the case that
+    # timer never fires at all (dead kiosk tab). See _manage_watchdog.
     session_timeout: int = 120
     # Floor for a stalled capture sequence: if the browser or camera dies
     # mid-session, COUNTDOWN would strand forever. After this many seconds
@@ -59,18 +63,36 @@ class AppSettings(BaseModel):
     show_names_on_photo: bool = True
     printer_name: str = "mock"
     printer_options: str = "fit-to-page media=4x6"
+    # Cap on FILES in the photos dir, not on sessions or on keepsakes. One
+    # 3-shot session that prints leaves 7: three raws (capture_*.jpg), three
+    # screen previews (preview_capture_*.jpg) and one composite (photo_*.jpg).
+    # So 1000 is roughly 140 sessions, not 1000 photos — size it from that,
+    # or an SD card gets sized about 7x too small.
     max_photos: int = 1000
     disk_min_free_gb: float = 2.0
+    # Circular storage will not delete a file younger than this. It runs after
+    # every processing job and cannot ask the FSM what is on screen, so age is
+    # its proxy for "still in use" — long enough to cover the session in front
+    # of the guest plus a QR code they have not scanned yet. See
+    # storage.enforce_circular_storage.
+    storage_protect_recent_s: int = 1800
     couple_names: str = "Sarah & Michael"
     event_date: str = "June 14, 2026"
     default_text: str = "Sarah & Michael \u00b7 June 14, 2026"
     port: int = 8000
     selected_overlay: str = "none"
     wifi_network_name: str = "Our Wedding WiFi"
+    # filename must match a real file in backend/overlays/. These defaults named
+    # blush_floral.png / gold_glitter.png, neither of which was ever committed —
+    # the shipped artwork is frame_floral.png / frame_gold_elegant.png. Nothing
+    # complained because photo_processor fabricated a stand-in for any missing
+    # overlay, so a booth on defaults printed drawn placeholders over the real
+    # frames. That fabricator is gone, which makes a wrong filename here visible
+    # (overlay_missing in the log) instead of silently substituted.
     overlays: List[OverlayConfig] = [
         OverlayConfig(id="none", name="No Frame", filename=""),
-        OverlayConfig(id="blush_floral", name="Chic Blush Floral", filename="blush_floral.png"),
-        OverlayConfig(id="gold_glitter", name="Elegant Gold Frame", filename="gold_glitter.png")
+        OverlayConfig(id="blush_floral", name="Chic Blush Floral", filename="frame_floral.png"),
+        OverlayConfig(id="gold_glitter", name="Elegant Gold Frame", filename="frame_gold_elegant.png")
     ]
 
 def _quarantine_bad_config(path: str) -> str:

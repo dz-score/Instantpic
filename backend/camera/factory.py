@@ -26,13 +26,13 @@ def create_camera(settings: AppSettings, sse) -> Optional[object]:
     it is required rather than reached for, so the caller owns that wiring.
     """
     if settings.camera_backend == "mock":
-        from backend.mock_camera import MockCameraService
+        from backend.camera.mock import MockCameraService
         return MockCameraService(sse)
 
     try:
-        # camera_service imports gphoto2 at module level, so this raises ImportError
+        # camera.device imports gphoto2 at module level, so this raises ImportError
         # on machines without the library.
-        from backend.camera_service import CameraService
+        from backend.camera.service import CameraService
         return CameraService(sse)
     except ImportError:
         log.warn(

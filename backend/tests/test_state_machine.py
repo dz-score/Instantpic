@@ -390,9 +390,10 @@ async def test_stall_watchdog_rearms_per_shot():
     assert (await sm.get_state()).screen == "ATTRACT"
 
 @pytest.mark.anyio
-async def test_stall_watchdog_cancelled_on_leaving_countdown():
-    """Completing the sequence (-> REVEAL) must cancel the watchdog — no
-    spurious reset later."""
+async def test_countdown_stall_window_does_not_follow_the_guest_to_reveal():
+    """Leaving COUNTDOWN must drop the tight capture window. REVEAL is now
+    covered too, but by the much longer session floor — so the guest gets no
+    spurious reset at capture_stall_timeout."""
     sm, q, cam, sse = make_sm()
 
     await sm.handle_event("START_SESSION", {}, STALL_SETTINGS)
@@ -400,7 +401,101 @@ async def test_stall_watchdog_cancelled_on_leaving_countdown():
     await fire_and_complete(sm, cam, "raw1.jpg", STALL_SETTINGS)
 
     assert (await sm.get_state()).screen == "REVEAL"
-    assert sm._stall_watchdog is None
 
-    await asyncio.sleep(0.4)  # well past the stall timeout
+    await asyncio.sleep(0.4)  # well past capture_stall_timeout (0.15)
     assert (await sm.get_state()).screen == "REVEAL"
+
+
+# --- Session floor (the browser's inactivity timer is the precise one; this
+# only catches a frontend that can no longer fire it at all) ---
+
+def abandon_settings(monkeypatch, grace=0.15):
+    """Settings + grace small enough to test the floor without a long sleep."""
+    monkeypatch.setattr(StateMachine, "SESSION_WATCHDOG_GRACE_S", grace)
+    return AppSettings(session_timeout=0, capture_stall_timeout=grace)
+
+
+@pytest.mark.anyio
+async def test_session_watchdog_resets_a_browser_that_died_at_reveal(monkeypatch):
+    """The gap this closes: a kiosk tab that crashes at REVEAL never sends
+    TIMEOUT, and REVEAL has no capture window — the booth used to sit there
+    with the previous guest's photos until someone noticed."""
+    settings = abandon_settings(monkeypatch)
+    sm, q, cam, sse = make_sm()
+
+    await sm.handle_event("START_SESSION", {}, settings)
+    await sm.handle_event("SELECT_LAYOUT", {"mode": "single"}, settings)
+    await fire_and_complete(sm, cam, "raw1.jpg", settings)
+    assert (await sm.get_state()).screen == "REVEAL"
+
+    await asyncio.sleep(0.4)  # browser is gone; nothing else will end this
+
+    state = await sm.get_state()
+    assert state.screen == "ATTRACT"
+    assert state.capturedImages == []          # the next guest starts clean
+    assert sse.payloads[-1]["screen"] == "ATTRACT"   # and clients were told
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("screen", [
+    "CHOOSE_STYLE", "COUNTDOWN", "REVEAL", "PICK_FAVORITE", "FRAME_PICKER", "PRINTING",
+])
+async def test_session_watchdog_covers_every_guest_facing_screen(monkeypatch, screen):
+    """The rule is "every screen except ATTRACT", not "the ones we happened to
+    think of" — a new screen added later inherits the floor for free."""
+    settings = abandon_settings(monkeypatch)
+    sm, q, cam, sse = make_sm()
+
+    sm._state.screen = screen
+    sm._manage_watchdog(settings)
+
+    await asyncio.sleep(0.4)
+    assert (await sm.get_state()).screen == "ATTRACT", f"{screen} was never recovered"
+
+
+@pytest.mark.anyio
+async def test_attract_is_not_watched(monkeypatch):
+    """ATTRACT is the resting state — arming there would reset the booth on a
+    loop forever while it sits idle waiting for a guest."""
+    settings = abandon_settings(monkeypatch)
+    sm, q, cam, sse = make_sm()
+
+    sm._manage_watchdog(settings)          # state is ATTRACT out of the box
+    assert sm._watchdog is None
+
+    await asyncio.sleep(0.4)
+    assert sse.payloads == []              # nothing fired, nothing broadcast
+
+
+@pytest.mark.anyio
+async def test_session_watchdog_is_rearmed_by_activity(monkeypatch):
+    """An event proves the frontend is alive, so the floor restarts. Without
+    this the booth would reset mid-session on a slow but present guest."""
+    settings = abandon_settings(monkeypatch, grace=0.4)
+    sm, q, cam, sse = make_sm()
+
+    await sm.handle_event("START_SESSION", {}, settings)   # -> CHOOSE_STYLE
+
+    await asyncio.sleep(0.25)
+    await sm.handle_event("SELECT_LAYOUT", {"mode": "single"}, settings)
+
+    # Past the ORIGINAL window (0.25 + 0.25 > 0.4); the guest is demonstrably
+    # still here, so the booth must not have reset under them.
+    await asyncio.sleep(0.25)
+    assert (await sm.get_state()).screen == "COUNTDOWN"
+
+
+@pytest.mark.anyio
+async def test_session_watchdog_does_not_outrun_the_browser(monkeypatch):
+    """The floor must LOSE the race to the browser's own timer. With the real
+    grace, a guest sitting at REVEAL well past session_timeout is still the
+    frontend's call to end, not the backend's."""
+    monkeypatch.setattr(StateMachine, "SESSION_WATCHDOG_GRACE_S", 30)
+    settings = AppSettings(session_timeout=0)   # browser would fire immediately
+    sm, q, cam, sse = make_sm()
+
+    await sm.handle_event("START_SESSION", {}, settings)
+    await asyncio.sleep(0.3)
+
+    # Grace has not elapsed, so the backend keeps its hands off.
+    assert (await sm.get_state()).screen == "CHOOSE_STYLE"

@@ -1,5 +1,45 @@
 /* ── App-level styles ── */
 
+.app-root {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* Pre-connection loading state */
+.app-loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100%;
+  color: #fff;
+}
+
+/* Camera-disconnected banner (bottom of screen, above everything).
+   Deliberately NOT var(--error): that token is a soft dusty rose for guest-
+   facing copy; this banner is an operator alarm and keeps its hard crimson.
+   pointer-events: none — the banner is pure display and overlaps the hidden
+   admin trigger (L'Étoile, bottom-right): it must never eat those taps.
+   The trigger already wins by z-index (10000 vs 9999); this makes taps pass
+   through regardless of any future stacking change. */
+.camera-error-banner {
+  pointer-events: none;
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background-color: rgba(200, 16, 46, 0.95);
+  color: white;
+  text-align: center;
+  padding: 12px 20px;
+  font-family: var(--font-body);
+  font-weight: 500;
+  z-index: 9999;
+  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.15);
+  backdrop-filter: blur(4px);
+}
+
 /* Offline overlay. Covers the whole booth panel whenever the SSE connection
    drops, so it is centred content on an empty 1920x1080 screen — sized
    viewport-relative for the same reason the booth screens are. It deliberately

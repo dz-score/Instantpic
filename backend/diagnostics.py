@@ -3,11 +3,9 @@ import sys
 import shutil
 import subprocess
 import glob
+from backend import storage
 from backend.settings import AppSettings
 from backend.print_service import PrintService
-
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PHOTOS_DIR = os.path.join(BASE_DIR, "backend", "photos")
 
 def check_printer(print_svc: PrintService):
     """Check if printer is connected/available via PrintService."""
@@ -22,10 +20,13 @@ def check_printer(print_svc: PrintService):
 
 def check_storage(settings: AppSettings):
     """Check disk usage and photo count."""
-    os.makedirs(PHOTOS_DIR, exist_ok=True)
-    total, used, free = shutil.disk_usage(PHOTOS_DIR)
+    # storage.PHOTOS_DIR is read at call time, not imported: this module used
+    # to derive its own copy, which silently escaped the test fixture that
+    # redirects photo storage.
+    storage.ensure_directories()
+    total, used, free = shutil.disk_usage(storage.PHOTOS_DIR)
 
-    pattern = os.path.join(PHOTOS_DIR, "*.[jJ][pP][gG]")
+    pattern = os.path.join(storage.PHOTOS_DIR, "*.[jJ][pP][gG]")
     photo_count = len(glob.glob(pattern))
 
     return {
@@ -62,8 +63,14 @@ def execute_emergency(action: str):
             return {"status": "success", "detail": "Booth restart initiated"}
         
         elif action == "restart_camera":
-            # The frontend will handle camera re-init; this is a backend signal
-            return {"status": "success", "detail": "Camera restart signal sent"}
+            # Deliberately unimplemented, and honest about it. The camera heals
+            # itself (worker re-init with backoff, disconnect cascade), and a
+            # forced exit+init cycle is camera surgery that must be validated
+            # on the real body before it's offered as a button. This used to
+            # return success while doing nothing — lying to an operator
+            # mid-crisis is worse than admitting there's no lever.
+            return {"status": "unsupported",
+                    "detail": "Camera reconnects automatically; no manual restart is implemented"}
         
         elif action == "restart_printer":
             subprocess.run(["sudo", "systemctl", "restart", "cups"],

@@ -45,20 +45,20 @@ The entire application (backend API + frontend static files) runs in **one uvico
 ---
 
 ### Rule: No circular imports at module definition time
-`job_queue.py` imports `state_machine`, and `state_machine` must **not** import `job_queue`. The dependency is broken at startup by injecting the queue via `state_machine.set_job_queue(job_queue)`.
+`state_machine.py` and `job_queue.py` import **neither each other nor any service module**. The FSM receives the queue through its constructor at the composition root, and the queue reports results through per-job `on_success`/`on_failure` callbacks the submitter supplies — it never learns who consumes them.
 
-> **Why:** Python raises `ImportError` on circular imports at module load time. The injection pattern keeps both modules independently importable and independently testable.
+> **Why:** Python raises `ImportError` on circular imports at module load time. Constructor injection plus submitter-owned callbacks keeps both modules independently importable and independently testable.
 
-> **What breaks:** Adding `from backend.job_queue import job_queue` to `state_machine.py` causes an import cycle and crashes uvicorn startup.
+> **What breaks:** Adding a `from backend.state_machine import ...` to `job_queue.py` (or vice versa) recreates the cycle and crashes uvicorn startup.
 
 ---
 
-### Rule: All singletons are module-level instances
-`state_machine`, `job_queue`, `sse_svc`, `print_svc`, `camera_svc`, and `log` are all **module-level singletons** instantiated once at import time. There is no DI container or factory pattern.
+### Rule: Services are built once, at the composition root
+Every service — `SettingsService`, `PrintService`, `JobQueue`, the camera, `SseService`, `StateMachine` — is constructed exactly once in `main.py`'s lifespan, handed its collaborators, and parked on `app.state`; routes reach them via `backend/deps.py` (BACKEND_RULES Rule 19). The only module-level singleton is the logger (`log`), the sanctioned exception.
 
-> **Why:** Simplicity. The booth is a single-user, single-session device. Multiple instances of these services would cause undefined behavior (two camera workers, two print queues, etc.).
+> **Why:** One instance per process still holds (two camera workers or two print queues would be undefined behavior), but import-time singletons made services unreplaceable: tests had to monkeypatch module globals, and importing a module could grab a device handle.
 
-> **What breaks:** Instantiating a second `StateMachine()` or `JobQueue()` in tests without patching will corrupt the shared state. Use `conftest.py` fixtures that reset or replace singletons properly.
+> **What breaks:** Reaching a service through a module import instead of `deps.py` reintroduces the second wiring mechanism Rule 19 forbids — and it will silently target a *different instance* than the one the lifespan built.
 
 ---
 
@@ -283,19 +283,17 @@ There is no database, no environment variables for runtime settings, and no `.en
 
 ---
 
-### Rule: `camera_backend` is read once at startup (import time)
-The camera backend (`"gphoto2"` or `"mock"`) is selected in `main.py` when the module is first imported. Changing this setting requires a server restart to take effect.
+### Rule: `camera_backend` is read once at startup
+The camera backend (`"gphoto2"` or `"mock"`) is chosen by `backend/camera/factory.py`'s `create_camera()`, which the lifespan calls exactly once. Changing this setting requires a server restart to take effect.
 
-> **Why:** The gphoto2 import happens at module level and cannot be hot-swapped. This is a startup-time decision, not a runtime one.
+> **Why:** The gphoto2 import happens at module level inside `backend/camera/device.py` and cannot be hot-swapped. This is a startup-time decision, not a runtime one.
 
 ---
 
-### Rule: `config.json` is loaded fresh on every API call that needs it
-`load_settings()` reads and parses `config.json` on every call. There is no in-memory cache in the config module itself.
+### Rule: settings live in memory; `config.json` is persistence, not input
+`SettingsService` (backend/settings.py) reads `config.json` once at startup and serves every later read from memory. `update()` rebinds a new `AppSettings` and writes the file atomically. Hand-editing `config.json` on a running booth has no effect until restart — the next admin save overwrites it.
 
-> **Why:** The Admin Panel can update config at any time. Stale cached settings would cause the next photo to use outdated couple names, overlays, or text.
-
-> **Perf note:** `config.json` is < 1 KB. The file I/O cost is negligible.
+> **Why:** One in-memory authority (BACKEND_RULES Rule 21). Admin edits still take effect immediately — every request asks the service, and long-running work (a capture sequence) deliberately holds the snapshot it started with so a mid-session save can't retime shots already underway.
 
 ---
 

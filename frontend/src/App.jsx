@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import useSse from './hooks/useSse';
-import useCamera from './hooks/useCamera';
 import useApi from './hooks/useApi';
 import { logger, startSession, endSession } from './utils/logger';
 import { t } from './utils/i18n';
@@ -24,8 +23,17 @@ export default function App() {
   const [adminTapCount, setAdminTapCount] = useState(0);
   const [appState, setAppState] = useState(null);
 
-  const sse = useSse();
-  const camera = useCamera(sse.cameraStatus);
+  // ─── URL Routing (mobile download) ───
+  // Decided before the hooks run, because it gates them: /download/:filename is
+  // the guest's phone, a standalone page that needs no booth state. It is read
+  // from the URL, which is fixed for the life of this mount, so the hook order
+  // below is stable.
+  const downloadFilename = window.location.pathname.startsWith('/download/')
+    ? window.location.pathname.replace('/download/', '')
+    : null;
+  const isBooth = !downloadFilename;
+
+  const sse = useSse(isBooth);
   const api = useApi(sse.isOnline);
   const config = sse.config;   // pushed over SSE (connect + on change)
   const inactivityTimer = useRef(null);
@@ -42,17 +50,12 @@ export default function App() {
   // fresh object every render (useApi returns a new literal each call), so it
   // can't be a dependency here without re-firing this fetch on every render.
   useEffect(() => {
+    if (!isBooth) return;
     api.fetchState().then(state => {
       if (state) setAppState(prev => prev || state);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // ─── URL Routing (mobile download) ───
-  // We still handle /download/ locally since it's just a static page
-  const downloadFilename = window.location.pathname.startsWith('/download/')
-    ? window.location.pathname.replace('/download/', '')
-    : null;
+  }, [isBooth]);
 
   const currentScreen = downloadFilename ? 'DOWNLOAD' : (appState?.screen || 'LOADING');
 
@@ -181,12 +184,12 @@ export default function App() {
 
   // ─── Render ───
   return (
-    <div className="app-root" style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden' }}>
+    <div className="app-root">
 
       {/* ─── Screen Router ─── */}
-      
+
       {currentScreen === 'LOADING' && (
-        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', color: '#fff' }}>
+        <div className="app-loading">
           <h2>Connecting...</h2>
         </div>
       )}
@@ -210,13 +213,13 @@ export default function App() {
 
       {currentScreen === 'COUNTDOWN' && (
         <CountdownScreen
-          previewUrl={camera.previewUrl}
+          previewUrl="/api/camera/preview"
           totalShots={appState?.totalShots || 1}
           capturedCount={appState?.capturedImages?.length || 0}
           fireShot={handleFireShot}
-          resumePreview={camera.resumePreview}
+          resumePreview={api.resumeCameraPreview}
           cameraJob={sse.cameraJob}
-          cameraStatus={camera.cameraStatus}
+          cameraStatus={sse.cameraStatus}
           onCancel={() => api.sendEvent('FINISH')}
           config={config}
           language={language}
@@ -315,27 +318,13 @@ export default function App() {
           getRecentLogs={api.getRecentLogs}
           getCameraConfig={api.getCameraConfig}
           saveCameraConfig={api.saveCameraConfig}
-          cameraStatus={camera.cameraStatus}
+          cameraStatus={sse.cameraStatus}
         />
       )}
 
-      {camera.cameraStatus.error && (
-        <div style={{
-          position: 'absolute',
-          bottom: 0,
-          left: 0,
-          right: 0,
-          backgroundColor: 'rgba(200, 16, 46, 0.95)',
-          color: 'white',
-          textAlign: 'center',
-          padding: '12px 20px',
-          fontFamily: 'var(--font-body)',
-          fontWeight: 500,
-          zIndex: 9999,
-          boxShadow: '0 -4px 12px rgba(0,0,0,0.15)',
-          backdropFilter: 'blur(4px)'
-        }}>
-          ⚠️ Camera Disconnected: {camera.cameraStatus.error}. Please check the USB connection to the Canon M50.
+      {sse.cameraStatus.error && (
+        <div className="camera-error-banner">
+          ⚠️ Camera Disconnected: {sse.cameraStatus.error}. Please check the USB connection to the Canon M50.
         </div>
       )}
     </div>

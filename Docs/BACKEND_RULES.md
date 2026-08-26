@@ -294,6 +294,14 @@ Required: the entrypoint constructs each service, passes collaborators in, and
 owns their lifecycle. Everything below the entrypoint receives its dependencies
 and never reaches for them.
 
+Sanctioned exception: the logger (`backend/logger.py`, the `log` singleton). It
+is the one dependency every module needs including during import, threading it
+through every constructor would be noise for no testability gain, and its only
+construction side effect (opening log files) is redirectable via the
+`BOOTH_LOG_DIR` environment variable — which the test suite must set before any
+backend import (see conftest.py). Any other module claiming this exception
+needs this paragraph amended first.
+
 ---
 
 ### Rule 20: One Reason to Change per Module

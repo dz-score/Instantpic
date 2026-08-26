@@ -53,6 +53,11 @@ class StateMachine:
     one way only (Rule 18).
     """
 
+    # How far past the configured session_timeout the backend floor waits
+    # before it resets the booth. The browser's timer is the precise one (it
+    # sees touches); this one deliberately loses that race — see _manage_watchdog.
+    SESSION_WATCHDOG_GRACE_S = 60
+
     def __init__(self, sse, job_queue, camera=None):
         self._state = BoothState()
         self._lock = None
@@ -62,9 +67,18 @@ class StateMachine:
         # True while a capture is between FIRE_SHOT and its terminal callback;
         # guards against double-firing the shutter.
         self._shot_in_flight = False
-        # Floor for a session stranded in COUNTDOWN (browser or camera died
-        # mid-shot); armed while the FSM sits there (see _manage_stall_watchdog).
-        self._stall_watchdog: Optional[asyncio.Task] = None
+        # Floor for a session the browser can no longer end by itself — armed
+        # for every screen except ATTRACT (see _manage_watchdog).
+        self._watchdog: Optional[asyncio.Task] = None
+        # Bumped on every transition. A watchdog captures this when it arms and
+        # refuses to fire if it has moved, which is what makes a late-waking
+        # task harmless without having to re-derive "did anything happen since".
+        self._transition_seq = 0
+        # The settings that armed the current session. Job callbacks re-arm the
+        # watchdog but are not handed settings, so the session pins them here
+        # at entry instead of re-fetching mid-flight (Rule 21 sanctions exactly
+        # this; only accidental per-call re-fetching is the violation).
+        self._watchdog_settings: Optional[AppSettings] = None
 
     def _get_lock(self):
         if self._lock is None:
@@ -186,54 +200,78 @@ class StateMachine:
                 log.warn("state_machine", "unknown_event", f"Unknown event type: {event_type}")
                 return
 
-            self._manage_stall_watchdog(settings)
+            self._manage_watchdog(settings)
             state_dict = self._state.model_dump()
 
         # Broadcast outside the lock to avoid blocking
         await self.broadcast_state(state_dict)
 
-    def _manage_stall_watchdog(self, settings: AppSettings):
-        """(Re)arm or cancel the COUNTDOWN stall floor. Runs under the
-        handler lock, after every state transition.
+    def _manage_watchdog(self, settings: Optional[AppSettings] = None):
+        """(Re)arm or cancel the backend session floor. Runs under the handler
+        lock, after every transition that can change the screen.
 
-        Ordinary capture completion is backend-owned (camera -> FSM
-        callbacks), so this watchdog is a true last resort: it only fires if
-        the browser died mid-session (no FIRE_SHOT ever arrives) or a capture
-        callback never lands. Either way the session is unrecoverable and the
-        booth resets to ATTRACT for the next guest — the same backend-owned
-        recovery idiom as TIMEOUT and printStatus (Rule 14).
+        The browser owns the *precise* inactivity timer (App.jsx): it resets on
+        every touch, which the backend cannot observe, so it stays where it is.
+        This is the floor underneath it — for when that timer can never fire at
+        all because the kiosk tab crashed, froze, or lost the network. Ending a
+        session is workflow, and workflow is backend-owned (Rule 1); leaving it
+        solely to the browser meant a tab that died at REVEAL or PICK_FAVORITE
+        stranded the booth in that screen indefinitely, so the next guest walked
+        up to the previous guest's photos.
 
-        Re-armed on every event that lands in COUNTDOWN, so each shot of a
-        multi-shot layout gets a fresh window; cancelled on any transition
-        elsewhere.
+        Two windows, because the two failures differ in kind:
+          - COUNTDOWN keeps capture_stall_timeout: a tight, capture-specific
+            window, since a shot either lands or it doesn't.
+          - every other non-ATTRACT screen gets session_timeout plus
+            SESSION_WATCHDOG_GRACE_S. It deliberately loses the race to the
+            browser's own timer, because a guest reading the screen with a
+            perfectly alive frontend must never be reset out from under it —
+            only a frontend that has stopped reporting should trip this.
         """
-        if self._stall_watchdog:
-            self._stall_watchdog.cancel()
-            self._stall_watchdog = None
-        if self._state.screen == "COUNTDOWN":
-            self._stall_watchdog = asyncio.create_task(
-                self._stall_watchdog_expire(
-                    settings.capture_stall_timeout,
-                    len(self._state.capturedImages),
-                )
-            )
+        if settings is not None:
+            self._watchdog_settings = settings
+        settings = self._watchdog_settings
 
-    async def _stall_watchdog_expire(self, timeout: float, armed_shots: int):
+        self._transition_seq += 1
+        if self._watchdog:
+            self._watchdog.cancel()
+            self._watchdog = None
+
+        screen = self._state.screen
+        # No settings yet means no session has started; ATTRACT is the resting
+        # state and has nothing to time out of.
+        if screen == "ATTRACT" or settings is None:
+            return
+
+        if screen == "COUNTDOWN":
+            timeout = settings.capture_stall_timeout
+            event = "capture_stalled"
+            detail = (f"No shot progress after {timeout}s in COUNTDOWN "
+                      f"({len(self._state.capturedImages)}/{self._state.totalShots} shots)")
+        else:
+            timeout = settings.session_timeout + self.SESSION_WATCHDOG_GRACE_S
+            event = "session_abandoned"
+            detail = (f"No activity for {timeout}s in {screen} — the browser's own "
+                      f"inactivity timer never fired, so it is presumed gone")
+
+        self._watchdog = asyncio.create_task(
+            self._watchdog_expire(timeout, self._transition_seq, event, detail)
+        )
+
+    async def _watchdog_expire(self, timeout: float, armed_seq: int, event: str, detail: str):
         await asyncio.sleep(timeout)
         async with self._get_lock():
-            # A shot may have landed while this task waited for the lock —
-            # only a session still in COUNTDOWN with no shot progress since
-            # arming is genuinely stalled.
-            if self._state.screen != "COUNTDOWN" or len(self._state.capturedImages) != armed_shots:
+            # Anything at all transitioned while this task slept or waited for
+            # the lock — a newer watchdog owns the session and this one is stale.
+            if self._transition_seq != armed_seq:
                 return
-            log.error("state_machine", "capture_stalled",
-                      f"No shot progress after {timeout}s in COUNTDOWN "
-                      f"({armed_shots}/{self._state.totalShots} shots) — resetting to ATTRACT")
+            log.error("state_machine", event, f"{detail} — resetting to ATTRACT")
             self._state = BoothState(screen="ATTRACT")
-            self._stall_watchdog = None
+            self._watchdog = None
             # A capture whose callback never arrived would otherwise block
-            # FIRE_SHOT forever; the stall reset is the floor for that too.
+            # FIRE_SHOT forever; the reset is the floor for that too.
             self._shot_in_flight = False
+            self._transition_seq += 1
             state_dict = self._state.model_dump()
         await self.broadcast_state(state_dict)
 
@@ -296,7 +334,7 @@ class StateMachine:
                     ))
             # Otherwise stay in COUNTDOWN; broadcasting the new state lets the
             # UI advance its shot-progress presentation.
-            self._manage_stall_watchdog(settings)
+            self._manage_watchdog(settings)
             state_dict = self._state.model_dump()
         await self.broadcast_state(state_dict)
 
@@ -331,6 +369,9 @@ class StateMachine:
             self._state.isProcessing = False
             self._state.finalPhoto = filename
             await self._enter_printing()
+            # Screen changed outside handle_event, so re-arm here too — this is
+            # the one callback path that lands the guest on a new screen.
+            self._manage_watchdog()
             state_dict = self._state.model_dump()
         await self.broadcast_state(state_dict)
 
