@@ -25,6 +25,7 @@ transport. Nothing below the transport layer can tell which one is running.
 |---|---|---|---|
 | `IDLE` | — | `OK IDLE` | → Idle |
 | `PHASE <hue>` | 0–359 | `OK PHASE` | → Playful, hue stored |
+| `READY` | — | `OK READY` | → Ready; head parked at 12 o'clock, holds indefinitely |
 | `COUNTDOWN <ms>` | 1–60000 | `OK COUNTDOWN` | → Countdown; node runs its own clock |
 | `CAPTURE` | — | `OK CAPTURE` | → Capture. **Wait for this reply, then fire the shutter.** The full handshake is [here](LED_NODE_ARCHITECTURE.md#runtime-view-the-capture-handshake); note the reply means *applied*, not *lit* — the ring ramps for 100 ms after it. |
 | `RELEASE` | — | `OK RELEASE` | → Idle. Exact alias of `IDLE` — same `case` in `apply()` |
@@ -32,6 +33,16 @@ transport. Nothing below the transport layer can tell which one is running.
 | `FINISHED <ms>` | 1–60000 | `OK FINISHED` | → Finished; returns to Idle on its own |
 | `ERROR <code>` | ≥ 0, effective 1–9 | `OK ERROR` | → Error; code = heartbeat groups |
 | `PING` | — | `PONG` | No mode change, **except** from Boot or Link Lost → Idle |
+
+**`READY` then `COUNTDOWN`, and the timing of the second one matters.** Send
+`READY` when the booth decides a countdown is coming, and `COUNTDOWN <ms>` only
+at the instant the guest-visible count actually begins. Those are not the same
+moment: on this booth the camera preview takes 1–3.5 s to paint its first frame,
+and the count waits for it. Sending `COUNTDOWN` at the decision instead put the
+node seconds ahead of the numbers the guest was reading — and since
+`anim_countdown` clamps elapsed to duration, the ring had already frozen at the
+end of its sweep before the guest saw the last number. Ready holds forever by
+design so the host can take as long as it needs to reach that instant.
 
 **`ERROR <code>` clamps rather than rejects.** Any non-negative integer parses.
 `anim_error` renders `code` as the number of double-pulse groups, treating 0 as

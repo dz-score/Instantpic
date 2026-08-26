@@ -85,7 +85,7 @@ Select `LED_NODE_TRANSPORT_UART`. WiFi is compiled out entirely.
 ASCII, newline-terminated, identical on both transports. The vocabulary:
 
 ```
-IDLE   PHASE <hue>   COUNTDOWN <ms>   CAPTURE   RELEASE
+IDLE   PHASE <hue>   READY   COUNTDOWN <ms>   CAPTURE   RELEASE
 PRINTING   FINISHED <ms>   ERROR <code>   PING
 ```
 

@@ -88,7 +88,7 @@ timeout, which is an error detector rather than an expected wait.
 
 ## Mode state machine
 
-Nine modes, in [`modes.h`](../led-node/components/render/include/modes.h).
+Ten modes, in [`modes.h`](../led-node/components/render/include/modes.h).
 Every edge is either a command from the Pi or a deadline the node evaluates
 itself in `check_deadlines()`.
 
@@ -99,6 +99,7 @@ stateDiagram-v2
     BOOT : BOOT<br/>alive, no host yet
     IDLE : IDLE
     PLAYFUL : PLAYFUL<br/>hue from PHASE
+    READY : READY<br/>parked, waiting for the count to start
     COUNTDOWN : COUNTDOWN<br/>node runs its own clock
     CAPTURE : CAPTURE<br/>full white, brightness bypassed
     PRINTING : PRINTING
@@ -108,7 +109,8 @@ stateDiagram-v2
 
     BOOT --> IDLE : any command,<br/>PING included
     IDLE --> PLAYFUL : PHASE
-    PLAYFUL --> COUNTDOWN : COUNTDOWN
+    PLAYFUL --> READY : READY
+    READY --> COUNTDOWN : COUNTDOWN
     IDLE --> COUNTDOWN : COUNTDOWN
     COUNTDOWN --> CAPTURE : CAPTURE
     CAPTURE --> IDLE : RELEASE / IDLE
@@ -133,7 +135,8 @@ likewise fires from any mode except `BOOT` and `LINKLOST` itself.
 |---|---|---|---|
 | any | `IDLE`, `RELEASE` | Idle | `RELEASE` is an exact alias — same `case` |
 | any | `PHASE <hue>` | Playful | hue stored in params |
-| any | `COUNTDOWN <ms>` | Countdown | node then times itself |
+| any | `READY` | Ready | no deadline — the host decides when the count starts |
+| any | `COUNTDOWN <ms>` | Countdown | node then times itself; sent when the guest-visible count begins, not when the booth decides one is coming |
 | any | `CAPTURE` | Capture | |
 | any | `PRINTING` | Printing | |
 | any | `FINISHED <ms>` | Finished | |

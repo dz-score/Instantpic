@@ -99,13 +99,14 @@ Open `http://IP/` and leave the heartbeat box checked.
 
 | Command | What to verify |
 |---|---|
-| `IDLE` | Slow warm breathing on a ~6 s cycle, rotation so slow it is barely perceptible. **It should be boring** — that is the four-hour requirement, not a defect. |
+| `IDLE` | Slow warm breathing on a ~6 s cycle, rotation so slow it is barely perceptible. **The breath should be obvious from across the room**, dimming to roughly a quarter of its peak; boring is the four-hour requirement, invisible is a defect. |
 | `PHASE 280` | A bright head sweeps once around in ~400 ms *laying the colour down behind it*, then holds with a faint shimmer. Try 0 / 120 / 240 to check hue mapping. |
-| `COUNTDOWN 3000` | **Count the laps: exactly 3, one per second.** On the final lap the head brightens and the trail lengthens. |
+| `READY` | A dim wash with a single brighter pixel parked at 12 o'clock, completely still. Leave it a minute — it must **never** time out on its own. |
+| `COUNTDOWN 3000` | Send it while Ready is showing: the parked head simply **starts moving from where it sat**. Count the laps: exactly 3, one per second. On the final lap the head brightens and the trail lengthens. |
 | `COUNTDOWN 5000` | **5 laps, and the final-second lift still lands on the last one.** This proves the firmware is count-agnostic — a different countdown length is a parameter, not a code change. |
 | `CAPTURE` | Ramps to full white over 100 ms then freezes. Completely static. |
 | `RELEASE` | Smooth 200 ms cross-fade back to Idle. |
-| `PRINTING` | Three colour bands plus a genuine dark gap, one revolution per 2 s, constant speed and direction. |
+| `PRINTING` | Three colour bands over a dim wash, one revolution per 2 s, constant speed and direction. **No part of the ring goes fully dark** — a black quadrant reads as dead pixels, not as a gap. |
 | `FINISHED 4000` | Sparkles over a warm base, thinning as it goes, then **auto-returns to IDLE** after 4 s. |
 | `ERROR 1` | One double-pulse, then a long pause. |
 | `ERROR 3` | Three double-pulse groups, then the pause. Count them — that is the on-site diagnostic. |
@@ -198,25 +199,45 @@ sudo arp -a | grep -i wlan0
 answers `PONG`. On a quiet AP this should be single-digit milliseconds; anything
 above ~30 ms is worth understanding before continuing.
 
-**3. Single shot.** Run a full session. The ring must be **white and steady
-before the shutter**, not still ramping — the ack is what buys that, so this is
-the assertion the whole handshake exists for. Check the photo, not just the
-ring: a frame caught mid-ramp looks underexposed and slightly colour-shifted,
-not obviously "wrong".
+**3. Single shot.** Run a full session and watch the ring against the numerals.
 
-**4. Three-shot collage.** Watch the gap between shots. The node starts its next
-countdown when the shot completes, while the browser waits `shot_interval_ms`
-first, so the ring finishes its sweep slightly early and holds at the top. That
-is expected and benign — `anim_countdown` clamps elapsed to duration. A ring
-that goes dark, wraps, or restarts is not.
+- Through the camera warm-up the head sits **parked and still** at 12 o'clock.
+- It **starts moving as the first number appears**, not before. This is the fix
+  for the original desync: the ring used to begin its sweep when the layout was
+  chosen, seconds ahead of the numbers, and had frozen at the end of its travel
+  before the guest reached the last one.
+- One full lap per number, and the final lap brightens.
+- The ring must be **white and steady before the shutter**, not still ramping —
+  the ack is what buys that, so this is the assertion the whole handshake exists
+  for. Check the photo, not just the ring: a frame caught mid-ramp looks
+  underexposed and slightly colour-shifted, not obviously "wrong".
 
-**5. Pull the node's power mid-session.** The booth must keep taking photos.
+**4. Retake, then a three-shot collage.** Both are rounds the browser starts on
+its own, with no state change for the ring to follow — they are what the cue
+exists for.
+
+- After a failed shot, tap retry: the ring must park, then sweep again with the
+  new numbers. A ring still frozen at the end of the previous sweep means the
+  cue never reached the backend.
+- In a collage, each shot parks during `shot_interval_ms` and starts its sweep
+  with that shot's own first number.
+
+**5. Pull the camera's USB cable at ATTRACT.** Within about two seconds the ring
+must drop to the error pattern: dim red double-pulses, one group then a pause.
+Plug it back in — the ring returns to Idle on its own, without a transition.
+
+Then unplug it again and start a session: the pattern must **stay** red through
+whatever screens the booth moves through. It outranks the screen deliberately;
+otherwise the next transition paints over the one signal an operator can read
+from across a room.
+
+**6. Pull the node's power mid-session.** The booth must keep taking photos.
 `led_link_error` appears in the log, the LED Ring card goes red within a few
 seconds, and nothing about the guest's session changes except the light. Restore
 power: the heartbeat alone must bring the ring back to Idle — no restart, no
 reflash. (Phase 6 asserts this at the node; this asserts the Pi's half of it.)
 
-**6. Record the numbers.**
+**7. Record the numbers.**
 
 ```bash
 curl -s localhost:8000/api/diagnostics | python3 -m json.tool
