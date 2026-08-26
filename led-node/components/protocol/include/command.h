@@ -24,6 +24,7 @@ typedef enum {
     CMD_NONE = 0,
     CMD_IDLE,       /* IDLE                */
     CMD_PHASE,      /* PHASE <hue 0..359>  */
+    CMD_READY,      /* READY               */
     CMD_COUNTDOWN,  /* COUNTDOWN <ms>      */
     CMD_CAPTURE,    /* CAPTURE             */
     CMD_RELEASE,    /* RELEASE             */

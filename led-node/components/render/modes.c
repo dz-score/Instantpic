@@ -25,6 +25,7 @@ static const anim_fn ANIM[MODE_COUNT] = {
     [MODE_BOOT]      = anim_boot,
     [MODE_IDLE]      = anim_idle,
     [MODE_PLAYFUL]   = anim_playful,
+    [MODE_READY]     = anim_ready,
     [MODE_COUNTDOWN] = anim_countdown,
     [MODE_CAPTURE]   = anim_capture,
     [MODE_PRINTING]  = anim_printing,
@@ -100,6 +101,15 @@ static void apply(const command_t *cmd, char *reply, size_t reply_sz)
         case CMD_IDLE:
         case CMD_RELEASE:
             enter(MODE_IDLE, NULL);
+            break;
+
+        case CMD_READY:
+            /* No timeout of its own. The two hold-forever modes that have one
+             * (Printing, Capture) wait on events that can fail silently; this
+             * one is covered twice already — the Pi resets a stalled session on
+             * its own watchdog, and if the Pi dies outright the link watchdog
+             * takes the ring to Link Lost. */
+            enter(MODE_READY, NULL);
             break;
 
         case CMD_PHASE:
@@ -263,6 +273,7 @@ static const char *MODE_NAMES[MODE_COUNT] = {
     [MODE_BOOT]      = "BOOT",
     [MODE_IDLE]      = "IDLE",
     [MODE_PLAYFUL]   = "PLAYFUL",
+    [MODE_READY]     = "READY",
     [MODE_COUNTDOWN] = "COUNTDOWN",
     [MODE_CAPTURE]   = "CAPTURE",
     [MODE_PRINTING]  = "PRINTING",

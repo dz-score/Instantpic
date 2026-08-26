@@ -20,6 +20,7 @@ typedef enum {
     MODE_BOOT = 0,   /* alive, no host yet — also the wiring self-test */
     MODE_IDLE,
     MODE_PLAYFUL,
+    MODE_READY,      /* poised, waiting for the count to start */
     MODE_COUNTDOWN,
     MODE_CAPTURE,
     MODE_PRINTING,

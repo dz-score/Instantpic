@@ -13,6 +13,7 @@ typedef struct {
 static const verb_entry_t VERBS[] = {
     {"IDLE",      CMD_IDLE,      false},
     {"PHASE",     CMD_PHASE,     true },
+    {"READY",     CMD_READY,     false},
     {"COUNTDOWN", CMD_COUNTDOWN, true },
     {"CAPTURE",   CMD_CAPTURE,   false},
     {"RELEASE",   CMD_RELEASE,   false},

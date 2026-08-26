@@ -44,6 +44,7 @@ static void anim_noop(uint32_t t, const mode_params_t *p, canvas_t *c)
 void anim_boot(uint32_t t, const mode_params_t *p, canvas_t *c)     { anim_noop(t, p, c); }
 void anim_idle(uint32_t t, const mode_params_t *p, canvas_t *c)     { anim_noop(t, p, c); }
 void anim_playful(uint32_t t, const mode_params_t *p, canvas_t *c)  { anim_noop(t, p, c); }
+void anim_ready(uint32_t t, const mode_params_t *p, canvas_t *c)    { anim_noop(t, p, c); }
 void anim_countdown(uint32_t t, const mode_params_t *p, canvas_t *c){ anim_noop(t, p, c); }
 void anim_capture(uint32_t t, const mode_params_t *p, canvas_t *c)  { anim_noop(t, p, c); }
 void anim_printing(uint32_t t, const mode_params_t *p, canvas_t *c) { anim_noop(t, p, c); }
@@ -158,6 +159,9 @@ TEST(commands_enter_their_documented_modes)
     CHECK_INT(s.mode, MODE_PLAYFUL);
     CHECK_NEAR(s.params.hue, 280.0, 0.01);
 
+    CHECK_STR(send("READY"), "OK READY");
+    CHECK_INT(s.mode, MODE_READY);
+
     CHECK_STR(send("COUNTDOWN 3000"), "OK COUNTDOWN");
     CHECK_INT(s.mode, MODE_COUNTDOWN);
     CHECK_INT(s.params.duration_ms, 3000);
@@ -211,6 +215,21 @@ TEST(every_command_is_legal_in_every_mode)
     enter_mode(MODE_PRINTING);
     CHECK_STR(send("COUNTDOWN 3000"), "OK COUNTDOWN");
     CHECK_INT(s.mode, MODE_COUNTDOWN);
+}
+
+TEST(ready_holds_until_the_count_actually_starts)
+{
+    /* The gap this mode exists for is the camera warming up, which the browser
+     * owns and neither the node nor the Pi can predict. So Ready must have no
+     * deadline of its own: a node that timed out here would drop the ring to
+     * Idle in the middle of a session that is proceeding normally. */
+    enter_mode(MODE_READY);
+    advance_alive_ms(300000);   /* five minutes, host healthy */
+    CHECK_INT(s.mode, MODE_READY);
+
+    CHECK_STR(send("COUNTDOWN 3000"), "OK COUNTDOWN");
+    CHECK_INT(s.mode, MODE_COUNTDOWN);
+    CHECK_INT(now_ms() - s.entry_ms, 0);   /* the sweep starts from zero */
 }
 
 TEST(reentering_a_mode_restarts_its_clock)
@@ -343,6 +362,7 @@ int main(void)
     RUN(out_of_range_arguments_leave_the_mode_alone);
     RUN(boundary_arguments_are_accepted);
     RUN(every_command_is_legal_in_every_mode);
+    RUN(ready_holds_until_the_count_actually_starts);
     RUN(reentering_a_mode_restarts_its_clock);
     RUN(capture_releases_itself_after_thirty_seconds);
     RUN(printing_fails_to_error_after_two_minutes);

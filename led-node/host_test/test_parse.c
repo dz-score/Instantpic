@@ -24,6 +24,7 @@ TEST(every_documented_verb_parses)
 {
     CHECK_INT(parse("IDLE").verb, CMD_IDLE);
     CHECK_INT(parse("PHASE 280").verb, CMD_PHASE);
+    CHECK_INT(parse("READY").verb, CMD_READY);
     CHECK_INT(parse("COUNTDOWN 3000").verb, CMD_COUNTDOWN);
     CHECK_INT(parse("CAPTURE").verb, CMD_CAPTURE);
     CHECK_INT(parse("RELEASE").verb, CMD_RELEASE);
@@ -44,6 +45,7 @@ TEST(arguments_are_captured)
 TEST(verbs_are_case_insensitive)
 {
     CHECK_INT(parse("idle").verb, CMD_IDLE);
+    CHECK_INT(parse("ready").verb, CMD_READY);
     CHECK_INT(parse("Phase 90").verb, CMD_PHASE);
     CHECK_INT(parse("cApTuRe").verb, CMD_CAPTURE);
 }
@@ -64,6 +66,7 @@ TEST(malformed_lines_are_rejected)
     CHECK_INT(accepts("   "), 0);
     CHECK_INT(accepts("NOTAVERB"), 0);
     CHECK_INT(accepts("PHASE"), 0);          /* argument required */
+    CHECK_INT(accepts("READY 1"), 0);        /* takes none */
     CHECK_INT(accepts("PHASE abc"), 0);
     CHECK_INT(accepts("PHASE 1.5"), 0);
     CHECK_INT(accepts("PHASE 0x10"), 0);
