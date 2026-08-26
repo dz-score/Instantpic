@@ -82,10 +82,17 @@ class AppSettings(BaseModel):
     port: int = 8000
     selected_overlay: str = "none"
     wifi_network_name: str = "Our Wedding WiFi"
+    # filename must match a real file in backend/overlays/. These defaults named
+    # blush_floral.png / gold_glitter.png, neither of which was ever committed —
+    # the shipped artwork is frame_floral.png / frame_gold_elegant.png. Nothing
+    # complained because photo_processor fabricated a stand-in for any missing
+    # overlay, so a booth on defaults printed drawn placeholders over the real
+    # frames. That fabricator is gone, which makes a wrong filename here visible
+    # (overlay_missing in the log) instead of silently substituted.
     overlays: List[OverlayConfig] = [
         OverlayConfig(id="none", name="No Frame", filename=""),
-        OverlayConfig(id="blush_floral", name="Chic Blush Floral", filename="blush_floral.png"),
-        OverlayConfig(id="gold_glitter", name="Elegant Gold Frame", filename="gold_glitter.png")
+        OverlayConfig(id="blush_floral", name="Chic Blush Floral", filename="frame_floral.png"),
+        OverlayConfig(id="gold_glitter", name="Elegant Gold Frame", filename="frame_gold_elegant.png")
     ]
 
 def _quarantine_bad_config(path: str) -> str:
