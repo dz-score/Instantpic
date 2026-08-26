@@ -313,6 +313,7 @@ export default function App() {
           onSave={handleAdminSave}
           onClose={() => setShowAdmin(false)}
           getDiagnostics={api.getDiagnostics}
+          testLed={api.testLed}
           emergencyAction={api.emergencyAction}
           changePin={api.changePin}
           getRecentLogs={api.getRecentLogs}

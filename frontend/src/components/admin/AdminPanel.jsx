@@ -25,6 +25,7 @@ export default function AdminPanel({
   onSave,
   onClose,
   getDiagnostics,
+  testLed,
   emergencyAction,
   changePin,
   getRecentLogs,
@@ -175,6 +176,9 @@ export default function AdminPanel({
           {activeTab === 'system' && (
             <SystemTab
               getDiagnostics={getDiagnostics}
+              testLed={testLed}
+              ledConfig={config?.led}
+              onSaveLed={(led) => onSave({ led })}
               emergencyAction={emergencyAction}
               changePin={changePin}
               currentPin={adminPin}
