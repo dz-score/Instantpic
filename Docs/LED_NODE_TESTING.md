@@ -179,6 +179,65 @@ on. It must rejoin without a reset.
 
 ---
 
+## Phase 7 — With the Pi driving it
+
+Phases 1–6 exercise the node from a browser. This one exercises the booth: the
+FSM sending real commands at real moments, which is the only place the CAPTURE
+ack sits inside the shot and the only place the numbers mean anything.
+
+Everything here runs on the Pi with the strip and the M50 attached. Setup is in
+`Docs/DEPLOYMENT_GUIDE.md` §11.
+
+**1. Address.** The node associated and holds its reserved address:
+
+```bash
+sudo arp -a | grep -i wlan0
+```
+
+**2. Link.** Admin → System → LED Ring: enabled, address entered, **Test Ring**
+answers `PONG`. On a quiet AP this should be single-digit milliseconds; anything
+above ~30 ms is worth understanding before continuing.
+
+**3. Single shot.** Run a full session. The ring must be **white and steady
+before the shutter**, not still ramping — the ack is what buys that, so this is
+the assertion the whole handshake exists for. Check the photo, not just the
+ring: a frame caught mid-ramp looks underexposed and slightly colour-shifted,
+not obviously "wrong".
+
+**4. Three-shot collage.** Watch the gap between shots. The node starts its next
+countdown when the shot completes, while the browser waits `shot_interval_ms`
+first, so the ring finishes its sweep slightly early and holds at the top. That
+is expected and benign — `anim_countdown` clamps elapsed to duration. A ring
+that goes dark, wraps, or restarts is not.
+
+**5. Pull the node's power mid-session.** The booth must keep taking photos.
+`led_link_error` appears in the log, the LED Ring card goes red within a few
+seconds, and nothing about the guest's session changes except the light. Restore
+power: the heartbeat alone must bring the ring back to Idle — no restart, no
+reflash. (Phase 6 asserts this at the node; this asserts the Pi's half of it.)
+
+**6. Record the numbers.**
+
+```bash
+curl -s localhost:8000/api/diagnostics | python3 -m json.tool
+```
+
+`led.latency_ms.CAPTURE` p50/p95/p99, and `led.counts` for `link_error:*` and
+`rejected:*`. Those are the Pi's view; the node's own Link Lost entries are
+node-side, so read them from the monitor or from `http://<node>/state` — a
+`link lost` line in an otherwise-healthy session is the signal, and the counters
+alone will not show it. This is the baseline
+`Docs/LED_UART_SWITCH.md` compares against, and the whole reason the
+instrumentation exists.
+
+> **A quiet room proves nothing.** The condition that decides HTTP's fate is a
+> venue full of phones on 2.4 GHz, and it cannot be reproduced on a bench.
+> Re-run this step at the event and compare against the baseline — a p99
+> approaching the shutter budget, or a Link Lost in an otherwise-healthy
+> session, is the trigger to build the UART version.
+
+---
+
 ## Troubleshooting
 
 **Boot loop with `E BOD: Brownout detector was triggered`,** dying right after
