@@ -13,6 +13,30 @@ def test_post_config(client):
     data = response.json()
     assert data["countdown_duration"] == 5
 
+def test_led_config_defaults_are_served(client):
+    """The ring is off by default and the block is nested under a transport key."""
+    led = client.get("/api/config").json()["led"]
+    assert led["enabled"] is False
+    assert led["transport"] == "http"
+    assert led["http"]["host"] == ""
+
+def test_partial_led_update_does_not_reset_the_rest_of_the_block(client):
+    """The one nested block, and SettingsService.update() replaces top-level keys
+    outright. Without the merge, setting the host alone would switch the ring off."""
+    client.post("/api/config", json={"led": {"enabled": True, "http": {"host": "10.0.0.9"}}})
+
+    r = client.post("/api/config", json={"led": {"http": {"host": "10.0.0.42"}}})
+    assert r.status_code == 200
+    led = r.json()["led"]
+    assert led["http"]["host"] == "10.0.0.42"
+    assert led["enabled"] is True                     # not reset to the default
+    assert led["http"]["capture_timeout_ms"] == 250   # sibling under http survives
+
+def test_led_update_leaves_unrelated_settings_alone(client):
+    client.post("/api/config", json={"countdown_duration": 7})
+    r = client.post("/api/config", json={"led": {"enabled": True}})
+    assert r.json()["countdown_duration"] == 7
+
 def test_event_capture_flow(client):
     """FIRE_SHOT over HTTP reaches the FSM and enqueues a capture on the
     injected camera. Completion is backend-owned (camera callback -> FSM,

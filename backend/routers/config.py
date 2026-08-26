@@ -3,7 +3,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from backend.settings import AppSettings, SettingsService
+from backend.settings import AppSettings, LedConfig, SettingsService
 from backend.deps import get_settings_service, get_sse
 from backend.logger import log
 from backend.sse_service import SseService
@@ -29,6 +29,10 @@ class ConfigUpdateRequest(BaseModel):
     session_timeout: Optional[int] = None
     show_names_on_photo: Optional[bool] = None
     wifi_network_name: Optional[str] = None
+    # The only nested block. Partial payloads are merged, not replaced — see
+    # _merge_led below for why that needs handling here rather than in
+    # SettingsService.
+    led: Optional[LedConfig] = None
 
 
 class ChangePinRequest(BaseModel):
@@ -51,6 +55,8 @@ async def post_config(
     """Update configurations."""
     try:
         changed = {k: v for k, v in updates.model_dump(exclude_unset=True).items() if v is not None}
+        if "led" in changed:
+            changed["led"] = _merge_led(settings_svc.get(), changed["led"])
         updated = settings_svc.update(changed)
         # Push the new config to all connected clients over SSE.
         sse.dispatch_event("config_update", updated.model_dump())
@@ -59,6 +65,25 @@ async def post_config(
     except Exception as e:
         log.error("config", "config_update_fail", f"Config update failed: {e}")
         raise HTTPException(status_code=400, detail=str(e))
+
+
+def _merge_led(current: AppSettings, incoming: dict) -> dict:
+    """Merge a partial `led` block onto the live one.
+
+    SettingsService.update() replaces top-level keys outright, which is right
+    for flat scalars and wrong for the one nested block: a payload carrying only
+    {"host": ...} would take `enabled` and the timeouts back to their model
+    defaults and silently switch the ring off. model_dump(exclude_unset=True) is
+    recursive, so what arrives here is exactly the keys the caller sent, and
+    everything else is carried over.
+    """
+    merged = current.led.model_dump()
+    for key, value in incoming.items():
+        if key == "http" and isinstance(value, dict):
+            merged["http"] = {**merged["http"], **value}
+        else:
+            merged[key] = value
+    return merged
 
 
 @router.post("/api/change-pin")
