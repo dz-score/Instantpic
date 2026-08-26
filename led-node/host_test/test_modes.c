@@ -50,6 +50,7 @@ void anim_capture(uint32_t t, const mode_params_t *p, canvas_t *c)  { anim_noop(
 void anim_printing(uint32_t t, const mode_params_t *p, canvas_t *c) { anim_noop(t, p, c); }
 void anim_finished(uint32_t t, const mode_params_t *p, canvas_t *c) { anim_noop(t, p, c); }
 void anim_error(uint32_t t, const mode_params_t *p, canvas_t *c)    { anim_noop(t, p, c); }
+void anim_test(uint32_t t, const mode_params_t *p, canvas_t *c)     { anim_noop(t, p, c); }
 void anim_linklost(uint32_t t, const mode_params_t *p, canvas_t *c) { anim_noop(t, p, c); }
 
 esp_err_t output_init(void) { return ESP_OK; }
@@ -217,6 +218,41 @@ TEST(every_command_is_legal_in_every_mode)
     CHECK_INT(s.mode, MODE_COUNTDOWN);
 }
 
+TEST(test_mode_selects_one_die_and_clamps_the_rest)
+{
+    enter_mode(MODE_IDLE);
+
+    CHECK_STR(send("TEST 1"), "OK TEST");
+    CHECK_INT(s.mode, MODE_TEST);
+    CHECK_INT(s.params.code, TEST_CH_RED);
+
+    CHECK_STR(send("TEST 4"), "OK TEST");
+    CHECK_INT(s.params.code, TEST_CH_WHITE);
+
+    /* Out of range lights all four rather than failing: still a useful answer
+     * to "is this pixel alive". */
+    CHECK_STR(send("TEST 9"), "OK TEST");
+    CHECK_INT(s.params.code, TEST_CH_ALL);
+
+    /* The parser owns this boundary, not apply(): parse_int is digits-only, so
+     * a minus sign is never a valid argument token to begin with. */
+    CHECK_STR(send("TEST -1"), "ERR UNKNOWN");
+}
+
+TEST(test_mode_does_not_strand_the_strip)
+{
+    /* TEST 4 is the same load as full white, and it waits on a human rather
+     * than on the booth. An operator who wanders off must not leave it there. */
+    enter_mode(MODE_IDLE);
+    send("TEST 4");
+
+    advance_alive_ms(MODE_TEST_TIMEOUT_MS - 2000);
+    CHECK_INT(s.mode, MODE_TEST);
+
+    advance_alive_ms(4000);
+    CHECK_INT(s.mode, MODE_IDLE);
+}
+
 TEST(ready_holds_until_the_count_actually_starts)
 {
     /* The gap this mode exists for is the camera warming up, which the browser
@@ -362,6 +398,8 @@ int main(void)
     RUN(out_of_range_arguments_leave_the_mode_alone);
     RUN(boundary_arguments_are_accepted);
     RUN(every_command_is_legal_in_every_mode);
+    RUN(test_mode_selects_one_die_and_clamps_the_rest);
+    RUN(test_mode_does_not_strand_the_strip);
     RUN(ready_holds_until_the_count_actually_starts);
     RUN(reentering_a_mode_restarts_its_clock);
     RUN(capture_releases_itself_after_thirty_seconds);

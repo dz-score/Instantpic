@@ -12,6 +12,7 @@ idf_component_register(SRCS "canvas.c"
                             "anim_printing.c"
                             "anim_finished.c"
                             "anim_error.c"
+                            "anim_test.c"
                             "anim_linklost.c"
                     INCLUDE_DIRS "include"
                     REQUIRES protocol

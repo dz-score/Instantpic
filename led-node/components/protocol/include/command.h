@@ -31,6 +31,7 @@ typedef enum {
     CMD_PRINTING,   /* PRINTING            */
     CMD_FINISHED,   /* FINISHED <ms>       */
     CMD_ERROR,      /* ERROR <code>        */
+    CMD_TEST,       /* TEST <channel 0..4> */
     CMD_PING,       /* PING                */
 } cmd_verb_t;
 

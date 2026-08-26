@@ -30,6 +30,7 @@ static const anim_fn ANIM[MODE_COUNT] = {
     [MODE_CAPTURE]   = anim_capture,
     [MODE_PRINTING]  = anim_printing,
     [MODE_FINISHED]  = anim_finished,
+    [MODE_TEST]      = anim_test,
     [MODE_ERROR]     = anim_error,
     [MODE_LINKLOST]  = anim_linklost,
 };
@@ -147,6 +148,16 @@ static void apply(const command_t *cmd, char *reply, size_t reply_sz)
             enter(MODE_FINISHED, &p);
             break;
 
+        case CMD_TEST:
+            /* Clamps rather than rejects, like ERROR: an out-of-range channel
+             * lights all four, which is still a useful answer to "is this pixel
+             * alive". No negative check — parse_int is digits-only, so a minus
+             * sign never gets this far, and a guard here would be dead code
+             * claiming a boundary it does not own. */
+            p.code = cmd->arg > TEST_CH_WHITE ? TEST_CH_ALL : cmd->arg;
+            enter(MODE_TEST, &p);
+            break;
+
         case CMD_ERROR:
             p.code = cmd->arg;
             enter(MODE_ERROR, &p);
@@ -203,6 +214,16 @@ static void check_deadlines(int64_t t)
             }
             break;
 
+        case MODE_TEST:
+            /* Waits on a human rather than on the booth. Longer than Capture's
+             * deadline so there is time to inspect every pixel, but a deadline
+             * all the same: TEST 4 is the same load as full white. */
+            if (elapsed > MODE_TEST_TIMEOUT_MS) {
+                ESP_LOGW(TAG, "test mode timed out");
+                enter(MODE_IDLE, NULL);
+            }
+            break;
+
         case MODE_FINISHED:
             /* Resolve on its own, so a guest walking away does not leave the
              * ring celebrating at nobody. */
@@ -249,7 +270,10 @@ static void render_frame(int64_t t)
         canvas_blend(&s_front, &s_back, &s_front, k);
     }
 
-    output_show(&s_front, s.mode != MODE_CAPTURE);
+    /* Global brightness is bypassed for Capture (it is photographic equipment,
+     * see anim_capture.c) and for Test (a dim die and a dead one look alike at
+     * 70%). Everything else is decoration and gets dimmed. */
+    output_show(&s_front, s.mode != MODE_CAPTURE && s.mode != MODE_TEST);
 }
 
 static void render_task(void *arg)
@@ -278,6 +302,7 @@ static const char *MODE_NAMES[MODE_COUNT] = {
     [MODE_CAPTURE]   = "CAPTURE",
     [MODE_PRINTING]  = "PRINTING",
     [MODE_FINISHED]  = "FINISHED",
+    [MODE_TEST]      = "TEST",
     [MODE_ERROR]     = "ERROR",
     [MODE_LINKLOST]  = "LINKLOST",
 };

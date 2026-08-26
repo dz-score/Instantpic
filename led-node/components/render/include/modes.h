@@ -25,6 +25,7 @@ typedef enum {
     MODE_CAPTURE,
     MODE_PRINTING,
     MODE_FINISHED,
+    MODE_TEST,       /* bench instrument: one die at a time */
     MODE_ERROR,      /* the host reporting a fault */
     MODE_LINKLOST,   /* the node noticing the host went silent */
     MODE_COUNT,
@@ -54,6 +55,21 @@ typedef struct {
 /* Hold-forever modes both wait on external events that can fail silently. */
 #define MODE_PRINTING_TIMEOUT_MS 120000
 #define MODE_CAPTURE_TIMEOUT_MS  30000
+
+/* Test waits on a human, so it is longer than Capture's -- long enough to walk
+ * a 60 px ring and look at every pixel. It still has a deadline, because
+ * TEST 4 draws the same current as Capture and an operator who wanders off
+ * must not leave the strip there. */
+#define MODE_TEST_TIMEOUT_MS 120000
+
+/* TEST argument. Anything outside 1..4 lights all four dies at once. */
+typedef enum {
+    TEST_CH_ALL = 0,
+    TEST_CH_RED,
+    TEST_CH_GREEN,
+    TEST_CH_BLUE,
+    TEST_CH_WHITE,
+} test_channel_t;
 
 /* Commands are rare (a heartbeat every 2 s plus transitions), and the render
  * task drains the queue every frame, so this only ever buffers a burst. */

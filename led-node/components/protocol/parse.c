@@ -20,6 +20,7 @@ static const verb_entry_t VERBS[] = {
     {"PRINTING",  CMD_PRINTING,  false},
     {"FINISHED",  CMD_FINISHED,  true },
     {"ERROR",     CMD_ERROR,     true },
+    {"TEST",      CMD_TEST,      true },
     {"PING",      CMD_PING,      false},
 };
 

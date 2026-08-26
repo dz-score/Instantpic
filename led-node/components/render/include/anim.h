@@ -30,6 +30,7 @@ void anim_boot(uint32_t elapsed_ms, const mode_params_t *p, canvas_t *c);
 void anim_idle(uint32_t elapsed_ms, const mode_params_t *p, canvas_t *c);
 void anim_playful(uint32_t elapsed_ms, const mode_params_t *p, canvas_t *c);
 void anim_ready(uint32_t elapsed_ms, const mode_params_t *p, canvas_t *c);
+void anim_test(uint32_t elapsed_ms, const mode_params_t *p, canvas_t *c);
 void anim_countdown(uint32_t elapsed_ms, const mode_params_t *p, canvas_t *c);
 void anim_capture(uint32_t elapsed_ms, const mode_params_t *p, canvas_t *c);
 void anim_printing(uint32_t elapsed_ms, const mode_params_t *p, canvas_t *c);
