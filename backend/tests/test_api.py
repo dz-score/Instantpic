@@ -37,6 +37,38 @@ def test_led_update_leaves_unrelated_settings_alone(client):
     r = client.post("/api/config", json={"led": {"enabled": True}})
     assert r.json()["countdown_duration"] == 7
 
+def test_led_config_change_is_applied_without_a_restart(client):
+    """Whoever is setting the booth up is standing at the venue typing an IP;
+    the useful feedback is the status dot going green while they watch."""
+    class _Led:
+        def __init__(self):
+            self.applied = []
+        async def reconfigure(self, settings):
+            self.applied.append(settings.led.http.host)
+            return True
+
+    led = _Led()
+    client.app.state.led = led
+
+    client.post("/api/config", json={"led": {"enabled": True, "http": {"host": "10.0.0.42"}}})
+    assert led.applied == ["10.0.0.42"]
+
+    # A save that does not mention the ring must not touch it at all.
+    client.post("/api/config", json={"countdown_duration": 4})
+    assert led.applied == ["10.0.0.42"]
+
+def test_bad_led_host_does_not_fail_the_config_save(client):
+    """Otherwise the operator cannot correct the value they just typed."""
+    class _Led:
+        async def reconfigure(self, settings):
+            raise OSError("no route to host")
+
+    client.app.state.led = _Led()
+
+    r = client.post("/api/config", json={"led": {"http": {"host": "nonsense"}}})
+    assert r.status_code == 200
+    assert r.json()["led"]["http"]["host"] == "nonsense"
+
 def test_event_capture_flow(client):
     """FIRE_SHOT over HTTP reaches the FSM and enqueues a capture on the
     injected camera. Completion is backend-owned (camera callback -> FSM,

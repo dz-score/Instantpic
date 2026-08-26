@@ -65,7 +65,7 @@ class LedController:
 
     def __init__(self, transport: Optional[LedTransport], *, enabled: bool,
                  heartbeat_s: float, capture_timeout_s: float,
-                 default_timeout_s: float):
+                 default_timeout_s: float, config_key: Optional[tuple] = None):
         self._transport = transport
         self._enabled = enabled and transport is not None
         self._heartbeat_s = heartbeat_s
@@ -75,6 +75,9 @@ class LedController:
         self._queue: Optional[asyncio.Queue] = None
         self._worker: Optional[asyncio.Task] = None
         self._shutdown = False
+        # What reconfigure() compares against to decide whether a config save
+        # touched the ring at all.
+        self._config_key = config_key
 
         # Instrumentation. This is the evidence the HTTP-vs-UART decision is
         # supposed to rest on (Docs/LED_UART_SWITCH.md), so it is a permanent
@@ -131,6 +134,48 @@ class LedController:
             self._worker = None
         if self._transport is not None:
             await self._transport.stop()
+        # Dropped rather than reused: start() makes a fresh one, and leaving the
+        # old queue reachable after a reconfigure that disabled the ring would
+        # let drain() report on a queue nothing serves.
+        self._queue = None
+
+    async def reconfigure(self, settings) -> bool:
+        """Apply a changed `led` config block without replacing this object.
+
+        Identity matters: the FSM is handed the controller once at the
+        composition root and holds that reference for the process lifetime
+        (state_machine.py), so building a second controller would leave the
+        booth driving a stopped one. The transport underneath is swapped
+        instead.
+
+        Returns True if anything was actually reconfigured. A config save that
+        did not touch the ring must not bounce a working link — most admin
+        saves are about the couple's names, and the venue is the worst place to
+        drop a connection for no reason.
+
+        Counters and latency samples deliberately survive: a link reconfigured
+        because it was misbehaving is exactly the one whose history matters
+        (Docs/LED_UART_SWITCH.md).
+        """
+        cfg = settings.led
+        desired = _config_key(cfg)
+        if desired == self._config_key:
+            return False
+
+        await self.stop()
+
+        self._config_key = desired
+        self._transport = _build_transport(cfg)
+        self._enabled = cfg.enabled and self._transport is not None
+        self._heartbeat_s = cfg.heartbeat_ms / 1000.0
+        self._capture_timeout_s = cfg.http.capture_timeout_ms / 1000.0
+        self._default_timeout_s = cfg.http.timeout_ms / 1000.0
+        # stop() latched this to refuse further work; the owner task started
+        # below would exit on its first loop otherwise.
+        self._shutdown = False
+
+        await self.start()
+        return True
 
     # --- the single owner --------------------------------------------------
 
@@ -316,22 +361,42 @@ def create_led_controller(settings) -> LedController:
     """
     cfg = settings.led
 
-    transport: Optional[LedTransport] = None
-    if cfg.enabled and cfg.transport == "http" and cfg.http.host.strip():
-        transport = LedHttpTransport(cfg.http.host,
-                                     timeout_s=cfg.http.timeout_ms / 1000.0)
-    elif cfg.enabled:
-        log.warn("led", "led_misconfigured",
-                 f"LED enabled but unusable (transport={cfg.transport!r}, "
-                 f"host={cfg.http.host!r}) — running without a ring")
-
     return LedController(
-        transport,
+        _build_transport(cfg),
         enabled=cfg.enabled,
         heartbeat_s=cfg.heartbeat_ms / 1000.0,
         capture_timeout_s=cfg.http.capture_timeout_ms / 1000.0,
         default_timeout_s=cfg.http.timeout_ms / 1000.0,
+        config_key=_config_key(cfg),
     )
+
+
+def _config_key(cfg) -> tuple:
+    """Everything about a config block that the controller actually behaves on.
+
+    Compared by reconfigure() to tell a save that touched the ring from one that
+    changed the couple's names.
+    """
+    return (cfg.enabled, cfg.transport, cfg.http.host.strip(),
+            cfg.http.timeout_ms, cfg.http.capture_timeout_ms, cfg.heartbeat_ms)
+
+
+def _build_transport(cfg) -> Optional[LedTransport]:
+    """The transport for this config, or None when the ring cannot be reached.
+
+    Shared by the composition root and reconfigure() so there is one place that
+    decides what a given config block means. When UART lands this is the only
+    function that grows a branch (Docs/LED_UART_SWITCH.md).
+    """
+    if not cfg.enabled:
+        return None
+    if cfg.transport == "http" and cfg.http.host.strip():
+        return LedHttpTransport(cfg.http.host,
+                                timeout_s=cfg.http.timeout_ms / 1000.0)
+    log.warn("led", "led_misconfigured",
+             f"LED enabled but unusable (transport={cfg.transport!r}, "
+             f"host={cfg.http.host!r}) — running without a ring")
+    return None
 
 
 def _clamp_ms(value: int) -> int:

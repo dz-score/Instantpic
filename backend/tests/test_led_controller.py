@@ -245,3 +245,106 @@ async def test_stats_report_capture_latency_percentiles():
     assert stats["latency_ms"]["CAPTURE"]["n"] == 4
     assert stats["latency_ms"]["CAPTURE"]["p99"] >= stats["latency_ms"]["CAPTURE"]["p50"]
     assert stats["counts"]["sent:CAPTURE"] == 4
+
+
+# --- live reconfiguration -------------------------------------------------
+
+
+def _settings(**led):
+    """AppSettings with the led block overridden. http keys go under `http`."""
+    from backend.settings import AppSettings
+    http = led.pop("http", {})
+    return AppSettings(led={"enabled": True, "http": {"host": "10.0.0.9", **http},
+                            **led})
+
+
+@pytest.fixture
+def transports(monkeypatch):
+    """Hands out a fresh FakeTransport per _build_transport call, in order."""
+    import backend.led_controller as mod
+    made = []
+
+    def build(cfg):
+        if not cfg.enabled or not cfg.http.host.strip():
+            return None
+        made.append(FakeTransport())
+        return made[-1]
+
+    monkeypatch.setattr(mod, "_build_transport", build)
+    return made
+
+
+@pytest.mark.anyio
+async def test_reconfigure_swaps_the_transport(transports):
+    """The controller must keep its identity — the FSM holds this reference for
+    the life of the process, so a rebuild would leave the booth driving a
+    stopped object."""
+    from backend.led_controller import create_led_controller
+
+    led = create_led_controller(_settings())
+    await led.start()
+    await led.idle()
+
+    changed = await led.reconfigure(_settings(http={"host": "10.0.0.42"}))
+    await led.phase(120)
+    await led.stop()
+
+    assert changed is True
+    assert len(transports) == 2
+    assert transports[0].stopped is True
+    assert transports[0].sent == ["IDLE"]
+    assert transports[1].sent == ["PHASE 120"]
+
+
+@pytest.mark.anyio
+async def test_unrelated_config_change_does_not_bounce_the_link(transports):
+    """Most admin saves are about the couple's names. A venue is the worst place
+    to drop a working connection for no reason."""
+    from backend.led_controller import create_led_controller
+
+    led = create_led_controller(_settings())
+    await led.start()
+
+    base = _settings()
+    base.couple_names = "Someone Else"
+    changed = await led.reconfigure(base)
+
+    assert changed is False
+    assert len(transports) == 1
+    assert transports[0].stopped is False
+    await led.stop()
+
+
+@pytest.mark.anyio
+async def test_reconfigure_to_disabled_leaves_the_controller_inert(transports):
+    from backend.led_controller import create_led_controller
+
+    led = create_led_controller(_settings())
+    await led.start()
+
+    await led.reconfigure(_settings(enabled=False))
+
+    assert led.enabled is False
+    assert transports[0].stopped is True
+    # Still callable, still never raises into the booth, and still honest about
+    # not having lit anything.
+    await led.idle()
+    assert await led.capture() is False
+    await led.stop()
+
+
+@pytest.mark.anyio
+async def test_reconfigure_keeps_the_latency_history(transports):
+    """A link reconfigured because it was misbehaving is exactly the one whose
+    history matters (Docs/LED_UART_SWITCH.md)."""
+    from backend.led_controller import create_led_controller
+
+    led = create_led_controller(_settings())
+    await led.start()
+    await led.capture()
+
+    await led.reconfigure(_settings(http={"host": "10.0.0.42"}))
+    await led.stop()
+
+    assert led.stats()["counts"]["sent:CAPTURE"] == 1
+    assert led.stats()["latency_ms"]["CAPTURE"]["n"] == 1

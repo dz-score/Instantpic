@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from backend.settings import AppSettings, LedConfig, SettingsService
-from backend.deps import get_settings_service, get_sse
+from backend.deps import get_led, get_settings_service, get_sse
 from backend.logger import log
 from backend.sse_service import SseService
 
@@ -51,6 +51,7 @@ async def post_config(
     updates: ConfigUpdateRequest,
     settings_svc: SettingsService = Depends(get_settings_service),
     sse: SseService = Depends(get_sse),
+    led=Depends(get_led),
 ):
     """Update configurations."""
     try:
@@ -58,6 +59,19 @@ async def post_config(
         if "led" in changed:
             changed["led"] = _merge_led(settings_svc.get(), changed["led"])
         updated = settings_svc.update(changed)
+
+        # Apply the ring change now rather than at the next restart. Whoever is
+        # setting the booth up is standing at the venue typing an IP, and the
+        # only useful feedback is the status dot going green while they watch.
+        # Never fatal: a wrong host must not make the config save fail, or the
+        # operator cannot correct the value they just typed.
+        if "led" in changed:
+            try:
+                await led.reconfigure(updated)
+            except Exception as e:
+                log.error("config", "led_reconfigure_fail",
+                          f"LED reconfigure failed: {e}")
+
         # Push the new config to all connected clients over SSE.
         sse.dispatch_event("config_update", updated.model_dump())
         log.info("config", "config_updated", f"Config updated: {list(changed.keys())}", data=changed)
