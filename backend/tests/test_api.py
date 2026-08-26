@@ -125,6 +125,43 @@ def test_diagnostics(client):
     assert "printer" in data
     assert "storage" in data
 
+def test_diagnostics_reports_the_ring(client):
+    """The latency percentiles here are the evidence the HTTP-vs-UART decision
+    rests on (Docs/LED_UART_SWITCH.md). Before this they were collected and
+    never read by anything."""
+    led = client.get("/api/diagnostics").json()["led"]
+    assert led["enabled"] is False      # no ring configured in a test config
+    assert led["connected"] is False
+    assert "counts" in led
+
+def test_led_test_route_pings_the_node(client):
+    class _Led:
+        async def ping(self):
+            return {"ok": True, "reply": "PONG", "elapsed_ms": 12.3, "detail": None}
+
+    client.app.state.led = _Led()
+    r = client.post("/api/led/test")
+    assert r.status_code == 200
+    assert r.json()["reply"] == "PONG"
+
+def test_led_test_route_is_refused_mid_session(client):
+    """It injects a command into the same single-owner queue the shutter waits
+    on, so it must not be tappable while a guest is being photographed."""
+    class _Led:
+        def __init__(self):
+            self.pings = 0
+        async def ping(self):
+            self.pings += 1
+            return {"ok": True, "reply": "PONG", "elapsed_ms": 1.0, "detail": None}
+
+    led = _Led()
+    client.app.state.led = led
+    client.post("/api/events", json={"type": "START_SESSION", "payload": {}})
+
+    r = client.post("/api/led/test")
+    assert r.status_code == 409
+    assert led.pings == 0
+
 def test_camera_route_uses_injected_service(client, mocker):
     """The camera is whatever the composition root put on app.state, so a double
     goes in the same way — no monkeypatching a module global to reach the

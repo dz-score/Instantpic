@@ -348,3 +348,89 @@ async def test_reconfigure_keeps_the_latency_history(transports):
 
     assert led.stats()["counts"]["sent:CAPTURE"] == 1
     assert led.stats()["latency_ms"]["CAPTURE"]["n"] == 1
+
+
+# --- health and the on-demand probe ---------------------------------------
+
+
+@pytest.mark.anyio
+async def test_health_reports_connected_after_a_successful_exchange():
+    t = FakeTransport()
+    led = make(t)
+    await led.start()
+    await led.idle()
+    await led.drain()
+
+    h = led.health()
+    assert h["connected"] is True
+    assert h["last_error"] is None
+    assert h["description"] == "fake://led"
+    await led.stop()
+
+
+@pytest.mark.anyio
+async def test_health_reports_the_link_error_and_goes_disconnected():
+    t = FakeTransport(fail_with=LedLinkDown("no route to host"))
+    led = make(t)
+    await led.start()
+    await led.idle()
+    await led.drain()
+
+    h = led.health()
+    assert h["connected"] is False
+    assert "no route to host" in h["last_error"]
+    await led.stop()
+
+
+@pytest.mark.anyio
+async def test_health_goes_stale_when_the_heartbeat_stops_landing():
+    """connected is inferred from recent traffic, not probed. Three missed
+    heartbeat intervals is the allowance."""
+    t = FakeTransport()
+    led = make(t, heartbeat_s=0.02)
+    await led.start()
+    await led.idle()
+    await led.drain()
+    assert led.health()["connected"] is True
+
+    await led.stop()          # heartbeat stops with the owner task
+    await asyncio.sleep(0.1)  # > 3x the interval
+    assert led.health()["connected"] is False
+
+
+@pytest.mark.anyio
+async def test_ping_reports_the_round_trip():
+    t = FakeTransport()
+    led = make(t)
+    await led.start()
+
+    result = await led.ping()
+    await led.stop()
+
+    assert result["ok"] is True
+    assert result["reply"] == "PONG"
+    assert result["elapsed_ms"] is not None
+    assert t.sent == ["PING"]
+
+
+@pytest.mark.anyio
+async def test_ping_reports_an_unreachable_node_without_raising():
+    t = FakeTransport(fail_with=LedLinkTimeout("no reply"))
+    led = make(t)
+    await led.start()
+
+    result = await led.ping()
+    await led.stop()
+
+    assert result["ok"] is False
+    assert result["reply"] is None
+    assert "no reply" in result["detail"]
+
+
+@pytest.mark.anyio
+async def test_ping_on_a_disabled_ring_says_so():
+    led = make(None, enabled=False)
+    await led.start()
+    result = await led.ping()
+    assert result["ok"] is False
+    assert "disabled" in result["detail"]

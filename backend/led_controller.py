@@ -84,6 +84,12 @@ class LedController:
         # signal rather than temporary diagnostics (Rule 24).
         self._latency_ms: dict[str, deque] = {}
         self._counts: dict[str, int] = {}
+        # Liveness, derived from traffic that was going to happen anyway. The
+        # heartbeat already pings whenever the wire is idle, so there is no need
+        # for a second prober — and putting extra load on the link under
+        # evaluation would corrupt the numbers the evaluation depends on.
+        self._last_ok: Optional[float] = None
+        self._last_error: Optional[str] = None
 
     @property
     def enabled(self) -> bool:
@@ -232,6 +238,7 @@ class LedController:
             reply = await self._transport.send(line, timeout_s)
         except LedLinkError as e:
             self._bump(f"link_error:{verb}")
+            self._last_error = f"{verb}: {e}"
             log.warn("led", "led_link_error", f"{verb} failed: {e}")
             # A byte-stream transport can be left mid-line by a timeout; clear it
             # before the next command rather than letting one failure desync
@@ -241,6 +248,8 @@ class LedController:
 
         elapsed_ms = (time.perf_counter() - started) * 1000.0
         self._record(verb, elapsed_ms)
+        self._last_ok = time.monotonic()
+        self._last_error = None
 
         if not self._is_ack(verb, reply):
             self._bump(f"rejected:{verb}")
@@ -282,6 +291,49 @@ class LedController:
                 "max": round(ordered[-1], 1),
             }
         return out
+
+    def health(self) -> dict:
+        """What the admin panel shows, and what /api/diagnostics reports.
+
+        `connected` is inferred rather than probed: the heartbeat guarantees an
+        exchange at least every heartbeat_ms whenever nothing else is talking,
+        so "the last one succeeded recently" is the same evidence a probe would
+        gather, at no cost to the link. The allowance is 3x the interval, which
+        tolerates one lost heartbeat without flapping the indicator.
+        """
+        now = time.monotonic()
+        age = None if self._last_ok is None else round(now - self._last_ok, 1)
+        connected = (self._enabled and age is not None
+                     and age <= self._heartbeat_s * 3)
+        return {
+            "enabled": self._enabled,
+            "description": self._transport.description if self._transport else None,
+            "connected": connected,
+            "last_ok_age_s": age,
+            "last_error": self._last_error,
+            **self.stats(),
+        }
+
+    async def ping(self) -> dict:
+        """One PING, on demand, waiting for the reply.
+
+        The button an operator taps after typing an address — the passive
+        indicator needs up to a heartbeat interval to notice a change, and
+        someone standing at a booth with a screwdriver should not have to wait
+        for it.
+        """
+        if not self._enabled:
+            return {"ok": False, "reply": None, "elapsed_ms": None,
+                    "detail": "LED ring is disabled"}
+
+        started = time.perf_counter()
+        reply = await self._submit("PING", wait=True)
+        elapsed_ms = round((time.perf_counter() - started) * 1000.0, 1)
+        if reply is None:
+            return {"ok": False, "reply": None, "elapsed_ms": elapsed_ms,
+                    "detail": self._last_error or "no reply"}
+        return {"ok": self._is_ack("PING", reply), "reply": reply,
+                "elapsed_ms": elapsed_ms, "detail": None}
 
     # --- command plumbing --------------------------------------------------
 

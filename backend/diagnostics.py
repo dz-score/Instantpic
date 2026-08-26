@@ -38,12 +38,18 @@ def check_storage(settings: AppSettings):
         "max_photos": settings.max_photos
     }
 
-def get_diagnostics(settings: AppSettings, print_svc: PrintService):
+def get_diagnostics(settings: AppSettings, print_svc: PrintService, led=None):
     """Aggregate all diagnostic checks."""
-    return {
+    diag = {
         "printer": check_printer(print_svc),
         "storage": check_storage(settings)
     }
+    # Optional so the aggregate keeps working for callers that predate the ring.
+    # The controller is always present in the running app — create_led_controller
+    # returns an inert one rather than None when no ring is configured.
+    if led is not None:
+        diag["led"] = led.health()
+    return diag
 
 def execute_emergency(action: str):
     """Execute an emergency control action."""
