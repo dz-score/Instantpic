@@ -372,10 +372,20 @@ class LedController:
     async def phase(self, hue: int) -> None:
         await self._submit(f"PHASE {int(hue) % 360}")
 
+    async def ready(self) -> None:
+        """Park the ring, poised, for the beat before the count starts.
+
+        That beat is the camera warming up, whose length only the browser can
+        observe, so nothing here or in the FSM can predict it.
+        """
+        await self._submit("READY")
+
     async def countdown(self, duration_ms: int) -> None:
-        # The node runs its own clock from here. The browser runs one too; the
-        # firmware clamps elapsed to duration, so drift degrades to a frozen
-        # head rather than a glitch (anim_countdown.c).
+        # Sent when the guest-visible count actually starts, not when the FSM
+        # enters the countdown screen — see state_machine's COUNTDOWN_STARTED.
+        # Both sides then run the same duration from the same instant; the
+        # firmware still clamps elapsed to duration, so any residual skew
+        # degrades to a frozen head rather than a glitch (anim_countdown.c).
         await self._submit(f"COUNTDOWN {_clamp_ms(duration_ms)}")
 
     async def capture(self) -> bool:

@@ -40,6 +40,10 @@ class RecordingLed:
         self.calls.append("IDLE")
         self.log.append("led:IDLE")
 
+    async def ready(self):
+        self.calls.append("READY")
+        self.log.append("led:READY")
+
     async def phase(self, hue):
         self.calls.append(f"PHASE {hue}")
         self.log.append("led:PHASE")
@@ -126,16 +130,69 @@ async def test_shutter_still_fires_when_the_ring_does_not_acknowledge():
 
 
 @pytest.mark.anyio
-async def test_countdown_duration_matches_what_the_browser_shows():
+async def test_entering_countdown_parks_the_ring_rather_than_starting_it():
+    """The FSM enters COUNTDOWN as soon as the layout is chosen, but the guest
+    sees nothing for another 1-3.5s while the preview paints its first frame.
+    Starting the sweep here is what put the ring seconds ahead of the numerals."""
+    led = RecordingLed()
+    sm, q, cam, _ = make_sm(led)
+
+    await sm.handle_event("START_SESSION", {}, SETTINGS)
+    await sm.handle_event("SELECT_LAYOUT", {"mode": "single"}, SETTINGS)
+
+    assert led.calls[-1] == "READY"
+    assert not any(c.startswith("COUNTDOWN") for c in led.calls)
+
+
+@pytest.mark.anyio
+async def test_the_cue_starts_the_sweep_with_the_duration_the_browser_shows():
     led = RecordingLed()
     sm, q, cam, _ = make_sm(led)
     settings = AppSettings(countdown_duration=5, countdown_speed=2.0)
 
     await sm.handle_event("START_SESSION", {}, settings)
     await sm.handle_event("SELECT_LAYOUT", {"mode": "single"}, settings)
+    await sm.handle_event("COUNTDOWN_STARTED", {}, settings)
 
     assert countdown_ms(settings) == 2500
-    assert "COUNTDOWN 2500" in led.calls
+    assert led.calls[-1] == "COUNTDOWN 2500"
+    # A cue, not a transition.
+    assert (await sm.get_state()).screen == "COUNTDOWN"
+
+
+@pytest.mark.anyio
+async def test_the_cue_is_ignored_outside_the_countdown_screen():
+    """It arrives over the same open HTTP endpoint as every other event, and a
+    late one from an abandoned round must not restart the sweep."""
+    led = RecordingLed()
+    sm, q, cam, _ = make_sm(led)
+
+    await sm.handle_event("START_SESSION", {}, SETTINGS)
+    await sm.handle_event("COUNTDOWN_STARTED", {}, SETTINGS)
+
+    assert not any(c.startswith("COUNTDOWN") for c in led.calls)
+
+
+@pytest.mark.anyio
+async def test_each_shot_of_a_collage_parks_before_its_own_count():
+    """The browser sits out shot_interval_ms between shots and then starts a
+    fresh countdown, with no FSM transition to hang the sweep on. The ring waits
+    parked and starts with that shot's numerals."""
+    led = RecordingLed()
+    sm, q, cam, _ = make_sm(led)
+
+    await sm.handle_event("START_SESSION", {}, SETTINGS)
+    await sm.handle_event("SELECT_LAYOUT", {"mode": "collage"}, SETTINGS)
+    await sm.handle_event("COUNTDOWN_STARTED", {}, SETTINGS)
+    await sm.handle_event("FIRE_SHOT", {}, SETTINGS)
+    await cam.complete("shot1.jpg")
+
+    # Still in COUNTDOWN for shot 2, and parked again rather than counting.
+    assert (await sm.get_state()).screen == "COUNTDOWN"
+    assert led.calls[-1] == "READY"
+
+    await sm.handle_event("COUNTDOWN_STARTED", {}, SETTINGS)
+    assert led.calls[-1].startswith("COUNTDOWN")
 
 
 @pytest.mark.anyio
@@ -147,7 +204,7 @@ async def test_screen_transitions_drive_the_ring():
     assert f"PHASE {SCREEN_HUE['CHOOSE_STYLE']}" in led.calls
 
     await sm.handle_event("SELECT_LAYOUT", {"mode": "single"}, SETTINGS)
-    assert any(c.startswith("COUNTDOWN") for c in led.calls)
+    assert led.calls[-1] == "READY"
 
     await sm.handle_event("TIMEOUT", {}, SETTINGS)
     assert led.calls[-1] == "IDLE"

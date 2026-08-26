@@ -42,6 +42,7 @@ export default function CountdownScreen({
   totalShots = 1,
   capturedCount = 0,
   fireShot,
+  onCountdownStarted,
   resumePreview,
   cameraJob,
   cameraStatus,
@@ -239,6 +240,15 @@ export default function CountdownScreen({
   // runs as a bare event handler with no closure over the round.
   const startTick = useCallback(() => {
     if (timerRef.current) return;   // already ticking this round
+    // Tell the backend the guest-visible count has begun, so the LED ring
+    // starts its sweep on the same instant. This is past the guard, so it
+    // fires exactly once per round — including retakes and each shot of a
+    // collage, neither of which produces an FSM transition to hang it on.
+    // Fire-and-forget: a ring is decoration, and a failed POST must never
+    // disturb the countdown the guest is watching.
+    if (onCountdownStarted) {
+      Promise.resolve(onCountdownStarted()).catch(() => { /* ring only */ });
+    }
     let c = COUNTDOWN_FROM;
     setCount(c);
     timerRef.current = setInterval(() => {
@@ -258,7 +268,7 @@ export default function CountdownScreen({
         if (onDone) onDone();
       }
     }, TICK_MS);
-  }, [COUNTDOWN_FROM, TICK_MS]);
+  }, [COUNTDOWN_FROM, TICK_MS, onCountdownStarted]);
 
   // Run a single countdown round.
   const runCountdown = useCallback((onDone) => {

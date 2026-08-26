@@ -42,6 +42,7 @@ class _NoLed:
     enabled = False
 
     async def idle(self): ...
+    async def ready(self): ...
     async def phase(self, hue): ...
     async def countdown(self, duration_ms): ...
     async def release(self): ...
@@ -67,10 +68,13 @@ SCREEN_HUE = {
 def countdown_ms(settings: AppSettings) -> int:
     """Effective countdown in ms, matching what the browser shows.
 
-    Two clocks run this countdown — the browser's and the node's — and they are
-    started by the same transition but never resynchronised. The firmware clamps
-    elapsed to duration (anim_countdown.c), so drift degrades to a head frozen
-    at the top of the ring rather than a glitch or a wrapped animation.
+    Two clocks run this countdown, the browser's and the node's, and they always
+    agreed on the duration — the browser derives the same number from the same
+    two settings. What they disagreed on was the start: the FSM entered the
+    countdown screen immediately, while the browser waited for the preview to
+    paint its first frame, 1-3.5 s later. The node is now started by the browser
+    reporting that its numbers began (COUNTDOWN_STARTED), so both run the same
+    span from the same instant.
     """
     speed = settings.countdown_speed or 1.0
     return int(settings.countdown_duration / speed * 1000)
@@ -149,6 +153,21 @@ class StateMachine:
 
     async def handle_event(self, event_type: str, payload: dict, settings: AppSettings):
         async with self._get_lock():
+            if event_type == "COUNTDOWN_STARTED":
+                # A cue, not a transition — deliberately handled before the
+                # table, which stays a table of transitions. The browser owns
+                # the instant its numerals start (it waits on the preview
+                # painting, which the backend cannot observe), so this is the
+                # only honest source for when the ring should start sweeping.
+                # Same shape as FIRE_SHOT, which is the browser reporting that
+                # the same countdown ended.
+                if self._state.screen != "COUNTDOWN":
+                    log.warn("state_machine", "countdown_cue_ignored",
+                             f"COUNTDOWN_STARTED in {self._state.screen} — ignored")
+                    return
+                await self._led.countdown(countdown_ms(settings))
+                return
+
             if event_type not in GLOBAL_EVENTS:
                 valid_events = VALID_TRANSITIONS.get(self._state.screen, [])
                 if event_type not in valid_events:
@@ -291,8 +310,10 @@ class StateMachine:
         screen = self._state.screen
         if screen == "ATTRACT":
             await self._led.idle()
-        elif screen == "COUNTDOWN" and settings is not None:
-            await self._led.countdown(countdown_ms(settings))
+        elif screen == "COUNTDOWN":
+            # Parked, not counting. The count starts on COUNTDOWN_STARTED,
+            # which is the browser telling us its numerals began.
+            await self._led.ready()
         elif screen == "PRINTING":
             await self._led.printing()
         elif screen in SCREEN_HUE:
@@ -428,14 +449,12 @@ class StateMachine:
             # UI advance its shot-progress presentation.
             self._manage_watchdog(settings)
             # Takes the ring out of Capture. No explicit RELEASE is needed on
-            # this path: whichever mode follows (Reveal's hue, or the next
-            # shot's countdown) leaves full white on its own.
+            # this path: whichever mode follows (Reveal's hue, or the parked
+            # Ready of the next shot) leaves full white on its own.
             #
-            # Known imprecision on the multi-shot path: the node starts its next
-            # countdown here, while the browser waits shot_interval_ms first. The
-            # ring therefore finishes its sweep slightly early and holds, because
-            # anim_countdown clamps elapsed to duration. Decorative, and it fails
-            # in the safe direction.
+            # On the multi-shot path this parks the ring while the browser sits
+            # out shot_interval_ms, and the next sweep starts with the next
+            # shot's numerals rather than ahead of them.
             await self._sync_led(settings)
             state_dict = self._state.model_dump()
         await self.broadcast_state(state_dict)
