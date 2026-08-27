@@ -417,6 +417,41 @@ investigate.
 
 ---
 
+### Rule 25: Every Fact Has One Home
+
+A decision, a constraint, or a piece of hardware knowledge is written down once.
+Everything that needs it links to it.
+
+Two places this goes wrong, and they are the same mistake at two scales:
+
+* a code comment that re-argues what a document already argues
+* two documents that both argue the same point
+
+A comment carries only what breaks if you change **this** line — a sentence or
+two — and names the document for the rest. A fact belongs to the file whose
+stated job it is: rules to CONSTRAINTS, hardware knowledge to the relevant
+`*_NOTES` file, structure to ARCHITECTURE, cross-component sequences to
+WORKFLOWS, the frontend/backend contract to API_PROTOCOL. Everywhere else, a
+link.
+
+Cost is not the reason; drift is. Two copies of a reason diverge, and the one
+nobody is looking at goes stale first — after which a reader who finds the stale
+copy is worse off than if it had never been written at all.
+
+Diagnostic: a comment longer than about three lines that is *arguing* rather
+than *warning*. Warnings stay — "do not read job states here", "keep the dpi
+tag" — because they are what stops the next edit breaking something. Arguments
+move to the document that owns them.
+
+Required when a change touches both code and `Docs/`: grep your own distinctive
+phrases across both before committing. A phrase that appears in two files means
+one of them should be a link. This is not optional diligence — writing code and
+its documentation in one sitting is exactly when the same justification gets
+written twice, because the author has it in mind in both places and no prompt to
+ask where it already lives.
+
+---
+
 ## Architectural Goal
 
 The system must continue operating correctly even when hardware disconnects, operations timeout, or a session is interrupted. The state machine remains the authoritative source of truth, services remain isolated, and every component has a single clear responsibility.
