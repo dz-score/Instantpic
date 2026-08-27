@@ -340,10 +340,9 @@ The frontend `logger.js` flushes to `POST /api/logs` every 10 seconds or after 2
 only when the job reached a terminal state that means a print physically
 finished, and `printStatus` carries that outcome to the guest unchanged.
 
-> **Why:** a dye-sub queue accepts a job in ~100 ms and takes ~12 s to print it.
-> Every failure that matters at an event — ribbon out, paper out, jam, printer
-> switched off — happens in that gap. Reporting the submission told the guest
-> "Done!" and handed them nothing.
+> **Why:** a dye-sub queue accepts a job in ~100 ms and takes ~12 s to print it,
+> and the failures that matter all land in that gap (PRINTER_NOTES.md). Reporting
+> the submission told the guest "Done!" and handed them nothing.
 
 > **What breaks:** returning after `print_file()` restores exactly that bug. If
 > a future driver cannot observe its jobs, it must say so (`job_id = None` is
@@ -359,8 +358,7 @@ failure is reported and the booth stops.
 
 > **Why:** a jam that gets cleared and silently reprinted hands the guest two
 > photos and spends two sheets of media. The operator seeing the failure is the
-> better outcome, and `REPRINT` gives the retry back to a human who can see the
-> printer.
+> better outcome, and `REPRINT` gives the retry back to a person at the printer.
 
 > **What breaks:** looping `print()` on a failed outcome will double-print every
 > jam the moment someone opens and closes the lid.

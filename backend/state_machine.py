@@ -271,11 +271,10 @@ class StateMachine:
                 await self._enter_printing()
                 
             elif event_type == "REPRINT":
-                # Failure only: retrying a print that came out spends a second
-                # sheet on a copy nobody agreed to. The guard doubles as the
-                # idempotency — the first REPRINT moves printStatus off
-                # "failed", so a double tap is refused here rather than
-                # queueing a duplicate. Contract in Docs/API_PROTOCOL.md.
+                # Failure only, and the guard doubles as the idempotency: the
+                # first REPRINT moves printStatus off "failed", so a double tap
+                # is refused here rather than queueing a duplicate. Why it is
+                # restricted at all: Docs/API_PROTOCOL.md.
                 if self._state.printStatus != "failed":
                     log.warn("state_machine", "reprint_rejected",
                              f"REPRINT ignored — printStatus is "

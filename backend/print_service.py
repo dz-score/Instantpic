@@ -139,8 +139,8 @@ class CupsPrinterDriver(PrinterDriver):
 
     # ── Consumables ───────────────────────────────────────────────────────────
 
-    # Read through cupsd, never by invoking the Gutenprint backend directly:
-    # that backend owns the USB device while CUPS has the printer.
+    # Never invoke the Gutenprint backend directly to get these — it fights
+    # cupsd for the USB device (PRINTER_NOTES.md).
     IPPTOOL_TEST = "/usr/share/cups/ipptool/get-printer-attributes.test"
     _MARKER_LINE = re.compile(r"^\s*(marker-[a-z-]+)\s*\([^)]*\)\s*=\s*(.*?)\s*$")
 
@@ -630,7 +630,7 @@ class PrintService:
         """
         Print a file and block until it has actually printed.
 
-        Returns success only when the job reached paper. Blocking is deliberate:
+        Success means paper, not acceptance. Blocking is deliberate:
         the caller is the job queue's print lane, which runs in a thread pool, and
         the guest is watching the printing animation until this returns.
         """

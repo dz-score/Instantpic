@@ -32,10 +32,8 @@ async def health_check():
 async def printer_status(print_svc: PrintService = Depends(get_print_service)):
     """Get current printer status (connected, ready, media, errors).
 
-    Off the event loop: a cache miss shells out to lpstat and then to ipptool,
-    each with a 5s timeout, and a printer that has been switched off can take
-    both of them. Blocking the loop for that long stalls every SSE stream, which
-    on this booth means the guest's screen.
+    Keep this off the event loop: a cache miss can spend 10s in subprocesses
+    (ARCHITECTURE.md §10).
     """
     status = await anyio.to_thread.run_sync(print_svc.get_status)
     return status.to_dict()
@@ -59,9 +57,9 @@ async def test_print(
     serial print lane a guest's photo uses, and nobody should be able to push a
     diagnostic in front of a print someone is standing there waiting for.
 
-    Goes through the queue rather than calling PrintService directly, for the
-    same reason. A guest's print can still be finishing after the booth has
-    returned to ATTRACT, and the lane is what keeps the two from overlapping.
+    Goes through the queue rather than calling PrintService directly: a guest's
+    print can still be finishing after the booth is back at ATTRACT, and the
+    lane is the only thing serialising the two.
     """
     screen = (await sm.get_state()).screen
     if screen != "ATTRACT":

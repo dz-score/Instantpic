@@ -691,8 +691,8 @@ Printing is backend-owned workflow. The FSM starts it on entering PRINTING and
 reports the outcome via `printStatus`; the UI never triggers the print or
 guesses the result.
 
-`printStatus` reports **paper, not acceptance** — the service waits the job out
-before reporting either terminal value ([CONSTRAINTS](CONSTRAINTS.md) §10).
+`printStatus` reports **paper, not acceptance**
+([CONSTRAINTS](CONSTRAINTS.md) §10).
 
 ```
 FSM enters PRINTING (_enter_printing):

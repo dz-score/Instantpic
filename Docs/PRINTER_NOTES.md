@@ -78,17 +78,14 @@ What it assumes:
 - The message looks roughly like `612 native prints remaining on 4x6 ribbon`, so
   the first integer is the count and a `NxM` token is the media size.
 
-How it fails: **closed.** Anything unparseable yields `None`, and `None` means
-"cannot know" all the way to the admin panel, which shows *no number* rather
-than a zero it has not earned. A confident "0 prints left" on a full roll would
-send an operator hunting for a spare mid-event.
+How it fails: **closed** — unparseable yields `None`, which the UI renders as no
+number at all ([CONSTRAINTS](CONSTRAINTS.md) §10 for why that matters).
 
-Markers are read through **cupsd via `ipptool`**, never by invoking
-`/usr/lib/cups/backend/gutenprint53+usb` directly — that backend owns the USB
-device while CUPS has the printer, so calling it would be fighting the daemon
-for the port. `ipptool` ships in `cups-ipp-utils` and is not always installed;
-its absence is latched after one attempt, otherwise every 5 s status poll would
-spawn a subprocess that cannot work.
+Markers are read through **cupsd via `ipptool`**, never by invoking the
+Gutenprint backend directly: it owns the USB device while CUPS has the printer.
+`ipptool` ships in `cups-ipp-utils` and is not always installed; its absence is
+latched after one attempt, otherwise every 5 s status poll would spawn a
+subprocess that cannot work.
 
 `backend/tools/printer_markers_probe.py` dumps the raw markers beside what the
 parser made of them. Run it on hardware day, then:
@@ -106,7 +103,7 @@ parser made of them. Run it on hardware day, then:
 
 ## ⚠️ Geometry — the squeeze this is defending against
 
-Gutenprint has a **known "printout gets squeezed" bug on the DS-RX1HS**. Two
+Gutenprint has a **known "printout gets squeezed" bug on this model**. Two
 things are in place against it, both of which need confirming on paper:
 
 1. **The composite carries a real `dpi=(300, 300)` tag**, and

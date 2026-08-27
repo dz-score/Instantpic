@@ -24,10 +24,9 @@ const TABS = [
  * - Large, calm, impossible to break
  *
  * Two save paths, deliberately. The form tabs (Event, Booth) collect edits and
- * commit them together on "Save Changes". The device tabs (LEDs, Printer)
- * write through immediately, because whoever is using them is standing at the
- * hardware and the only useful feedback is the thing they just changed taking
- * effect while they watch.
+ * commit them together on "Save Changes". The device tabs (LEDs, Printer) write
+ * through immediately: whoever is using those is standing at the hardware, and
+ * a change that only lands on "Save" is a change they cannot watch take effect.
  */
 export default function AdminPanel({
   config,

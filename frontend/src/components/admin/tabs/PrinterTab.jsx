@@ -11,9 +11,8 @@ import './PrinterTab.css';
  * bench, and the operator standing in front of it has to be able to try one
  * and print again rather than wait for a release.
  *
- * A 409 from the test print means the booth is mid-session, which is a real
- * answer and is rendered as one — the backend will not put a diagnostic in
- * front of a guest's print.
+ * A refusal from the test print is rendered as an ordinary message, not an
+ * error — see useApi.testPrint.
  *
  * Rule 7 escape hatch, same as SystemTab and LedTab: printer health is polled
  * over REST because it is a live CUPS query with no event source. Only while
@@ -121,8 +120,7 @@ export default function PrinterTab({
             </span>
           </div>
 
-          {/* Absent is not empty: a printer with no marker reporting shows no
-              number at all rather than a zero it has not earned. */}
+          {/* Absent is not empty — no reporting means no number, not a zero. */}
           {remaining != null && (
             <div className={`printer-status__media ${
               printer.media_low ? 'printer-status__media--low' : ''

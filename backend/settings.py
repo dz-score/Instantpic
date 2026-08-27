@@ -117,10 +117,9 @@ class AppSettings(BaseModel):
     show_names_on_photo: bool = True
     printer_name: str = "mock"
     # Passed to `lp -o` verbatim, one option per whitespace-separated token.
-    # Not `fit-to-page`: that hands the scaling decision back to CUPS, which is
-    # the decision CONSTRAINTS.md §6 exists to take away from it. The exact
-    # media name is unconfirmed against the real PPD, which is why this is
-    # editable from the Printer tab (PRINTER_NOTES.md, hardware run step 2).
+    # Deliberately not `fit-to-page` (CONSTRAINTS.md §6). The media name is
+    # unconfirmed against the real PPD, hence editable from the Printer tab
+    # (PRINTER_NOTES.md, hardware run step 2).
     printer_options: str = "media=w288h432 scaling=100"
     # Prints left below which the booth starts saying so. A judgement about the
     # event rather than the hardware, hence config. Warned about, never

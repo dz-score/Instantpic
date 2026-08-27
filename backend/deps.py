@@ -37,9 +37,7 @@ def get_job_queue(request: Request):
     """The job queue the lifespan built.
 
     Routes need it for the one job a human starts rather than the FSM: a test
-    print. Going through the queue rather than calling PrintService directly
-    keeps every print on the one serial lane, so a test cannot overlap a print
-    a guest is still waiting on.
+    print, which has to share the serial print lane with the guest's.
     """
     return request.app.state.job_queue
 
