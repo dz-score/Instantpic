@@ -209,9 +209,8 @@ sequence.
 
 **Intent.** Communicate "working, please wait" for an unknown duration.
 
-**Visual.** Four bands — cyan, magenta, yellow, and a genuine gap of off pixels —
-rotating steadily in one direction, one revolution per ~2 s. Soft edges between
-bands, hard edge into the gap.
+**Visual.** Four bands — cyan, magenta, yellow, and a dim pistachio — rotating
+steadily in one direction, one revolution per ~2 s. Soft edges between bands.
 
 **Parameters.** `speed`.
 
@@ -219,9 +218,12 @@ bands, hard edge into the gap.
 **timeout of ~120 s**, after which it falls to Error. Without that, a jammed
 printer leaves the booth cheerfully rolling ink forever.
 
-The off-gap is what makes rotation legible — a continuous color wheel at this
-speed reads as a blur. Steady speed, constant direction; resist making it
-accelerate.
+The quiet fourth quadrant is what makes rotation legible — a continuous color
+wheel at this speed reads as a blur. It was originally off pixels, but a
+quarter of the ring at genuine zero reads as a run of dead LEDs on real
+hardware rather than as a design. Pistachio at a third of the band brightness
+keeps the beat without the ambiguity. Steady speed, constant direction; resist
+making it accelerate.
 
 ## 6. Finished — "The Hollywood Sparkle"
 
