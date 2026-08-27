@@ -50,6 +50,7 @@ FRAME_PICKER
   ├─ FRAME_SKIP → PRINTING (with default frame)
   └─ (or TIMEOUT → ATTRACT)
 PRINTING
+  ├─ REPRINT → PRINTING (retry, only while printStatus is "failed")
   ├─ ANOTHER → CHOOSE_STYLE (run again)
   ├─ FINISH → ATTRACT (return to idle)
   └─ (or TIMEOUT → ATTRACT)
@@ -216,6 +217,34 @@ Guest skips frame selection and proceeds directly to printing with the default f
 
 ---
 
+### REPRINT
+**Valid from:** `PRINTING`, and **only while `printStatus` is `"failed"`**  
+**Payload:** `{}` (no data required)
+
+Sends the same `finalPhoto` to the printer again after a print did not come out.
+The booth returns to `printStatus: "printing"` and reports the second outcome the
+same way it reported the first.
+
+The `printStatus` condition is the point of this event, not an implementation
+detail. A print that succeeded and a print that jammed look the same to a guest
+standing at the booth, but retrying the first spends a second sheet of media on
+a copy nobody agreed to — the booth prints once per session. Retrying the second
+is the guest getting the photo they were already promised.
+
+That condition also makes the event idempotent: the first `REPRINT` moves
+`printStatus` to `"printing"`, so a double tap or a retried POST is refused
+rather than queueing a duplicate behind the first. Rejections are logged
+(`reprint_rejected`) and, like every invalid event, change nothing.
+
+```json
+{
+  "type": "REPRINT",
+  "payload": {}
+}
+```
+
+---
+
 ### ANOTHER
 **Valid from:** `PRINTING` only  
 **Payload:** `{}` (no data required)
@@ -302,7 +331,9 @@ The complete current state of the booth:
 - `retakeCount` (integer): Number of times the guest has retaken photos
 - `allSessionPhotos` (array): All processed photos from this session with their raw images
 - `isProcessing` (boolean): True if a background job (photo processing, frame application) is running
-- `printStatus` (string): `"idle"` | `"printing"` | `"printed"` | `"failed"`
+- `printStatus` (string): `"idle"` | `"printing"` | `"printed"` | `"failed"`.
+  `"printed"` means the print physically finished, not that CUPS accepted the
+  job — the backend waits the job out before reporting either terminal value.
 
 ---
 

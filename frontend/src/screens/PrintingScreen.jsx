@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useCallback } from 'react';
 import ScreenShell from '../components/ScreenShell';
 import { t } from '../utils/i18n';
 import useTapGuard from '../hooks/useTapGuard';
-import { Camera } from 'lucide-react';
+import { Camera, Printer } from 'lucide-react';
 import './PrintingScreen.css';
 
 const AUTO_RESET_SECONDS = 25;
@@ -18,10 +18,19 @@ const AUTO_RESET_SECONDS = 25;
  * Phase 1 (PRINTING):  printStatus === 'printing'
  *   - Animated printer icon + warm patience message
  *
- * Phase 2 (DONE/ERROR): printStatus === 'printed' | 'failed'
- *   - Thank you message (from config)
+ * Phase 2 (DONE): printStatus === 'printed'
+ *   - The print has physically finished — the backend waits the job out, so
+ *     this is a real completion and not an accepted submission
  *   - Photo preview + QR code to download
  *   - Blush "Take Another" button + auto-reset countdown
+ *
+ * Phase 2 (ERROR): printStatus === 'failed'
+ *   - Says plainly that nothing came out, and points at an attendant. The two
+ *     outcomes used to read almost identically, which left a guest looking at
+ *     a "save your photo" screen with no idea their print had jammed.
+ *   - The photo is still safe and still downloadable, so the QR stays.
+ *   - Offers a retry. The FSM only accepts REPRINT while printStatus is
+ *     'failed', so this cannot become a second-copy button.
  *
  * Background from ScreenShell (bg-wedding.png).
  */
@@ -33,6 +42,7 @@ export default function PrintingScreen({
   config,
   onFinish,
   onAnother,
+  onReprint,
   language,
 }) {
   // Derived directly from backend state — no local success/failure of our own.
@@ -60,6 +70,14 @@ export default function PrintingScreen({
     clearTimeout(resetTimerRef.current);
     onAnother();
   }, [onAnother]);
+
+  // Retrying puts printStatus back to 'printing', so the phase effect above
+  // clears the auto-reset on its own — the guest does not get sent home
+  // halfway through the print they just asked for.
+  const handleReprint = useCallback(() => {
+    clearTimeout(resetTimerRef.current);
+    onReprint();
+  }, [onReprint]);
 
   return (
     <ScreenShell className="print-screen">
@@ -104,8 +122,11 @@ export default function PrintingScreen({
             </>
           ) : (
             <>
-              <p className="print-done__kicker">{t('printing.almostThereKicker', language)}</p>
-              <h1 className="print-done__title">{t('printing.savePhotoTitle', language)}</h1>
+              <p className="print-done__kicker print-done__kicker--error">
+                {t('printing.failedKicker', language)}
+              </p>
+              <h1 className="print-done__title">{t('printing.failedTitle', language)}</h1>
+              <p className="print-done__error-body">{t('printing.failedBody', language)}</p>
             </>
           )}
 
@@ -150,6 +171,12 @@ export default function PrintingScreen({
 
           {/* Actions */}
           <div className="print-done__actions">
+            {phase === 'ERROR' && (
+              <button className="print-done__btn-retry" onClick={guard(handleReprint)} disabled={!armed}>
+                <span className="print-done__btn-icon btn-icon"><Printer strokeWidth={1.5} size={30} /></span>
+                <span className="print-done__btn-main">{t('printing.retryPrint', language)}</span>
+              </button>
+            )}
             <button className="print-done__btn-another" onClick={guard(handleAnother)} disabled={!armed}>
               <span className="print-done__btn-icon btn-icon"><Camera strokeWidth={1.5} size={34} /></span>
               <span className="print-done__btn-main">{t('printing.takeAnother', language)}</span>

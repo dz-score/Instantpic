@@ -314,6 +314,11 @@
 
 /* ═══ Actions ═══ */
 .print-done__actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: var(--space-md);
   margin-bottom: var(--space-2xs);
 }
 
@@ -374,4 +379,49 @@
   letter-spacing: var(--tracking-sm);
   box-shadow: var(--shadow-sm);
   border: 1px solid var(--gold);
+}
+
+/* ═══ Print failure ═══ */
+
+/* The error state used to render almost identically to success, which left a
+   guest reading "save your photo" with no idea their print had jammed. */
+.print-done__kicker--error {
+  color: var(--status-warning);
+}
+
+.print-done__error-body {
+  max-width: min(70vw, 900px);
+  margin: var(--space-2xs) auto 0;
+  font-family: var(--font-body);
+  font-size: clamp(var(--text-caption), 1.4vw, var(--text-body));
+  line-height: 1.45;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+/* Secondary to "Take Another": the retry is the useful action here, but the
+   blush gradient is this screen's one primary and two of them compete. */
+.print-done__btn-retry {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  min-width: min(24vw, 380px);
+  height: clamp(var(--cta-height-sm), 8vh, var(--cta-height-lg));
+  padding: 0 var(--space-lg);
+  border-radius: var(--radius-button);
+  border: 2px solid var(--champagne);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all var(--duration-normal) var(--ease-out);
+}
+
+.print-done__btn-retry:active {
+  transform: scale(0.97);
+}
+
+.print-done__btn-retry:disabled {
+  opacity: 0.5;
+  cursor: default;
 }

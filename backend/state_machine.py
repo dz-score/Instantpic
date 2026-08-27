@@ -87,7 +87,7 @@ VALID_TRANSITIONS = {
     "REVEAL": ["RETAKE", "PRINT_FROM_REVEAL"],
     "PICK_FAVORITE": ["FAVORITE_SELECT"],
     "FRAME_PICKER": ["FRAME_SELECT", "FRAME_SKIP"],
-    "PRINTING": ["FINISH", "ANOTHER"]
+    "PRINTING": ["FINISH", "ANOTHER", "REPRINT"]
 }
 
 # Events that are valid from ANY state
@@ -270,6 +270,27 @@ class StateMachine:
             elif event_type == "FRAME_SKIP":
                 await self._enter_printing()
                 
+            elif event_type == "REPRINT":
+                # Only after a failure, never after a success. The two look the
+                # same on this screen and are not the same situation: retrying a
+                # print that came out spends a second sheet of media on a copy
+                # nobody agreed to (one print per session is a booth decision,
+                # Rule 14), while retrying a jam is the guest getting the photo
+                # they were already promised.
+                #
+                # The guard is also what makes this idempotent. The first
+                # REPRINT moves printStatus to "printing", so a second tap —
+                # or a stale browser retrying the POST — is refused here rather
+                # than queueing a duplicate behind the first.
+                if self._state.printStatus != "failed":
+                    log.warn("state_machine", "reprint_rejected",
+                             f"REPRINT ignored — printStatus is "
+                             f"{self._state.printStatus!r}, not 'failed'")
+                    return
+                log.info("state_machine", "reprint",
+                         f"Retrying the print for {self._state.finalPhoto}")
+                await self._enter_printing()
+
             elif event_type == "FINISH":
                 self._state = BoothState(screen="ATTRACT")
                 
@@ -406,13 +427,23 @@ class StateMachine:
         timeout. Callers must set finalPhoto before invoking. Runs under the
         handler lock; enqueue is non-blocking."""
         self._state.screen = "PRINTING"
+        if not (self._job_queue and self._state.finalPhoto):
+            # Nothing to print, or nowhere to send it. Say so instead of leaving
+            # printStatus on "printing" with no job to ever move it off: that is
+            # a guest watching the printing animation until the session watchdog
+            # times them out, with nothing in the log to explain it.
+            self._state.printStatus = "failed"
+            log.error("state_machine", "print_not_enqueued",
+                      "Entered PRINTING with nothing to print",
+                      data={"finalPhoto": self._state.finalPhoto,
+                            "has_queue": self._job_queue is not None})
+            return
         self._state.printStatus = "printing"
-        if self._job_queue and self._state.finalPhoto:
-            await self._job_queue.enqueue(jobs.print_photo_job(
-                self._state.finalPhoto,
-                on_success=self.job_print_done,
-                on_failure=self.job_print_failed,
-            ))
+        await self._job_queue.enqueue(jobs.print_photo_job(
+            self._state.finalPhoto,
+            on_success=self.job_print_done,
+            on_failure=self.job_print_failed,
+        ))
 
     # Capture callbacks — the camera worker delivers the terminal outcome
     # straight to the FSM (via enqueue_capture's marshalled coroutines). The
