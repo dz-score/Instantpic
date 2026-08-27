@@ -43,7 +43,7 @@ Substitute the node's address for `IP` throughout.
 Expected on the monitor, in this order:
 
 ```
-I (xxx) output: 60 px on GPIO 18, offset 0
+I (xxx) output: 60 px on GPIO 27, offset 0
 I (xxx) modes: render task started at 125 Hz
 I (xxx) wifi: connecting to "yourssid" (2.4 GHz only)
 I (xxx) transport_http: listening on port 80

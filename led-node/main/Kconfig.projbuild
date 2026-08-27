@@ -13,10 +13,16 @@ menu "LED Node Configuration"
 
         config LED_NODE_DATA_GPIO
             int "Data GPIO"
-            default 18
+            default 27
             help
-                Drives the strip through a 74AHCT125 level shifter. 3.3V direct
-                into a 5V strip is marginal and flaky.
+                Drives the strip through a 74AHCT125 level shifter (pin 2, 1A;
+                strip DIN comes off pin 3, 1Y). 3.3V direct into a 5V strip is
+                marginal and flaky.
+
+                Any output-capable pin works — RMT reaches it through the GPIO
+                matrix. Avoid GPIO 34-39, which are input-only, and the
+                strapping pins: GPIO 12 held high at reset selects a 1.8V flash
+                voltage and the module will not boot.
 
         config LED_NODE_RING_OFFSET
             int "Pixel index at visual 12 o'clock"
