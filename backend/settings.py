@@ -59,6 +59,34 @@ class LedConfig(BaseModel):
     http: LedHttpConfig = LedHttpConfig()
 
 
+class PrinterMockConfig(BaseModel):
+    """Shapes MockPrinterDriver so a dev box can rehearse a real dye-sub.
+
+    The defaults model a DNP DS-RX1HS on a 4x6 roll. They matter because the
+    mock is not a stub here: on Windows it is the ONLY driver that ever runs
+    (see PrintService._reload_driver), so every print path this project has —
+    the printing animation's dwell, a failure reaching the guest, an operator
+    watching media run down — is developed and tested against these numbers.
+    Correct them from the real printer once it is on the bench.
+    """
+    # One 4x6 print, measured end to end. The guest watches the printing
+    # animation for exactly this long, so a wrong value here makes the screen
+    # look right in development and wrong at the event.
+    job_duration_s: float = 13.0
+    # Prints on a full roll. Changing this is "load a new roll" — the driver
+    # reseeds its counter when the value moves.
+    media_total: int = 700
+    # A failure to rehearse. Everything except "none" is a fault this printer
+    # actually has; set one, run a session, watch what the guest sees.
+    #   submit_fails_once - lp rejects the first submission, accepts the retry
+    #   offline           - nothing is accepted at all, status reports it
+    #   out_of_media      - accepted, then the ribbon runs out mid-job
+    #   abort_mid_job     - accepted, then a jam partway through
+    fault: Literal[
+        "none", "submit_fails_once", "offline", "out_of_media", "abort_mid_job"
+    ] = "none"
+
+
 class AppSettings(BaseModel):
     camera_backend: Literal["gphoto2", "mock"] = "gphoto2"
     admin_pin: str = "123456"
@@ -93,6 +121,8 @@ class AppSettings(BaseModel):
     show_names_on_photo: bool = True
     printer_name: str = "mock"
     printer_options: str = "fit-to-page media=4x6"
+    # Only consulted when the mock driver is the one in use.
+    printer_mock: PrinterMockConfig = PrinterMockConfig()
     # Cap on FILES in the photos dir, not on sessions or on keepsakes. One
     # 3-shot session that prints leaves 7: three raws (capture_*.jpg), three
     # screen previews (preview_capture_*.jpg) and one composite (photo_*.jpg).

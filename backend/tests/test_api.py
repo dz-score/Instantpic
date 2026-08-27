@@ -21,8 +21,8 @@ def test_led_config_defaults_are_served(client):
     assert led["http"]["host"] == ""
 
 def test_partial_led_update_does_not_reset_the_rest_of_the_block(client):
-    """The one nested block, and SettingsService.update() replaces top-level keys
-    outright. Without the merge, setting the host alone would switch the ring off."""
+    """SettingsService.update() replaces top-level keys outright. Without the
+    merge, setting the host alone would switch the ring off."""
     client.post("/api/config", json={"led": {"enabled": True, "http": {"host": "10.0.0.9"}}})
 
     r = client.post("/api/config", json={"led": {"http": {"host": "10.0.0.42"}}})
@@ -31,6 +31,19 @@ def test_partial_led_update_does_not_reset_the_rest_of_the_block(client):
     assert led["http"]["host"] == "10.0.0.42"
     assert led["enabled"] is True                     # not reset to the default
     assert led["http"]["capture_timeout_ms"] == 250   # sibling under http survives
+
+def test_partial_printer_mock_update_keeps_the_rest_of_the_block(client):
+    """Same merge, second block: an operator changing one mock fault must not
+    silently take the simulated print time back to its default."""
+    client.post("/api/config", json={"printer_mock": {"job_duration_s": 4.0, "media_total": 20}})
+
+    r = client.post("/api/config", json={"printer_mock": {"fault": "abort_mid_job"}})
+    assert r.status_code == 200
+    mock = r.json()["printer_mock"]
+    assert mock["fault"] == "abort_mid_job"
+    assert mock["job_duration_s"] == 4.0
+    assert mock["media_total"] == 20
+
 
 def test_led_update_leaves_unrelated_settings_alone(client):
     client.post("/api/config", json={"countdown_duration": 7})

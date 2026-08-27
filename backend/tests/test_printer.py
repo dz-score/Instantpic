@@ -6,6 +6,7 @@ from backend.print_service import (
     PrintResult, PrinterStatus, JobOutcome,
     JOB_COMPLETED, JOB_FAILED, JOB_TIMEOUT, JOB_UNKNOWN,
 )
+from backend.settings import PrinterMockConfig
 
 
 def test_mock_driver_success():
@@ -260,10 +261,6 @@ def test_await_job_unknown_when_lpstat_keeps_failing(mocker):
     assert outcome.ok is False
 
 
-def test_mock_driver_await_job_completes():
-    driver = MockPrinterDriver("mock")
-    job = driver.print_file("/tmp/test.jpg", "")
-    assert driver.await_job(job.job_id, timeout_s=90).state == JOB_COMPLETED
 
 
 # ── PrintService: the two-phase flow and the retry split ─────────────────────
@@ -372,3 +369,212 @@ def test_print_does_not_claim_a_print_it_cannot_track(mocker, tmp_path):
 
     assert result.success is True
     driver.await_job.assert_not_called()
+
+
+# ── Mock driver shaped like a DS-RX1HS ───────────────────────────────────────
+
+def _mock_settings(mocker, printer_name="mock", **overrides):
+    """The mock driver's whole behaviour comes from AppSettings.printer_mock,
+    so tests configure it the same way the admin panel does."""
+    cfg = PrinterMockConfig(**{"job_duration_s": 0.0, **overrides})
+    svc = mocker.Mock()
+    svc.get.return_value = mocker.Mock(
+        printer_name=printer_name, printer_options="media=4x6", printer_mock=cfg
+    )
+    return svc
+
+
+def _mock_driver(mocker, **overrides):
+    return MockPrinterDriver("mock", _mock_settings(mocker, **overrides))
+
+
+def test_mock_await_takes_the_configured_print_time(mocker):
+    """The guest watches the printing animation for exactly this long, so the
+    number has to reach the sleep."""
+    sleep = mocker.patch("backend.print_service.time.sleep")
+    driver = _mock_driver(mocker, job_duration_s=13.0)
+
+    job = driver.print_file("/tmp/p.jpg", "")
+    assert driver.await_job(job.job_id, timeout_s=90).state == JOB_COMPLETED
+    sleep.assert_called_once_with(13.0)
+
+
+def test_mock_submit_is_instant(mocker):
+    """Submission must not sleep — that is the whole distinction the two-phase
+    contract exists to make."""
+    sleep = mocker.patch("backend.print_service.time.sleep")
+    _mock_driver(mocker, job_duration_s=13.0).print_file("/tmp/p.jpg", "")
+    sleep.assert_not_called()
+
+
+def test_mock_times_out_when_the_print_outlasts_the_caller(mocker):
+    mocker.patch("backend.print_service.time.sleep")
+    driver = _mock_driver(mocker, job_duration_s=13.0)
+    job = driver.print_file("/tmp/p.jpg", "")
+    assert driver.await_job(job.job_id, timeout_s=5).state == JOB_TIMEOUT
+
+
+def test_mock_media_counts_down_per_print(mocker):
+    driver = _mock_driver(mocker, media_total=700)
+    assert driver.get_status().prints_remaining == 700
+
+    for _ in range(3):
+        job = driver.print_file("/tmp/p.jpg", "")
+        driver.await_job(job.job_id, timeout_s=90)
+
+    status = driver.get_status()
+    assert status.prints_remaining == 697
+    assert status.media_type == "4x6"
+
+
+def test_mock_media_is_not_spent_by_a_failed_print(mocker):
+    driver = _mock_driver(mocker, media_total=700, fault="abort_mid_job")
+    job = driver.print_file("/tmp/p.jpg", "")
+    assert driver.await_job(job.job_id, timeout_s=90).state == JOB_FAILED
+    assert driver.get_status().prints_remaining == 700
+
+
+def test_mock_runs_out_of_media(mocker):
+    """media_total=1 is how you rehearse the end of a roll in a few seconds."""
+    driver = _mock_driver(mocker, media_total=1)
+
+    first = driver.print_file("/tmp/p.jpg", "")
+    assert driver.await_job(first.job_id, timeout_s=90).state == JOB_COMPLETED
+
+    second = driver.print_file("/tmp/p.jpg", "")
+    outcome = driver.await_job(second.job_id, timeout_s=90)
+    assert outcome.state == JOB_FAILED
+    assert "Media tray empty." in outcome.message
+
+    status = driver.get_status()
+    assert status.prints_remaining == 0
+    assert status.ready is False
+
+
+def test_mock_reloading_media_total_is_a_new_roll(mocker):
+    settings = _mock_settings(mocker, media_total=2)
+    driver = MockPrinterDriver("mock", settings)
+
+    job = driver.print_file("/tmp/p.jpg", "")
+    driver.await_job(job.job_id, timeout_s=90)
+    assert driver.get_status().prints_remaining == 1
+
+    settings.get.return_value.printer_mock = PrinterMockConfig(
+        job_duration_s=0.0, media_total=700
+    )
+    assert driver.get_status().prints_remaining == 700
+
+
+def test_mock_fault_out_of_media_lands_after_acceptance(mocker):
+    """The failure has to arrive late, after the guest has been told the print
+    is on its way — that is the case the booth used to get wrong."""
+    driver = _mock_driver(mocker, fault="out_of_media")
+
+    submitted = driver.print_file("/tmp/p.jpg", "")
+    assert submitted.success is True
+
+    outcome = driver.await_job(submitted.job_id, timeout_s=90)
+    assert outcome.state == JOB_FAILED
+    assert "Media tray empty." in outcome.message
+
+
+def test_mock_fault_jam_lands_after_acceptance(mocker):
+    driver = _mock_driver(mocker, fault="abort_mid_job")
+    submitted = driver.print_file("/tmp/p.jpg", "")
+    assert submitted.success is True
+    assert "Paper jam." in driver.await_job(submitted.job_id, timeout_s=90).message
+
+
+def test_mock_fault_offline_rejects_and_reports(mocker):
+    driver = _mock_driver(mocker, fault="offline")
+
+    assert driver.print_file("/tmp/p.jpg", "").success is False
+
+    status = driver.get_status()
+    assert status.connected is False
+    assert status.ready is False
+
+
+def test_mock_fault_submit_fails_once_then_accepts(mocker):
+    driver = _mock_driver(mocker, fault="submit_fails_once")
+    assert driver.print_file("/tmp/p.jpg", "").success is False
+    assert driver.print_file("/tmp/p.jpg", "").success is True
+
+
+def test_mock_fault_submit_fails_once_rearms_when_cleared(mocker):
+    settings = _mock_settings(mocker, fault="submit_fails_once")
+    driver = MockPrinterDriver("mock", settings)
+    assert driver.print_file("/tmp/p.jpg", "").success is False
+
+    settings.get.return_value.printer_mock = PrinterMockConfig(job_duration_s=0.0)
+    assert driver.print_file("/tmp/p.jpg", "").success is True
+
+    settings.get.return_value.printer_mock = PrinterMockConfig(
+        job_duration_s=0.0, fault="submit_fails_once"
+    )
+    assert driver.print_file("/tmp/p.jpg", "").success is False
+
+
+def test_bare_mock_driver_still_works():
+    """Constructed with no settings it falls back to PrinterMockConfig defaults,
+    because that is how a few call sites and tests build it."""
+    driver = MockPrinterDriver("mock")
+    assert driver.get_status().connected is True
+    assert driver.print_file("/tmp/p.jpg", "").success is True
+
+
+# ── Driver selection keeps state across calls ────────────────────────────────
+
+def test_reload_driver_keeps_the_instance_so_media_survives(mocker, tmp_path):
+    """Every public entry point calls _reload_driver. Rebuilding each time would
+    reset the roll on every status poll."""
+    f = tmp_path / "photo.jpg"
+    f.write_bytes(b"x")
+
+    svc = PrintService(_mock_settings(mocker, media_total=700))
+    svc.print(str(f))
+    first = svc._driver
+
+    svc.get_status()
+    svc.print(str(f))
+
+    assert svc._driver is first
+    assert svc.get_status().prints_remaining == 698
+
+
+def test_reload_driver_swaps_when_the_queue_name_changes(mocker):
+    mocker.patch("backend.print_service.sys.platform", "linux")
+    settings = _mock_settings(mocker)
+    svc = PrintService(settings)
+
+    # cancel_all reloads unconditionally; get_status can answer from its 5s
+    # cache without reselecting, which is fine in production and useless here.
+    svc.cancel_all()
+    assert isinstance(svc._driver, MockPrinterDriver)
+
+    settings.get.return_value.printer_name = "DS-RX1"
+    svc.cancel_all()
+    assert isinstance(svc._driver, CupsPrinterDriver)
+    assert svc._driver.printer_name == "DS-RX1"
+
+
+# ── The mock driving the real PrintService ───────────────────────────────────
+
+def test_service_recovers_from_a_first_submission_failure(mocker, tmp_path):
+    mocker.patch("backend.print_service.time.sleep")
+    f = tmp_path / "photo.jpg"
+    f.write_bytes(b"x")
+
+    result = PrintService(_mock_settings(mocker, fault="submit_fails_once")).print(str(f))
+
+    assert result.success is True
+
+
+def test_service_reports_a_mid_job_jam_as_a_failure(mocker, tmp_path):
+    f = tmp_path / "photo.jpg"
+    f.write_bytes(b"x")
+
+    result = PrintService(_mock_settings(mocker, fault="abort_mid_job")).print(str(f))
+
+    assert result.success is False
+    assert "Paper jam." in result.error

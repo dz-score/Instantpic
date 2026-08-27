@@ -6,6 +6,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from backend.settings import AppSettings
 from backend.job_queue import JobQueue
+from backend.print_service import PrintService
+from backend.settings import PrinterMockConfig
 
 @pytest.fixture
 def anyio_backend():
@@ -140,8 +142,9 @@ async def test_job_queue_error_handling(queue):
 
 @pytest.mark.anyio
 async def test_slow_print_does_not_block_the_processing_lane(queue):
-    """The reason the lanes are split. A print can hold its worker for ~63s
-    (CUPS timeout + retry). On a shared lane, the next guest's processing job
+    """The reason the lanes are split. A print holds its worker for the whole
+    physical print — ~12s for a 4x6 dye-sub, up to ~96s if it has to time out.
+    On a shared lane, the next guest's processing job
     queued behind it and their REVEAL spinner waited out someone else's paper
     jam. Processing must complete while the print is still stuck."""
     print_running = threading.Event()
@@ -193,6 +196,41 @@ async def test_slow_print_does_not_block_the_processing_lane(queue):
             on_print.assert_awaited_once_with("stuck.jpg")
 
             await queue.stop()
+
+
+@pytest.mark.anyio
+async def test_a_jam_reaches_the_submitter_as_a_failure(tmp_path):
+    """The whole chain with a real PrintService: the mock printer accepts the
+    job, jams partway through, and the failure has to come back through the
+    queue as on_failure. Before print completion was tracked this path reported
+    success — the guest was told "Done!" over a jam."""
+    photo = tmp_path / "photo.jpg"
+    photo.write_bytes(b"x")
+
+    settings_svc = MagicMock()
+    settings_svc.get.return_value = SimpleNamespace(
+        printer_name="mock",
+        printer_options="media=4x6",
+        printer_mock=PrinterMockConfig(job_duration_s=0.0, fault="abort_mid_job"),
+    )
+
+    queue = JobQueue(print_svc=PrintService(settings_svc), settings=settings_svc)
+    on_success, on_failure = AsyncMock(), AsyncMock()
+
+    with patch("backend.job_queue.storage.PHOTOS_DIR", str(tmp_path)):
+        queue.start()
+        await queue.enqueue({
+            "type": "PRINT_PHOTO",
+            "filename": "photo.jpg",
+            "on_success": on_success,
+            "on_failure": on_failure,
+        })
+        await asyncio.wait_for(queue.join(), timeout=10)
+        await queue.stop()
+
+    on_success.assert_not_awaited()
+    on_failure.assert_awaited_once()
+    assert "Paper jam." in on_failure.await_args[0][0]
 
 
 @pytest.mark.anyio

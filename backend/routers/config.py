@@ -3,7 +3,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from backend.settings import AppSettings, LedConfig, SettingsService
+from backend.settings import AppSettings, LedConfig, PrinterMockConfig, SettingsService
 from backend.deps import get_led, get_settings_service, get_sse
 from backend.logger import log
 from backend.sse_service import SseService
@@ -29,10 +29,10 @@ class ConfigUpdateRequest(BaseModel):
     session_timeout: Optional[int] = None
     show_names_on_photo: Optional[bool] = None
     wifi_network_name: Optional[str] = None
-    # The only nested block. Partial payloads are merged, not replaced — see
-    # _merge_led below for why that needs handling here rather than in
-    # SettingsService.
+    # Nested blocks. Partial payloads are merged, not replaced — see _merge_block
+    # below for why that needs handling here rather than in SettingsService.
     led: Optional[LedConfig] = None
+    printer_mock: Optional[PrinterMockConfig] = None
 
 
 class ChangePinRequest(BaseModel):
@@ -56,8 +56,11 @@ async def post_config(
     """Update configurations."""
     try:
         changed = {k: v for k, v in updates.model_dump(exclude_unset=True).items() if v is not None}
-        if "led" in changed:
-            changed["led"] = _merge_led(settings_svc.get(), changed["led"])
+        for block in ("led", "printer_mock"):
+            if block in changed:
+                changed[block] = _merge_block(
+                    getattr(settings_svc.get(), block).model_dump(), changed[block]
+                )
         updated = settings_svc.update(changed)
 
         # Apply the ring change now rather than at the next restart. Whoever is
@@ -81,20 +84,20 @@ async def post_config(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-def _merge_led(current: AppSettings, incoming: dict) -> dict:
-    """Merge a partial `led` block onto the live one.
+def _merge_block(current: dict, incoming: dict) -> dict:
+    """Merge a partial nested block onto the live one, at any depth.
 
     SettingsService.update() replaces top-level keys outright, which is right
-    for flat scalars and wrong for the one nested block: a payload carrying only
+    for flat scalars and wrong for a nested block: a payload carrying only
     {"host": ...} would take `enabled` and the timeouts back to their model
     defaults and silently switch the ring off. model_dump(exclude_unset=True) is
     recursive, so what arrives here is exactly the keys the caller sent, and
     everything else is carried over.
     """
-    merged = current.led.model_dump()
+    merged = dict(current)
     for key, value in incoming.items():
-        if key == "http" and isinstance(value, dict):
-            merged["http"] = {**merged["http"], **value}
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _merge_block(merged[key], value)
         else:
             merged[key] = value
     return merged
