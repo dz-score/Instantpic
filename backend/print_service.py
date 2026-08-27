@@ -10,6 +10,13 @@ Architecture:
 
 Swapping printers = changing printer_name in config.json (CUPS queue name).
 No code changes needed.
+
+A print is two phases, and the driver contract keeps them apart: print_file()
+SUBMITS the job (a dye-sub queue accepts one in ~100ms), await_job() blocks until
+that job reaches a terminal state (a DNP RX1HS takes ~12s per 4x6). Every failure
+that matters at an event — ribbon out, paper out, jam, printer switched off —
+happens after submission, so a service that reported the submit result as the
+print result would tell a guest "done" and hand them nothing.
 """
 
 import os
@@ -39,6 +46,28 @@ class PrintResult:
         return asdict(self)
 
 
+# Terminal states a submitted job can reach. `completed` is the only success.
+JOB_COMPLETED = "completed"
+JOB_FAILED = "failed"      # printer stopped mid-job: out of media, jam, powered off
+JOB_TIMEOUT = "timeout"    # still not terminal when we gave up waiting
+JOB_UNKNOWN = "unknown"    # we lost the ability to observe the job at all
+
+
+@dataclass
+class JobOutcome:
+    """How a submitted job ended. Distinct from PrintResult, which also covers
+    submission — a job can be accepted and still never reach paper."""
+    state: str
+    message: str = ""
+
+    @property
+    def ok(self) -> bool:
+        return self.state == JOB_COMPLETED
+
+    def to_dict(self):
+        return asdict(self)
+
+
 @dataclass
 class PrinterStatus:
     """Current state of the printer."""
@@ -59,7 +88,15 @@ class PrinterDriver(ABC):
 
     @abstractmethod
     def print_file(self, filepath: str, options: str) -> PrintResult:
-        """Send a file to the printer. Returns result with success/failure."""
+        """Submit a file to the printer. Success here means the queue ACCEPTED
+        the job, not that anything was printed — see await_job()."""
+        ...
+
+    @abstractmethod
+    def await_job(self, job_id: str, timeout_s: float) -> JobOutcome:
+        """Block until the submitted job reaches a terminal state. Blocking is
+        the point: the caller runs on the job queue's print lane, off the event
+        loop, and the guest is watching the printing animation until this returns."""
         ...
 
     @abstractmethod
@@ -78,8 +115,58 @@ class PrinterDriver(ABC):
 class CupsPrinterDriver(PrinterDriver):
     """Drives any CUPS-managed printer via the `lp` / `lpstat` CLI."""
 
+    # How often await_job asks CUPS where the job got to. A dye-sub print is
+    # ~12s, so a 1s poll is ~12 subprocesses per print — cheap next to the
+    # alternative of linking pycups, which needs libcups2-dev on the Pi.
+    JOB_POLL_INTERVAL_S = 1.0
+    # Consecutive failed observations tolerated before we admit we've lost the
+    # job. One hiccup while cupsd reloads should not fail a good print.
+    OBSERVE_FAILURE_LIMIT = 3
+
     def __init__(self, printer_name: str):
         self.printer_name = printer_name
+
+    # ── lpstat helpers ────────────────────────────────────────────────────────
+
+    def _lpstat(self, args: list, timeout: float = 5) -> Optional[str]:
+        """Run an lpstat variant. Returns stdout, or None if it could not be
+        run or the queue was rejected — callers decide what absence means."""
+        try:
+            r = subprocess.run(
+                ["lpstat"] + args,
+                capture_output=True, text=True, timeout=timeout,
+            )
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+            return None
+        return r.stdout if r.returncode == 0 else None
+
+    def _queued_job_ids(self) -> Optional[set]:
+        """Ids of jobs CUPS still considers not-completed. The job id is the
+        first token of each line. None means we could not look."""
+        out = self._lpstat(["-o", self.printer_name])
+        if out is None:
+            return None
+        return {line.split()[0] for line in out.splitlines() if line.split()}
+
+    def _stop_reason(self) -> Optional[str]:
+        """The reason CUPS has stopped this queue, or None if it is running.
+
+        This is how the failures that matter actually present: out of ribbon,
+        out of paper, jam and power-off all stop the queue rather than quietly
+        discarding the job. `lpstat -p` prints the reason on the line after the
+        `disabled since ...` header, so both are worth keeping.
+        """
+        out = self._lpstat(["-p", self.printer_name])
+        if out is None:
+            return None
+        lines = [ln.strip() for ln in out.splitlines() if ln.strip()]
+        if not lines:
+            return None
+        head = lines[0].lower()
+        if "disabled" not in head and "stopped" not in head:
+            return None
+        detail = lines[1].rstrip(" -") if len(lines) > 1 else ""
+        return detail or lines[0]
 
     def print_file(self, filepath: str, options: str) -> PrintResult:
         start = time.monotonic()
@@ -140,6 +227,55 @@ class CupsPrinterDriver(PrinterDriver):
                 error=str(e),
                 duration_ms=duration,
             )
+
+    def await_job(self, job_id: str, timeout_s: float) -> JobOutcome:
+        """Poll CUPS until the job is off the queue, the queue stops, or we run out
+        of patience.
+
+        Why the queue's state and not the job's: `lpstat -W completed` is IPP
+        `which-jobs=completed`, which returns completed, aborted AND canceled jobs
+        together — it cannot tell success from failure. The queue can. Out of
+        ribbon, out of paper, a jam and a power-off all stop the queue and leave
+        our job sitting in it, which is exactly the pair of facts we check.
+
+        Known imprecision: a job an operator cancels from the CUPS web UI also
+        leaves the queue and reads here as completed. That mislabels an outcome
+        the operator caused deliberately and already knows about, which is a far
+        better trade than missing a jam.
+        """
+        deadline = time.monotonic() + timeout_s
+        misses = 0
+
+        while True:
+            queued = self._queued_job_ids()
+
+            if queued is None:
+                # Could not look. Tolerate a hiccup; give up if it persists,
+                # because claiming a print we cannot see is the failure mode
+                # this whole method exists to remove.
+                misses += 1
+                if misses >= self.OBSERVE_FAILURE_LIMIT:
+                    return JobOutcome(
+                        JOB_UNKNOWN,
+                        f"Lost track of job {job_id} — lpstat stopped answering",
+                    )
+            else:
+                misses = 0
+                if job_id not in queued:
+                    return JobOutcome(JOB_COMPLETED)
+                # Still queued. Only now does a stopped queue mean OUR job is
+                # stuck — checking it first would fail a print that finished
+                # just before someone opened the media door.
+                reason = self._stop_reason()
+                if reason:
+                    return JobOutcome(JOB_FAILED, reason)
+
+            if time.monotonic() >= deadline:
+                return JobOutcome(
+                    JOB_TIMEOUT,
+                    f"Job {job_id} still queued after {timeout_s:.0f}s",
+                )
+            time.sleep(self.JOB_POLL_INTERVAL_S)
 
     def get_status(self) -> PrinterStatus:
         try:
@@ -226,7 +362,10 @@ class CupsPrinterDriver(PrinterDriver):
 # ── Mock driver ───────────────────────────────────────────────────────────────
 
 class MockPrinterDriver(PrinterDriver):
-    """Development mock — simulates a 2-second print with structured logging."""
+    """Development mock — accepts instantly, then spends its time in await_job,
+    which is where a real printer spends its own."""
+
+    JOB_DURATION_S = 2.0
 
     def __init__(self, printer_name: str = "mock"):
         self.printer_name = printer_name
@@ -241,14 +380,11 @@ class MockPrinterDriver(PrinterDriver):
             "options": options,
         })
 
-        # Simulate print time
-        time.sleep(2)
+        return PrintResult(success=True, job_id=job_id, duration_ms=0)
 
-        return PrintResult(
-            success=True,
-            job_id=job_id,
-            duration_ms=2000,
-        )
+    def await_job(self, job_id: str, timeout_s: float) -> JobOutcome:
+        time.sleep(min(self.JOB_DURATION_S, timeout_s))
+        return JobOutcome(JOB_COMPLETED)
 
     def get_status(self) -> PrinterStatus:
         return PrinterStatus(
@@ -271,13 +407,20 @@ class PrintService:
     Responsibilities:
     - Driver selection based on config
     - File validation
-    - Retry on recoverable failures
+    - Retry on submission failures (and only those)
+    - Waiting out the job so the reported outcome is the printed outcome
     - Status caching (avoids spamming lpstat)
     - Structured logging for every operation
     """
 
     RETRY_DELAY_S = 3
     STATUS_CACHE_TTL_S = 5
+    # Ceiling on phase 2. A DNP RX1HS is ~12s per 4x6 and the job queue's print
+    # lane is serial, so ours is the only job in CUPS — this is slack, not a
+    # budget. It also has to stay under the LED firmware's ~120s printing-mode
+    # timeout (Docs/LED_SPEC.md) so the ring only falls to Error if the backend
+    # itself has hung, not merely because a print was slow.
+    JOB_TIMEOUT_S = 90
 
     def __init__(self, settings: SettingsService):
         # Holds the SettingsService, not an AppSettings snapshot: _reload_driver runs
@@ -303,10 +446,11 @@ class PrintService:
 
     def print(self, filepath: str) -> PrintResult:
         """
-        Print a file with validation, retry, and logging.
+        Print a file and block until it has actually printed.
 
-        Retry logic: if the first attempt fails with a recoverable error
-        (printer busy, timeout), waits RETRY_DELAY_S and tries once more.
+        Returns success only when the job reached paper. Blocking is deliberate:
+        the caller is the job queue's print lane, which runs in a thread pool, and
+        the guest is watching the printing animation until this returns.
         """
         # Reload driver in case config changed (printer swapped)
         self._reload_driver()
@@ -326,34 +470,75 @@ class PrintService:
             "options": options,
         })
 
-        # First attempt
+        started = time.monotonic()
+
+        def elapsed_ms():
+            return int((time.monotonic() - started) * 1000)
+
+        # ── Phase 1: submit ──────────────────────────────────────────────────
+        # Retry belongs here and nowhere else. A submission failure means nothing
+        # reached the printer, so a second attempt cannot produce a second print.
         result = self._driver.print_file(filepath, options)
 
-        # Retry once on failure
         if not result.success:
-            log.warn("printer", "printer_retry", f"First attempt failed: {result.error}, retrying in {self.RETRY_DELAY_S}s...", data={
+            log.warn("printer", "printer_retry", f"Submission failed: {result.error}, retrying in {self.RETRY_DELAY_S}s...", data={
                 "filename": filename,
                 "error": result.error,
             })
             time.sleep(self.RETRY_DELAY_S)
             result = self._driver.print_file(filepath, options)
 
-        # Log outcome
-        if result.success:
-            log.info("printer", "printer_job_done", f"Print completed: {filename}", dur=result.duration_ms, data={
+        if not result.success:
+            log.error("printer", "printer_job_fail", f"Print failed: {filename} — {result.error}", dur=elapsed_ms(), data={
+                "filename": filename,
+                "error": result.error,
+                "phase": "submit",
+            })
+            self._status_cache_time = 0
+            return PrintResult(success=False, error=result.error, duration_ms=elapsed_ms())
+
+        # ── Phase 2: wait for paper ──────────────────────────────────────────
+        # No retry past this point. A jam that gets cleared and silently reprinted
+        # hands the guest two photos and burns two prints of media; a failure the
+        # operator can see is the better outcome. Docs/API_PROTOCOL.md promises
+        # exactly this ("The booth does not automatically retry printing").
+        if not result.job_id:
+            # The driver accepted the file but gave us nothing to follow. Say so
+            # rather than dressing an unverified submission up as a finished print.
+            log.warn("printer", "printer_job_untracked", f"Print accepted but not trackable: {filename}", dur=elapsed_ms(), data={
+                "filename": filename,
+            })
+            return PrintResult(success=True, job_id=None, duration_ms=elapsed_ms())
+
+        log.info("printer", "printer_job_accepted", f"Queued as {result.job_id}, waiting for the print", data={
+            "filename": filename,
+            "job_id": result.job_id,
+        })
+
+        outcome = self._driver.await_job(result.job_id, self.JOB_TIMEOUT_S)
+
+        # Invalidate status cache — the printer has moved since we last looked.
+        self._status_cache_time = 0
+
+        if outcome.ok:
+            log.info("printer", "printer_job_done", f"Print completed: {filename}", dur=elapsed_ms(), data={
                 "filename": filename,
                 "job_id": result.job_id,
             })
-        else:
-            log.error("printer", "printer_job_fail", f"Print failed: {filename} — {result.error}", dur=result.duration_ms, data={
-                "filename": filename,
-                "error": result.error,
-            })
+            return PrintResult(success=True, job_id=result.job_id, duration_ms=elapsed_ms())
 
-        # Invalidate status cache after a print attempt
-        self._status_cache_time = 0
-
-        return result
+        log.error("printer", "printer_job_fail", f"Print failed: {filename} — {outcome.message}", dur=elapsed_ms(), data={
+            "filename": filename,
+            "job_id": result.job_id,
+            "error": outcome.message,
+            "phase": outcome.state,
+        })
+        return PrintResult(
+            success=False,
+            job_id=result.job_id,
+            error=outcome.message or f"Print job ended as {outcome.state}",
+            duration_ms=elapsed_ms(),
+        )
 
     def get_status(self) -> PrinterStatus:
         """Get printer status with caching to avoid spamming lpstat."""
