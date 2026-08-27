@@ -698,12 +698,16 @@ After `session_timeout` seconds (configurable, default 300), the backend should 
 This can be implemented as a server-side timer or by the UI sending a TIMEOUT command. The backend transitions to ATTRACT regardless.
 
 ### Loss of Printer
-If the printer disconnects while `printStatus: "printing"`, the backend:
-- Detects the error in the print worker
-- Calls `job_print_failed(error)`
+If the printer disconnects, jams or runs out while `printStatus: "printing"`, the
+backend:
+- Sees the queue stop with the job still in it (or the job outlive `JOB_TIMEOUT_S`)
+- Calls `job_print_failed(error)` with the reason CUPS gave
 - Emits state_update: `printStatus: "failed"`
 
-The UI can then offer retry/skip/troubleshoot options. The booth does **not** automatically retry printing — the guest (or operator) must explicitly choose next steps.
+The booth does **not** automatically retry printing — a cleared jam reprinted
+silently is two prints and two sheets of media. The guest is shown that the print
+did not come out, keeps the QR download, and is offered `REPRINT`, which a human
+who can see the printer decides to press.
 
 ### Photo Processing Failure
 If a photo processing job fails:

@@ -29,7 +29,7 @@ Use a non-default port (8123) — the user's real booth/dev server may hold 8000
 
 ## Gotchas
 
-- **Tests never run the lifespan** — the `client` fixture uses `TestClient(app)` without a context manager. Startup-time bugs only show when the real server boots. There is one lifespan test (`test_lifespan_startup_and_shutdown`); keep it passing.
+- **Tests do run the lifespan** — the `client` fixture uses `TestClient(app)` as a context manager, so the real composition root builds every service. `test_lifespan_startup_and_shutdown` covers the boot/teardown path explicitly; keep it passing.
 - **MockCameraService has full capture parity** (`enqueue_capture` with FSM callbacks, `standby`, `resume_preview`) — the whole FIRE_SHOT flow, including the cross-thread camera→FSM callback, is drivable in mock mode. Only `camera_metrics` (monitor thread) remains real-hardware-only.
 - Kill the server via the PID on the port (`netstat -ano | grep :8123`, `taskkill //F //PID <pid>`); the SSE curl dies with it.
 - The user's editor touches file mtimes without changing content — a "file modified since read" error usually just needs a re-read.

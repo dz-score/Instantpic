@@ -84,14 +84,38 @@ npm run build   # creates ./dist folder
 The built assets are automatically served by the backend at `/`.
 
 ## 6️⃣ Configure CUPS Printing
+
+### Any CUPS printer
 1. Open the CUPS web UI on the Pi (http://localhost:631).
 2. Add your printer → **Add Printer** → select the USB device.
-3. Choose the appropriate driver (most modern printers work with the generic **IPP Everywhere** driver).
-4. Set the default printer (required by the backend `printer.py`).
+3. Choose the appropriate driver (most modern inkjets work with the generic **IPP Everywhere** driver).
+4. Put the **queue name** into the admin panel's **Printer** tab. The booth
+   selects its driver from that name; it does not need to be the system default.
+
+### DNP DS-RX1HS (the booth's dye-sub)
 ```bash
-# Optional – set default printer from CLI
-lpoptions -d <printer_name>
+sudo apt install -y printer-driver-gutenprint cups-ipp-utils
+sudo systemctl restart cups
+sudo usermod -aG lp,lpadmin "$USER"     # USB access without root; log out and back in
 ```
+Then add it from the CUPS web UI with the printer **on and connected over USB**.
+
+- It appears as **DS-RX1**, not RX1HS — the HS is a firmware and media
+  revision, not a separate model to the driver.
+- The driver must be **Gutenprint**, using the `gutenprint53+usb` backend, which
+  exists specifically for the DS-RX1/RX1HS USB protocol. Generic USB will not do.
+- `cups-ipp-utils` supplies `ipptool`, which is how the booth reads prints
+  remaining. Without it everything still works; the media readout is just blank.
+
+Then, in the admin panel's **Printer** tab:
+1. Set the queue name.
+2. Press **Print Alignment Card** and check it against a ruler.
+3. Tune **Print options** if the geometry is wrong, and print again.
+
+⚠️ Do not skip step 2. Gutenprint has a known "printout gets squeezed" bug on
+this model, and a squeezed print is not obvious until you measure one.
+**[PRINTER_NOTES.md](PRINTER_NOTES.md) has the full hardware-run checklist** —
+work through it before the event, not at it.
 
 ## 7️⃣ Systemd Service – Run backend automatically
 Create `/etc/systemd/system/photo-booth.service`:
@@ -232,7 +256,8 @@ the heartbeat alone — a `PING` is enough. So:
 - [ ] Repository cloned
 - [ ] Python venv created & dependencies installed
 - [ ] Frontend built (`npm run build`)
-- [ ] CUPS printer added & default set
+- [ ] CUPS printer added, queue name entered in the Printer tab
+- [ ] Alignment card printed and measured (see PRINTER_NOTES.md)
 - [ ] `photo-booth.service` enabled & running
 - [ ] Chromium kiosk autostart configured
 - [ ] (Optional) VNC/Xvfb for headless operation

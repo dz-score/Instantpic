@@ -299,20 +299,29 @@ Split by responsibility (Rule 20) — one module per reason to change:
 ---
 
 ### `print_service.py` — Print Service
-**Responsibility:** Abstracts printer hardware behind a driver interface. Handles retries, status caching, and structured logging.
+**Responsibility:** Abstracts printer hardware behind a driver interface. Submits
+jobs, **waits them out**, applies the low-media threshold, caches status, logs.
 
 **Class hierarchy:**
 ```
-PrinterDriver (ABC)
-   +-- CupsPrinterDriver  -> lp / lpstat CLI (Linux production)
-   +-- MockPrinterDriver  -> no-op (Windows dev / printer_name="mock")
+PrinterDriver (ABC)          print_file() submits; await_job() waits for paper
+   +-- CupsPrinterDriver  -> lp / lpstat / ipptool (Linux production)
+   +-- MockPrinterDriver  -> a simulated DS-RX1HS: ~13s per print, a media
+                             counter, and injectable faults. NOT a stub — it is
+                             the only printer a Windows dev box can reach.
 
-PrintService (singleton print_svc)
-   +-- wraps driver with: retry logic, status caching, structured logs
+PrintService (built by the lifespan)
+   +-- submit-only retry, completion tracking, media policy, status cache, logs
 ```
 
 **Printer selection:** determined at runtime by `config.json -> printer_name`.
-`"mock"` -> `MockPrinterDriver`; any other string -> `CupsPrinterDriver` with that CUPS queue name.
+`"mock"` -> `MockPrinterDriver`; any other string -> `CupsPrinterDriver` with that
+CUPS queue name. On Windows the mock is selected regardless, which is why
+`PrinterStatus` carries a `driver` field the admin panel shows — a status card
+that looks healthy without saying it is simulated is a lie.
+
+See [PRINTER_NOTES.md](PRINTER_NOTES.md) for the DNP DS-RX1HS specifics and for
+which parts of the CUPS integration are still unverified against hardware.
 
 ---
 
@@ -399,6 +408,9 @@ the booth boots from defaults rather than failing to start.
 | `session_timeout` | `120` | Inactivity timeout (seconds) |
 | `capture_stall_timeout` | `75.0` | Seconds without shot progress in COUNTDOWN before the FSM's stall watchdog resets to ATTRACT |
 | `printer_name` | `"mock"` | CUPS queue name |
+| `printer_options` | `"media=w288h432 scaling=100"` | Passed to `lp -o`. Full-bleed 1:1 rather than `fit-to-page` — see CONSTRAINTS §6 |
+| `printer_media_low_threshold` | `25` | Prints left below which the booth warns |
+| `printer_mock` | `{...}` | Simulated printer: `job_duration_s`, `media_total`, `fault` |
 | `max_photos` | `1000` | Circular storage photo limit |
 | `disk_min_free_gb` | `2.0` | Circular storage disk limit |
 | `selected_overlay` | `"none"` | Default overlay ID |
@@ -700,9 +712,11 @@ job_queue: re-processes with overlay -> state_machine.job_frame_processed()
         |  job_queue.enqueue({type:"PRINT_PHOTO", filename:"photo_xyz456.jpg"})
         |  SSE (state_update) -> PrintingScreen projects printStatus
         v
-job_queue: print_svc.print(filepath) -> lp -d <printer_name> ...
+job_queue (PRINT lane): print_svc.print(filepath)
+        |  submit: lp -d <printer_name> -o ... ;  then WAIT for the job (~12s)
         |  success -> state_machine.job_print_done()   -> printStatus = "printed"
         |  failure -> state_machine.job_print_failed()  -> printStatus = "failed"
+        |             PrintingScreen then offers REPRINT (failed state only)
         |  SSE (state_update) -> PrintingScreen
 
 PrintingScreen (pure projection of printStatus — never triggers the print):
@@ -816,23 +830,63 @@ process_photo_layout(images_base64, layout_type, text, overlay_id)
 
 ## 10. Print Service Architecture
 
+A print is **two phases**, and the driver contract keeps them apart. A dye-sub
+queue accepts a job in ~100 ms; the printer then takes ~12 s to put it on paper,
+and every failure that matters at an event — ribbon out, paper out, jam, printer
+switched off — happens in the gap between those two facts.
+
 ```
 PrintService.print(filepath)
     |
-    +- load config -> printer_name
-    +- select driver:
-    |    "mock"  -> MockPrinterDriver.print_file() -> noop, returns success
-    |    other   -> CupsPrinterDriver.print_file()
-    |                 +- lp -d <printer_name> <printer_options> <filepath>
+    +- _reload_driver()  (idempotent — keeps the instance if config is unchanged,
+    |     which is what lets the mock hold a media counter across prints)
+    |      "mock" or win32 -> MockPrinterDriver
+    |      other           -> CupsPrinterDriver(printer_name)
     |
-    +- on failure: retry up to N times with backoff
-    +- log structured result
+    +- PHASE 1: submit
+    |    driver.print_file(filepath, printer_options)
+    |      CUPS: lp -d <queue> -o <opt> ... <filepath>, parse "request id is X"
+    |    on failure -> retry ONCE after RETRY_DELAY_S, then give up
+    |      (safe: nothing reached the printer, so it cannot double-print)
+    |
+    +- PHASE 2: wait for paper
+    |    driver.await_job(job_id, JOB_TIMEOUT_S=90)
+    |      CUPS polls every 1s:
+    |        job gone from `lpstat -o <queue>`        -> completed
+    |        job still queued AND queue stopped       -> failed (CUPS's reason)
+    |        still queued at the deadline             -> timeout
+    |        3 consecutive unreadable polls           -> unknown
+    |    NO retry here — a cleared jam reprinted silently is two prints
+    |
+    +- log the outcome, invalidate the status cache
     +- return PrintResult {success, job_id, error, duration_ms}
-
-PrintService.get_status()
-    +- CupsPrinterDriver: lpstat -p <printer_name>
-       parse output -> PrinterStatus {connected, ready, status_text, error}
 ```
+
+`await_job` watches the **queue**, not the job. `lpstat -W completed` is IPP
+`which-jobs=completed`, which returns completed, aborted and canceled jobs in one
+list and so cannot tell success from failure. The queue can: out of ribbon, out
+of paper, a jam and a power-off all stop the queue and leave the job sitting in
+it. Known imprecision: a job an operator cancels from the CUPS web UI also leaves
+the queue and reads as completed — a deliberate act they already know about,
+which is a better trade than missing a jam.
+
+```
+PrintService.get_status()   (cached STATUS_CACHE_TTL_S = 5s)
+    +- CupsPrinterDriver:
+    |    lpstat -p <queue>              -> connected / ready / status_text
+    |    ipptool Get-Printer-Attributes -> marker-* -> media_type, prints_remaining
+    |      (absence of ipptool is latched after one attempt)
+    +- _apply_media_policy(status)
+         threshold from config -> media_low; logs once per band crossing
+    -> PrinterStatus {connected, ready, status_text, driver,
+                      media_type, prints_remaining, media_low, error}
+```
+
+Both `/api/printer/status` and `/api/diagnostics` call this through
+`anyio.to_thread.run_sync`: a cache miss can spend 5 s in `lpstat` and another
+5 s in `ipptool` against a printer that has been switched off, and blocking the
+event loop that long stalls every SSE stream — which on this booth is the
+guest's screen.
 
 ---
 
