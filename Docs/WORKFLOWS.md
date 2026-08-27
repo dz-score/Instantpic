@@ -691,11 +691,8 @@ Printing is backend-owned workflow. The FSM starts it on entering PRINTING and
 reports the outcome via `printStatus`; the UI never triggers the print or
 guesses the result.
 
-`printStatus` reports **paper, not acceptance**. The service submits the job and
-then waits it out, so `"printed"` means a print physically finished. This matters
-because a dye-sub queue accepts a job in ~100 ms and takes ~12 s to print it, and
-a jam or a spent ribbon happens in between: reporting the submission would tell a
-guest "Done!" and hand them nothing.
+`printStatus` reports **paper, not acceptance** — the service waits the job out
+before reporting either terminal value ([CONSTRAINTS](CONSTRAINTS.md) §10).
 
 ```
 FSM enters PRINTING (_enter_printing):
@@ -716,11 +713,10 @@ FSM enters PRINTING (_enter_printing):
        swapped in the admin panel takes effect on the next job, no restart)
   8. Validates the file exists
   9. PHASE 1 — driver.print_file() submits. `lp` returns a job id in ~100ms.
-       Failure here retries once: nothing reached the printer, so a second
-       attempt cannot produce a second print.
+       Failure here retries once (CONSTRAINTS §10).
   10. PHASE 2 — driver.await_job(job_id, 90s) blocks until the job is terminal.
        The guest watches the printing animation for exactly this long.
-       No retry: a cleared jam reprinted silently is two prints and two sheets.
+       No retry past this point (CONSTRAINTS §10).
 
   On failure (submit failed twice, or the job aborted/timed out):
   11. job_print_failed(error) → printStatus = "failed"
@@ -732,8 +728,8 @@ FSM enters PRINTING (_enter_printing):
       → SSE state_update → PrintingScreen shows the print is ready + QR code
 
   REPRINT (only while printStatus == "failed"):
-  13. back to step 3 with the same finalPhoto. The guard is what stops this
-      being a second-copy button, and what makes a double tap idempotent.
+  13. back to step 3 with the same finalPhoto. What that condition is for, and
+      why it also makes a double tap harmless: API_PROTOCOL.md.
 ```
 
 ---

@@ -830,10 +830,9 @@ process_photo_layout(images_base64, layout_type, text, overlay_id)
 
 ## 10. Print Service Architecture
 
-A print is **two phases**, and the driver contract keeps them apart. A dye-sub
-queue accepts a job in ~100 ms; the printer then takes ~12 s to put it on paper,
-and every failure that matters at an event — ribbon out, paper out, jam, printer
-switched off — happens in the gap between those two facts.
+A print is **two phases**: `print_file()` submits, `await_job()` waits for paper.
+Why that is not one call is [CONSTRAINTS](CONSTRAINTS.md) §10; the hardware
+numbers behind it are in [PRINTER_NOTES](PRINTER_NOTES.md).
 
 ```
 PrintService.print(filepath)
@@ -847,7 +846,6 @@ PrintService.print(filepath)
     |    driver.print_file(filepath, printer_options)
     |      CUPS: lp -d <queue> -o <opt> ... <filepath>, parse "request id is X"
     |    on failure -> retry ONCE after RETRY_DELAY_S, then give up
-    |      (safe: nothing reached the printer, so it cannot double-print)
     |
     +- PHASE 2: wait for paper
     |    driver.await_job(job_id, JOB_TIMEOUT_S=90)
@@ -856,19 +854,15 @@ PrintService.print(filepath)
     |        job still queued AND queue stopped       -> failed (CUPS's reason)
     |        still queued at the deadline             -> timeout
     |        3 consecutive unreadable polls           -> unknown
-    |    NO retry here — a cleared jam reprinted silently is two prints
+    |    NO retry here (CONSTRAINTS §10)
     |
     +- log the outcome, invalidate the status cache
     +- return PrintResult {success, job_id, error, duration_ms}
 ```
 
-`await_job` watches the **queue**, not the job. `lpstat -W completed` is IPP
-`which-jobs=completed`, which returns completed, aborted and canceled jobs in one
-list and so cannot tell success from failure. The queue can: out of ribbon, out
-of paper, a jam and a power-off all stop the queue and leave the job sitting in
-it. Known imprecision: a job an operator cancels from the CUPS web UI also leaves
-the queue and reads as completed — a deliberate act they already know about,
-which is a better trade than missing a jam.
+`await_job` watches the **queue**, not the job — see
+[PRINTER_NOTES](PRINTER_NOTES.md) for why the job's own state cannot answer this,
+and for the one outcome it deliberately mislabels.
 
 ```
 PrintService.get_status()   (cached STATUS_CACHE_TTL_S = 5s)

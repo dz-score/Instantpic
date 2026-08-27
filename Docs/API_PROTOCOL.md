@@ -704,10 +704,9 @@ backend:
 - Calls `job_print_failed(error)` with the reason CUPS gave
 - Emits state_update: `printStatus: "failed"`
 
-The booth does **not** automatically retry printing — a cleared jam reprinted
-silently is two prints and two sheets of media. The guest is shown that the print
-did not come out, keeps the QR download, and is offered `REPRINT`, which a human
-who can see the printer decides to press.
+The booth does **not** automatically retry printing (CONSTRAINTS.md §10). The
+guest is shown that the print did not come out, keeps the QR download, and is
+offered `REPRINT`, which a human who can see the printer decides to press.
 
 ### Photo Processing Failure
 If a photo processing job fails:

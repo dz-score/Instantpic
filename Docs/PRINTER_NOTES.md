@@ -18,19 +18,16 @@ A dye-sub queue accepts a job in about **100 ms**. The printer then takes about
 **12 s** to put it on paper. Every failure that actually happens at an event —
 ribbon out, paper out, jam, printer switched off — lands **in that gap**.
 
-The booth used to report the submission as the print. A guest whose print had
-jammed was shown "Done!", and walked away with nothing. `PrintService.print()`
-now submits and then waits the job out, so `printStatus` describes paper.
+This is not hypothetical: the booth used to report the submission as the print,
+so a guest whose print had jammed was shown "Done!" and walked away with nothing.
 
-Two consequences worth keeping in mind when reading the code:
+Two consequences shape the code around it, both written up as rules in
+[CONSTRAINTS](CONSTRAINTS.md) §10:
 
-- **The print lane is occupied for the whole print**, ~12 s instead of ~100 ms.
-  That is why printing has its own job-queue lane; on a shared one the next
-  guest's photo processing would queue behind someone else's paper.
-- **Retry belongs to submission only.** Once CUPS holds the job, a failure is
-  reported and the booth stops. A cleared jam reprinted silently is two prints
-  and two sheets of media. `REPRINT` hands the retry to a human who can see the
-  printer.
+- The print lane is occupied for the **whole** print, ~12 s rather than ~100 ms,
+  which is why printing has a job-queue lane to itself.
+- **Retry belongs to submission only.** Past acceptance the booth reports and
+  stops; `REPRINT` hands the retry to a human who can see the printer.
 
 ---
 
@@ -94,8 +91,16 @@ its absence is latched after one attempt, otherwise every 5 s status poll would
 spawn a subprocess that cannot work.
 
 `backend/tools/printer_markers_probe.py` dumps the raw markers beside what the
-parser made of them. Run it on hardware day; its header says what to do with
-each outcome, including deleting itself once the question is answered.
+parser made of them. Run it on hardware day, then:
+
+- **PARSED matches RAW** — delete the probe. The question is answered and Rule 24
+  says the scaffolding goes. Drop the ⚠️ from this section and record what the
+  printer reports.
+- **They disagree** — fix `_read_media()` against the RAW block, and rewrite the
+  assumptions above to match.
+- **No markers at all** — the backend does not report them through this queue.
+  Say so here and leave `prints_remaining` as `None`; the UI already treats
+  absent as "cannot know" rather than "empty".
 
 ---
 
@@ -104,17 +109,15 @@ each outcome, including deleting itself once the question is answered.
 Gutenprint has a **known "printout gets squeezed" bug on the DS-RX1HS**. Two
 things are in place against it, both of which need confirming on paper:
 
-1. **The composite carries a real `dpi=(300, 300)` tag.** Untagged, CUPS is free
-   to invent a physical size for the bitmap. Tagged at 300, 1800×1200 *is*
-   6×4 inches and maps 1:1 onto the page.
-2. **`printer_options` defaults to `media=w288h432 scaling=100`**, replacing
-   `fit-to-page media=4x6`. `scaling=100` means "fill the page", which on 3:2
-   media with a 3:2 canvas is a full-bleed 1:1 map; `fit-to-page` asks CUPS to
-   decide a scale, which is the decision we are trying to take away from it.
-   `w288h432` is 4×6 in in CUPS media names — whether the Gutenprint DS-RX1 PPD
-   wants exactly that or its own `PageSize` choice is the first bench question,
-   which is why the field is editable from the Printer tab and takes effect on
-   the next print.
+1. **The composite carries a real `dpi=(300, 300)` tag**, and
+   2. **`printer_options` defaults to `media=w288h432 scaling=100`** rather than
+   `fit-to-page`. Both take the scaling decision away from CUPS —
+   [CONSTRAINTS](CONSTRAINTS.md) §6 is the rule and the reasoning.
+
+The part that is specific to this printer, and unconfirmed: `w288h432` is 4×6 in
+in CUPS media names, but the Gutenprint DS-RX1 PPD may want its own `PageSize`
+choice instead. That is bench question one, and why the field is editable from
+the Printer tab rather than hardcoded.
 
 The **test print** exists for this. It prints an alignment card, not a photo,
 because "did paper come out" is not the setup question. Read it like this:
