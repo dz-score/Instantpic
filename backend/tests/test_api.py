@@ -271,3 +271,55 @@ def test_lifespan_startup_and_shutdown(temp_workspace, temp_config):
         assert app.state.state_machine is not None
         # bind_loop() ran: the SSE service holds the app's event loop.
         assert app.state.sse._loop is not None
+
+
+def test_printer_options_are_reachable_from_the_admin_panel(client):
+    """They were in AppSettings but missing from ConfigUpdateRequest, so the only
+    way to change them was hand-editing config.json plus a restart — no good when
+    the person who needs to try another option string is standing at the printer."""
+    r = client.post("/api/config", json={"printer_options": "media=w288h432 scaling=100"})
+    assert r.status_code == 200
+    assert r.json()["printer_options"] == "media=w288h432 scaling=100"
+
+
+def test_diagnostics_carry_the_driver_and_media(client):
+    """The operator has to be able to tell a real printer from a simulated one —
+    on Windows the mock is chosen whatever the queue name says."""
+    printer = client.get("/api/diagnostics").json()["printer"]
+    assert printer["driver"] == "mock"
+    assert printer["prints_remaining"] is not None
+    assert printer["status"] == printer["status_text"]   # alias the UI reads
+
+
+def test_test_print_reports_the_real_outcome(client):
+    client.post("/api/config", json={"printer_mock": {"job_duration_s": 0}})
+
+    body = client.post("/api/printer/test").json()
+
+    assert body["ok"] is True
+    assert "printtest" in body["filename"]
+
+
+def test_test_print_surfaces_a_jam(client):
+    """The mock jams after acceptance. The operator must be told that, not told
+    the card printed."""
+    client.post("/api/config", json={
+        "printer_mock": {"job_duration_s": 0, "fault": "abort_mid_job"},
+    })
+
+    body = client.post("/api/printer/test").json()
+
+    assert body["ok"] is False
+    assert "Paper jam." in body["detail"]
+
+
+def test_test_print_is_refused_mid_session(client):
+    """It queues onto the same serial print lane a guest's photo uses, so nobody
+    can push a diagnostic in front of a print someone is waiting on. Same rule
+    the LED tests follow."""
+    client.post("/api/events", json={"type": "START_SESSION", "payload": {}})
+
+    r = client.post("/api/printer/test")
+
+    assert r.status_code == 409
+    assert "busy" in r.json()["detail"].lower()

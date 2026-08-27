@@ -64,6 +64,7 @@ async def lifespan(app: FastAPI):
     app.state.sse = sse_svc
     app.state.settings = settings_svc
     app.state.print_svc = print_svc
+    app.state.job_queue = job_queue
     app.state.camera = camera_svc
     app.state.led = led_svc
     app.state.state_machine = state_machine

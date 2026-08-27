@@ -152,18 +152,27 @@ export default function SystemTab({ getDiagnostics, emergencyAction, changePin, 
         <h3 className="sys-section__title">Live Diagnostics</h3>
 
         <div className="sys-diag-grid">
-          {/* Printer */}
+          {/* Printer — the summary. Queue name, options and the test print
+              live in the Printer tab, same split as the LED card below. */}
           <div className="sys-diag-card">
             <div className="sys-diag-card__header">
-              <span className={`sys-dot ${printer?.connected ? 'sys-dot--green' : 'sys-dot--red'}`} />
+              <span className={`sys-dot ${
+                !printer ? '' : !printer.connected ? 'sys-dot--red'
+                  : printer.ready ? 'sys-dot--green' : 'sys-dot--yellow'
+              }`} />
               <span className="sys-diag-card__label">Printer</span>
             </div>
             <span className="sys-diag-card__value">
-              {printer ? (printer.connected ? 'Connected' : 'Not Connected') : 'Checking…'}
+              {!printer ? 'Checking…'
+                : !printer.connected ? 'Not Connected'
+                : printer.prints_remaining != null ? `${printer.prints_remaining} prints left`
+                : (printer.status || 'Connected')}
             </span>
-            {printer?.printer_name && (
-              <span className="sys-diag-card__sub">{printer.printer_name}</span>
-            )}
+            <span className="sys-diag-card__sub">
+              {printer?.driver === 'mock'
+                ? 'Simulated — see the Printer tab'
+                : (printer?.error || printer?.printer_name || '')}
+            </span>
           </div>
 
           {/* Storage */}

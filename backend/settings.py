@@ -120,7 +120,19 @@ class AppSettings(BaseModel):
     capture_stall_timeout: float = 75.0
     show_names_on_photo: bool = True
     printer_name: str = "mock"
-    printer_options: str = "fit-to-page media=4x6"
+    # Passed to `lp -o` verbatim, one option per whitespace-separated token.
+    #
+    # `scaling=100` means "fill the page", which with a 3:2 canvas on 3:2 media
+    # is a full-bleed 1:1 map. It replaces `fit-to-page`, which asks CUPS to
+    # decide a scale and is how a 6x4 ends up letterboxed or squeezed on a
+    # dye-sub. The composite now carries a real 300 DPI tag as well, so nothing
+    # downstream has to guess the physical size.
+    #
+    # `w288h432` is 4x6in in CUPS media names. Whether the Gutenprint DS-RX1 PPD
+    # wants exactly that, or its own PageSize choice, is the first thing to check
+    # on the bench — which is why this is editable from the Printer tab and takes
+    # effect on the next print with no restart.
+    printer_options: str = "media=w288h432 scaling=100"
     # Only consulted when the mock driver is the one in use.
     printer_mock: PrinterMockConfig = PrinterMockConfig()
     # Cap on FILES in the photos dir, not on sessions or on keepsakes. One

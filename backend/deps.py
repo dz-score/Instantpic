@@ -33,6 +33,17 @@ def get_print_service(request: Request) -> PrintService:
     return request.app.state.print_svc
 
 
+def get_job_queue(request: Request):
+    """The job queue the lifespan built.
+
+    Routes need it for the one job a human starts rather than the FSM: a test
+    print. Going through the queue rather than calling PrintService directly
+    keeps every print on the one serial lane, so a test cannot overlap a print
+    a guest is still waiting on.
+    """
+    return request.app.state.job_queue
+
+
 def get_sse(request: Request) -> SseService:
     """The SSE fan-out service."""
     return request.app.state.sse

@@ -1,11 +1,16 @@
+import asyncio
 import socket
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from backend import jobs
 from backend.settings import AppSettings
-from backend.deps import get_led, get_print_service, get_settings, get_state_machine
+from backend.deps import (
+    get_job_queue, get_led, get_print_service, get_settings, get_state_machine,
+)
 from backend.logger import log
+from backend.photo_processor import generate_alignment_card
 from backend.print_service import PrintService
 
 router = APIRouter(tags=["system"])
@@ -26,6 +31,64 @@ async def printer_status(print_svc: PrintService = Depends(get_print_service)):
     """Get current printer status (connected, ready, errors)."""
     status = print_svc.get_status()
     return status.to_dict()
+
+
+# The queue can be behind a guest's print, and the print itself is ~12s on a
+# dye-sub. Give the whole thing more room than one job's own ceiling before the
+# route stops waiting — the job is not cancelled either way, only unwatched.
+PRINT_TEST_TIMEOUT_S = PrintService.JOB_TIMEOUT_S + 30
+
+
+@router.post("/api/printer/test")
+async def test_print(
+    settings: AppSettings = Depends(get_settings),
+    queue=Depends(get_job_queue),
+    sm=Depends(get_state_machine),
+):
+    """Print a 4x6 alignment card and report what actually happened.
+
+    Refused outside ATTRACT, like the LED tests: this puts a job on the same
+    serial print lane a guest's photo uses, and nobody should be able to push a
+    diagnostic in front of a print someone is standing there waiting for.
+
+    Goes through the queue rather than calling PrintService directly, for the
+    same reason. A guest's print can still be finishing after the booth has
+    returned to ATTRACT, and the lane is what keeps the two from overlapping.
+    """
+    screen = (await sm.get_state()).screen
+    if screen != "ATTRACT":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Booth is busy ({screen}) — run a test print from the idle screen",
+        )
+
+    filename = await asyncio.to_thread(
+        generate_alignment_card, settings.printer_name, settings.printer_options
+    )
+
+    loop = asyncio.get_running_loop()
+    done = loop.create_future()
+
+    async def on_success(_filename):
+        if not done.done():
+            done.set_result({"ok": True, "filename": filename})
+
+    async def on_failure(error):
+        if not done.done():
+            done.set_result({"ok": False, "filename": filename, "detail": error})
+
+    await queue.enqueue(jobs.print_photo_job(filename, on_success, on_failure))
+
+    try:
+        result = await asyncio.wait_for(done, timeout=PRINT_TEST_TIMEOUT_S)
+    except asyncio.TimeoutError:
+        # The job is still the queue's problem; we have simply stopped watching.
+        result = {"ok": False, "filename": filename,
+                  "detail": "Still printing after "
+                            f"{PRINT_TEST_TIMEOUT_S:.0f}s — check the printer"}
+
+    log.info("system", "printer_test", f"Test print: {result}", data=result)
+    return result
 
 
 @router.get("/api/diagnostics")

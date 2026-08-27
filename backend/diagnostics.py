@@ -8,15 +8,15 @@ from backend.settings import AppSettings
 from backend.print_service import PrintService
 
 def check_printer(print_svc: PrintService):
-    """Check if printer is connected/available via PrintService."""
+    """Check if printer is connected/available via PrintService.
+
+    Everything PrinterStatus knows goes through, including which driver
+    answered and what it can say about media. Re-listing the fields here meant
+    a new one had to be added twice to reach the admin panel; `status` is kept
+    as an alias because the UI reads it under that name.
+    """
     status = print_svc.get_status()
-    return {
-        "connected": status.connected,
-        "status": status.status_text,
-        "printer_name": status.printer_name,
-        "ready": status.ready,
-        "error": status.error,
-    }
+    return {**status.to_dict(), "status": status.status_text}
 
 def check_storage(settings: AppSettings):
     """Check disk usage and photo count."""

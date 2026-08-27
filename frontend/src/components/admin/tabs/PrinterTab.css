@@ -1,0 +1,162 @@
+/* ── PrinterTab ── */
+
+/* `sys-dot`, `sys-dot--green/yellow/red` and `sys-action-result` are reused
+   from SystemTab.css rather than duplicated, on the same reasoning as LedTab:
+   AdminPanel imports SystemTab at module level, so that stylesheet is always in
+   the bundle, and a second copy of a status dot would drift from the first. */
+
+.printer-tab {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.printer-section {
+  padding-bottom: var(--space-md);
+  border-bottom: 1px solid var(--surface-border);
+}
+
+.printer-section:last-child {
+  border-bottom: none;
+}
+
+.printer-section__title {
+  font-family: var(--font-display);
+  font-size: var(--text-h3);
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: var(--space-sm);
+}
+
+/* ── Status ── */
+
+.printer-status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm);
+  border-radius: var(--radius-sm);
+  background: var(--bg-base);
+  border: 1px solid var(--surface-border);
+}
+
+.printer-status__text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+  min-width: 0;
+  flex: 1;
+}
+
+.printer-status__value {
+  font-size: var(--text-body);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.printer-status__sub {
+  font-size: var(--text-caption);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.printer-status__media {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-2xs);
+  flex-shrink: 0;
+}
+
+.printer-status__media-value {
+  font-size: var(--text-body);
+  font-weight: 600;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.printer-status__media-label {
+  font-size: var(--text-caption);
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-hairline);
+}
+
+/* Says out loud that nothing is reaching paper. A status card that looks
+   healthy without this is the same lie the print-completion work removed. */
+.printer-mock-banner {
+  margin-top: var(--space-sm);
+  padding: var(--space-sm);
+  border-radius: var(--radius-sm);
+  border: 1px dashed var(--surface-border);
+  background: var(--bg-base);
+  font-size: var(--text-caption);
+  color: var(--text-secondary);
+}
+
+/* ── Fields ── */
+
+.printer-field--wide {
+  margin-top: var(--space-sm);
+}
+
+/* The options string is `lp` syntax being read character by character against a
+   PPD, so it gets a monospace face and no autocorrect. */
+.printer-field__mono {
+  font-family: var(--font-mono, ui-monospace, "SF Mono", Menlo, Consolas, monospace);
+  font-size: var(--text-caption);
+}
+
+.printer-hint {
+  margin-top: var(--space-xs);
+  font-size: var(--text-caption);
+  color: var(--text-secondary);
+}
+
+.printer-hint--lead {
+  margin-top: 0;
+  margin-bottom: var(--space-sm);
+}
+
+.printer-hint code {
+  font-family: var(--font-mono, ui-monospace, "SF Mono", Menlo, Consolas, monospace);
+  background: var(--bg-base);
+  border-radius: var(--radius-xs, 4px);
+  padding: 0 4px;
+}
+
+.printer-mock-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-sm);
+}
+
+/* ── Buttons ── */
+
+.printer-btn {
+  height: 44px;
+  padding: 0 var(--space-md);
+  border-radius: var(--radius-sm);
+  border: 1.5px solid var(--surface-border);
+  background: var(--bg-elevated);
+  font-size: var(--text-caption);
+  font-weight: 600;
+  color: var(--text-primary);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all var(--duration-fast) ease;
+}
+
+.printer-btn:active:not(:disabled) {
+  transform: scale(0.97);
+  background: var(--champagne-light);
+}
+
+.printer-btn--primary {
+  border-color: var(--champagne);
+}
+
+.printer-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}

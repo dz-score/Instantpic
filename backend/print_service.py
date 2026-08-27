@@ -75,6 +75,10 @@ class PrinterStatus:
     ready: bool             # idle and accepting jobs
     printer_name: str
     status_text: str        # "Idle", "Printing", "Offline", etc.
+    # Which driver answered. The operator needs this: on Windows the mock is
+    # selected whatever printer_name says, and a status card that looks healthy
+    # without saying it is simulated is the same lie this whole area is fixing.
+    driver: str = "cups"
     error: Optional[str] = None
     # Consumables. None means the driver has no way to know — an inkjet on CUPS
     # cannot answer this, and neither can a dye-sub whose backend does not
@@ -482,6 +486,7 @@ class MockPrinterDriver(PrinterDriver):
                 connected=False,
                 ready=False,
                 printer_name=self.printer_name,
+                driver="mock",
                 status_text="Offline (mock fault)",
                 error="Mock printer is offline",
             )
@@ -491,6 +496,7 @@ class MockPrinterDriver(PrinterDriver):
             connected=True,
             ready=not empty,
             printer_name=self.printer_name,
+            driver="mock",
             status_text="Out of media (mock)" if empty else "Mock printer (development)",
             media_type="4x6",
             prints_remaining=remaining,

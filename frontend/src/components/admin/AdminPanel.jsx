@@ -5,6 +5,7 @@ import BoothTab from './tabs/BoothTab';
 import SystemTab from './tabs/SystemTab';
 import CameraTab from './tabs/CameraTab';
 import LedTab from './tabs/LedTab';
+import PrinterTab from './tabs/PrinterTab';
 import './AdminPanel.css';
 
 const TABS = [
@@ -12,15 +13,21 @@ const TABS = [
   { id: 'booth', icon: '◎', label: 'Booth' },
   { id: 'camera', icon: '📷', label: 'Camera' },
   { id: 'leds', icon: '◍', label: 'LEDs' },
+  { id: 'printer', icon: '🖨', label: 'Printer' },
   { id: 'system', icon: '⚙', label: 'System' },
 ];
 
 /**
  * Full-page admin panel with sidebar tab navigation.
  * - PIN-gated entry
- * - 3 tabs: Event, Booth, System
  * - Auto-save on change + visual indicator
  * - Large, calm, impossible to break
+ *
+ * Two save paths, deliberately. The form tabs (Event, Booth) collect edits and
+ * commit them together on "Save Changes". The device tabs (LEDs, Printer)
+ * write through immediately, because whoever is using them is standing at the
+ * hardware and the only useful feedback is the thing they just changed taking
+ * effect while they watch.
  */
 export default function AdminPanel({
   config,
@@ -29,6 +36,7 @@ export default function AdminPanel({
   getDiagnostics,
   testLed,
   testLedChannel,
+  testPrint,
   emergencyAction,
   changePin,
   getRecentLogs,
@@ -71,6 +79,7 @@ export default function AdminPanel({
         session_timeout: form.session_timeout,
         default_text: `${form.couple_names || ''} · ${form.event_date || ''}`.trim(),
         printer_name: form.printer_name,
+        printer_options: form.printer_options,
         selected_overlay: form.selected_overlay,
         max_photos: form.max_photos,
         disk_min_free_gb: form.disk_min_free_gb,
@@ -183,6 +192,15 @@ export default function AdminPanel({
               testLedChannel={testLedChannel}
               ledConfig={config?.led}
               onSaveLed={(led) => onSave({ led })}
+            />
+          )}
+          {activeTab === 'printer' && (
+            <PrinterTab
+              getDiagnostics={getDiagnostics}
+              testPrint={testPrint}
+              config={config}
+              onSaveConfig={(patch) => onSave(patch)}
+              onSaveMock={(patch) => onSave({ printer_mock: patch })}
             />
           )}
           {activeTab === 'system' && (

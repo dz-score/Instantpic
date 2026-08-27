@@ -108,6 +108,16 @@ export default function useApi(isOnline) {
     return body;
   }, []);
 
+  /* ── Printer ── */
+  const testPrint = useCallback(async () => {
+    const r = await fetch(`${API}/api/printer/test`, { method: 'POST' });
+    const body = await r.json();
+    // 409 means the booth is mid-session — a real answer, not a failure. The
+    // backend refuses to put a diagnostic in front of a guest's print.
+    if (!r.ok) return { ok: false, detail: body.detail || 'Test print failed' };
+    return body;
+  }, []);
+
   /* ── Emergency actions ── */
   const emergencyAction = useCallback(async (action) => {
     const r = await fetch(`${API}/api/emergency`, {
@@ -181,6 +191,7 @@ export default function useApi(isOnline) {
     getDiagnostics,
     testLed,
     testLedChannel,
+    testPrint,
     emergencyAction,
     changePin,
     getRecentLogs,

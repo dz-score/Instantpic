@@ -1,5 +1,7 @@
 import os
 import base64
+import uuid
+from datetime import datetime
 from typing import List
 from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont, ImageOps
@@ -14,6 +16,12 @@ from backend.paths import PHOTOS_DIR, OVERLAYS_DIR
 # the font is NEVER fetched at runtime — a missing file falls back to PIL's
 # built-in default rather than blocking the job worker on a network call.
 from backend.paths import FONT_PATH
+
+# 6x4 inches at 300 DPI, the fixed output geometry (Docs/CONSTRAINTS.md §6).
+# PRINT_DPI is not cosmetic: it is written into the JPEG so CUPS maps the image
+# 1:1 onto a 4x6 page instead of inventing a scale for an untagged bitmap.
+CANVAS_W, CANVAS_H = 1800, 1200
+PRINT_DPI = 300
 
 def get_font(size: int):
     """Load the bundled Playfair Display font, or fall back to PIL's default.
@@ -90,7 +98,7 @@ def generate_previews(raw_filenames: List[str]) -> List[str]:
 def process_photo_layout(images_base64: list, layout_type: str, text: str, overlay_id: str,
                          overlays: List[OverlayConfig]) -> str:
     """
-    Process single or multi-photo layouts into an 1800x1200 canvas,
+    Process single or multi-photo layouts into the fixed print canvas,
     overlay selected template and draw custom branding text.
     Returns the filename of the saved image.
 
@@ -100,9 +108,9 @@ def process_photo_layout(images_base64: list, layout_type: str, text: str, overl
     os.makedirs(PHOTOS_DIR, exist_ok=True)
     os.makedirs(OVERLAYS_DIR, exist_ok=True)
     
-    # 1. Create Canvas (1800x1200 landscape - 4x6 print aspect ratio)
+    # 1. Create Canvas (landscape 4x6 print aspect ratio)
     # Using a soft off-white/cream background suitable for weddings
-    canvas = Image.new("RGB", (1800, 1200), (253, 251, 247))
+    canvas = Image.new("RGB", (CANVAS_W, CANVAS_H), (253, 251, 247))
     
     # Decode input base64 images
     decoded_images = [decode_base64_image(img_str) for img_str in images_base64]
@@ -120,7 +128,7 @@ def process_photo_layout(images_base64: list, layout_type: str, text: str, overl
         # Crop each photo to portrait 3:4 aspect ratio (540x720)
         collage_width = 540
         collage_height = 720
-        gap = 45 # (1800 - (3 * 540)) / 4 = 45
+        gap = 45 # (CANVAS_W - (3 * 540)) / 4 = 45
         
         for idx, img in enumerate(decoded_images[:3]):
             cropped_img = ImageOps.fit(img, (collage_width, collage_height))
@@ -167,7 +175,7 @@ def process_photo_layout(images_base64: list, layout_type: str, text: str, overl
             try:
                 overlay_img = Image.open(overlay_path).convert("RGBA")
                 # Resize overlay to match canvas dimensions
-                overlay_img = overlay_img.resize((1800, 1200), Image.LANCZOS)
+                overlay_img = overlay_img.resize((CANVAS_W, CANVAS_H), Image.LANCZOS)
                 # Paste overlay using its own alpha channel as a mask
                 canvas.paste(overlay_img, (0, 0), overlay_img)
             except Exception as e:
@@ -190,7 +198,7 @@ def process_photo_layout(images_base64: list, layout_type: str, text: str, overl
         text_width = bbox[2] - bbox[0]
         
         # Centered horizontally
-        text_x = (1800 - text_width) // 2
+        text_x = (CANVAS_W - text_width) // 2
         
         # Y position: vertical alignment in the bottom area
         # For single, bottom area is 1040 -> 1200. Center is 1120.
@@ -204,10 +212,93 @@ def process_photo_layout(images_base64: list, layout_type: str, text: str, overl
         draw.text((text_x, text_y), text, fill=(50, 30, 40), font=font)
         
     # 5. Save the photo
-    import uuid
     filename = f"photo_{uuid.uuid4().hex[:10]}.jpg"
     filepath = os.path.join(PHOTOS_DIR, filename)
     
-    # Save as high-quality JPEG
-    canvas.save(filepath, "JPEG", quality=95)
+    # Save as high-quality JPEG. The dpi tag is what makes the geometry
+    # deterministic at the printer: an untagged bitmap leaves CUPS free to pick
+    # a scale, which is how a 6x4 canvas ends up letterboxed or squeezed on a
+    # dye-sub. Tagged at 300, 1800x1200 IS 6x4 inches and maps 1:1.
+    canvas.save(filepath, "JPEG", quality=95, dpi=(PRINT_DPI, PRINT_DPI))
+    return filename
+
+
+def generate_alignment_card(printer_name: str, options: str) -> str:
+    """Draw a 4x6 geometry target and save it like any other print.
+
+    A test print of a photo answers "did paper come out". This answers the
+    question that actually matters when a dye-sub is first set up: did the
+    whole 6x4 reach the paper, at the right scale, the right way round. It is
+    the paper counterpart to the LED strip test — a permanent bench instrument,
+    not scaffolding for one bug.
+
+    Read it like this:
+      - The outer rule sits ON the edge. Any of it missing is bleed being lost.
+      - Ticks are every half inch, numbered in inches. Count what survived to
+        measure how much was cropped, and compare the two axes to catch a
+        squeeze (Gutenprint has a known one on the DS-RX1HS).
+      - "TOP LEFT" in the corner catches a rotated or mirrored page.
+      - The circle is a true circle. If it prints as an ellipse the aspect is
+        wrong, which no amount of counting ticks makes as obvious.
+    """
+    os.makedirs(PHOTOS_DIR, exist_ok=True)
+
+    ink = (20, 20, 20)
+    faint = (150, 150, 150)
+    canvas = Image.new("RGB", (CANVAS_W, CANVAS_H), (255, 255, 255))
+    draw = ImageDraw.Draw(canvas)
+
+    # Edge rule, one pixel in from each edge so it renders at all.
+    draw.rectangle([0, 0, CANVAS_W - 1, CANVAS_H - 1], outline=ink, width=3)
+
+    # Half-inch ticks, inch numbers. PRINT_DPI is the whole point of the card:
+    # if these do not land on inch marks under a ruler, the scale is wrong.
+    half = PRINT_DPI // 2
+    tick_font = get_font(28)
+    for x in range(half, CANVAS_W, half):
+        long = (x % PRINT_DPI == 0)
+        draw.line([x, 0, x, 40 if long else 22], fill=ink, width=3)
+        draw.line([x, CANVAS_H, x, CANVAS_H - (40 if long else 22)], fill=ink, width=3)
+        if long:
+            draw.text((x + 8, 44), f"{x // PRINT_DPI}\"", fill=ink, font=tick_font)
+    for y in range(half, CANVAS_H, half):
+        long = (y % PRINT_DPI == 0)
+        draw.line([0, y, 40 if long else 22, y], fill=ink, width=3)
+        draw.line([CANVAS_W, y, CANVAS_W - (40 if long else 22), y], fill=ink, width=3)
+        if long:
+            draw.text((44, y + 8), f"{y // PRINT_DPI}\"", fill=ink, font=tick_font)
+
+    # Centre cross and a true circle — an ellipse here means a squeezed page.
+    cx, cy = CANVAS_W // 2, CANVAS_H // 2
+    r = PRINT_DPI  # 1 inch radius
+    draw.ellipse([cx - r, cy - r, cx + r, cy + r], outline=faint, width=3)
+    draw.line([cx - r - 60, cy, cx + r + 60, cy], fill=faint, width=2)
+    draw.line([cx, cy - r - 60, cx, cy + r + 60], fill=faint, width=2)
+
+    # Orientation marker, so a rotated or mirrored page is unmistakable.
+    draw.text((70, 110), "TOP LEFT", fill=ink, font=get_font(40))
+
+    # What produced this print, so a stack of test cards stays readable. Kept
+    # clear of the circle — a label crossing it hides the distortion it exists
+    # to reveal.
+    lines = [
+        (f'{CANVAS_W} x {CANVAS_H} px  |  6" x 4" at {PRINT_DPI} dpi', get_font(34), ink),
+        (f"queue: {printer_name}", get_font(26), faint),
+        (f"options: {options or '(none)'}", get_font(26), faint),
+        (datetime.now().strftime("%Y-%m-%d %H:%M"), get_font(26), faint),
+    ]
+    y = cy + r + 70
+    for text, font, colour in lines:
+        w = draw.textbbox((0, 0), text, font=font)[2]
+        draw.text((cx - w // 2, y), text, fill=colour, font=font)
+        y += font.size + 8
+
+    # Named so circular storage sweeps it up with everything else, and so an
+    # operator can tell test cards from guests' photos in the folder.
+    filename = f"photo_printtest_{uuid.uuid4().hex[:8]}.jpg"
+    filepath = os.path.join(PHOTOS_DIR, filename)
+    canvas.save(filepath, "JPEG", quality=95, dpi=(PRINT_DPI, PRINT_DPI))
+    log.info("photo_processor", "print_test_card",
+             f"Alignment card generated: {filename}",
+             data={"printer_name": printer_name, "options": options})
     return filename

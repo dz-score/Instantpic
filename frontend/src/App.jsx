@@ -323,6 +323,7 @@ export default function App() {
           getDiagnostics={api.getDiagnostics}
           testLed={api.testLed}
           testLedChannel={api.testLedChannel}
+          testPrint={api.testPrint}
           emergencyAction={api.emergencyAction}
           changePin={api.changePin}
           getRecentLogs={api.getRecentLogs}
