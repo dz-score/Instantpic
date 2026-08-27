@@ -13,6 +13,62 @@ def test_post_config(client):
     data = response.json()
     assert data["countdown_duration"] == 5
 
+def test_led_config_defaults_are_served(client):
+    """The ring is off by default and the block is nested under a transport key."""
+    led = client.get("/api/config").json()["led"]
+    assert led["enabled"] is False
+    assert led["transport"] == "http"
+    assert led["http"]["host"] == ""
+
+def test_partial_led_update_does_not_reset_the_rest_of_the_block(client):
+    """The one nested block, and SettingsService.update() replaces top-level keys
+    outright. Without the merge, setting the host alone would switch the ring off."""
+    client.post("/api/config", json={"led": {"enabled": True, "http": {"host": "10.0.0.9"}}})
+
+    r = client.post("/api/config", json={"led": {"http": {"host": "10.0.0.42"}}})
+    assert r.status_code == 200
+    led = r.json()["led"]
+    assert led["http"]["host"] == "10.0.0.42"
+    assert led["enabled"] is True                     # not reset to the default
+    assert led["http"]["capture_timeout_ms"] == 250   # sibling under http survives
+
+def test_led_update_leaves_unrelated_settings_alone(client):
+    client.post("/api/config", json={"countdown_duration": 7})
+    r = client.post("/api/config", json={"led": {"enabled": True}})
+    assert r.json()["countdown_duration"] == 7
+
+def test_led_config_change_is_applied_without_a_restart(client):
+    """Whoever is setting the booth up is standing at the venue typing an IP;
+    the useful feedback is the status dot going green while they watch."""
+    class _Led:
+        def __init__(self):
+            self.applied = []
+        async def reconfigure(self, settings):
+            self.applied.append(settings.led.http.host)
+            return True
+
+    led = _Led()
+    client.app.state.led = led
+
+    client.post("/api/config", json={"led": {"enabled": True, "http": {"host": "10.0.0.42"}}})
+    assert led.applied == ["10.0.0.42"]
+
+    # A save that does not mention the ring must not touch it at all.
+    client.post("/api/config", json={"countdown_duration": 4})
+    assert led.applied == ["10.0.0.42"]
+
+def test_bad_led_host_does_not_fail_the_config_save(client):
+    """Otherwise the operator cannot correct the value they just typed."""
+    class _Led:
+        async def reconfigure(self, settings):
+            raise OSError("no route to host")
+
+    client.app.state.led = _Led()
+
+    r = client.post("/api/config", json={"led": {"http": {"host": "nonsense"}}})
+    assert r.status_code == 200
+    assert r.json()["led"]["http"]["host"] == "nonsense"
+
 def test_event_capture_flow(client):
     """FIRE_SHOT over HTTP reaches the FSM and enqueues a capture on the
     injected camera. Completion is backend-owned (camera callback -> FSM,
@@ -68,6 +124,98 @@ def test_diagnostics(client):
     data = response.json()
     assert "printer" in data
     assert "storage" in data
+
+def test_diagnostics_reports_the_ring(client):
+    """The latency percentiles here are the evidence the HTTP-vs-UART decision
+    rests on (Docs/LED_UART_SWITCH.md). Before this they were collected and
+    never read by anything."""
+    led = client.get("/api/diagnostics").json()["led"]
+    assert led["enabled"] is False      # no ring configured in a test config
+    assert led["connected"] is False
+    assert "counts" in led
+
+def test_led_test_route_pings_the_node(client):
+    class _Led:
+        async def ping(self):
+            return {"ok": True, "reply": "PONG", "elapsed_ms": 12.3, "detail": None}
+
+    client.app.state.led = _Led()
+    r = client.post("/api/led/test")
+    assert r.status_code == 200
+    assert r.json()["reply"] == "PONG"
+
+def test_led_test_route_is_refused_mid_session(client):
+    """It injects a command into the same single-owner queue the shutter waits
+    on, so it must not be tappable while a guest is being photographed."""
+    class _Led:
+        def __init__(self):
+            self.pings = 0
+        async def ping(self):
+            self.pings += 1
+            return {"ok": True, "reply": "PONG", "elapsed_ms": 1.0, "detail": None}
+
+    led = _Led()
+    client.app.state.led = led
+    client.post("/api/events", json={"type": "START_SESSION", "payload": {}})
+
+    r = client.post("/api/led/test")
+    assert r.status_code == 409
+    assert led.pings == 0
+
+def test_led_channel_route_lights_one_die(client):
+    class _Led:
+        enabled = True
+        def __init__(self):
+            self.sent = []
+        async def test_channel(self, ch):
+            self.sent.append(ch)
+            return "OK TEST"
+        async def idle(self):
+            self.sent.append("idle")
+        async def drain(self, timeout_s=2.0):
+            return True
+
+    led = _Led()
+    client.app.state.led = led
+
+    for name, arg in [("red", 1), ("green", 2), ("blue", 3), ("white", 4)]:
+        r = client.post("/api/led/channel", json={"channel": name})
+        assert r.status_code == 200, name
+        assert r.json()["ok"] is True
+
+    assert led.sent == [1, 2, 3, 4]
+
+    client.post("/api/led/channel", json={"channel": "off"})
+    assert led.sent[-1] == "idle"
+
+def test_led_channel_route_rejects_an_unknown_colour(client):
+    class _Led:
+        enabled = True
+        async def test_channel(self, ch):
+            raise AssertionError("should not be reached")
+
+    client.app.state.led = _Led()
+    r = client.post("/api/led/channel", json={"channel": "puce"})
+    assert r.status_code == 400
+
+def test_led_channel_route_is_refused_mid_session(client):
+    """Full white for two minutes is not something the admin panel should be
+    able to start underneath a guest."""
+    class _Led:
+        enabled = True
+        def __init__(self):
+            self.calls = 0
+        async def test_channel(self, ch):
+            self.calls += 1
+            return "OK TEST"
+
+    led = _Led()
+    client.app.state.led = led
+    client.post("/api/events", json={"type": "START_SESSION", "payload": {}})
+
+    r = client.post("/api/led/channel", json={"channel": "red"})
+    assert r.status_code == 409
+    assert led.calls == 0
 
 def test_camera_route_uses_injected_service(client, mocker):
     """The camera is whatever the composition root put on app.state, so a double

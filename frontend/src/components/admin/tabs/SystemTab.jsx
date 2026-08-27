@@ -123,6 +123,10 @@ export default function SystemTab({ getDiagnostics, emergencyAction, changePin, 
 
   const printer = diagnostics?.printer;
   const storage = diagnostics?.storage;
+  const led = diagnostics?.led;
+  // The tail is what matters, not the average: a mean hides exactly the retry
+  // storm that would put a dark frame in a photo (Docs/LED_UART_SWITCH.md).
+  const ledCaptureP95 = led?.latency_ms?.CAPTURE?.p95;
 
   // restart_camera has no backend implementation (the camera reconnects
   // automatically via its backoff loop); the backend answers it with an
@@ -199,6 +203,27 @@ export default function SystemTab({ getDiagnostics, emergencyAction, changePin, 
             </span>
             <span className="sys-diag-card__sub" style={{ fontSize: cameraStatus?.error ? '0.8rem' : 'inherit', lineHeight: 1.2 }}>
               {cameraStatus?.error ? cameraStatus.error : 'Stream initialized'}
+            </span>
+          </div>
+
+          {/* LED ring */}
+          <div className="sys-diag-card">
+            <div className="sys-diag-card__header">
+              <span className={`sys-dot ${
+                !led?.enabled ? '' : led.connected ? 'sys-dot--green' : 'sys-dot--red'
+              }`} />
+              <span className="sys-diag-card__label">LED Ring</span>
+            </div>
+            <span className="sys-diag-card__value">
+              {!led ? 'Checking…'
+                : !led.enabled ? 'Disabled'
+                : led.connected ? (ledCaptureP95 != null ? `${ledCaptureP95} ms p95` : 'Connected')
+                : 'Unreachable'}
+            </span>
+            <span className="sys-diag-card__sub">
+              {!led?.enabled ? 'Configure in the LEDs tab'
+                : led.connected ? (led.description || '')
+                : (led.last_error || 'No reply from the node')}
             </span>
           </div>
         </div>

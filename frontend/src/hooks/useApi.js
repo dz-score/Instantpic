@@ -84,6 +84,30 @@ export default function useApi(isOnline) {
     return await r.json();
   }, []);
 
+  /* ── LED ring ── */
+  const testLed = useCallback(async () => {
+    const r = await fetch(`${API}/api/led/test`, { method: 'POST' });
+    const body = await r.json();
+    // 409 means the booth is mid-session, which is a real answer rather than a
+    // failure — the backend refuses to queue a diagnostic behind the shutter.
+    if (!r.ok) return { ok: false, detail: body.detail || 'Test failed' };
+    return body;
+  }, []);
+
+  const testLedChannel = useCallback(async (channel) => {
+    const r = await fetch(`${API}/api/led/channel`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ channel }),
+    });
+    const body = await r.json();
+    // 409 (booth busy, ring disabled) and 400 (bad channel) are real answers,
+    // not transport failures — surface the backend's reason rather than a
+    // generic one.
+    if (!r.ok) return { ok: false, channel, detail: body.detail || 'Test failed' };
+    return body;
+  }, []);
+
   /* ── Emergency actions ── */
   const emergencyAction = useCallback(async (action) => {
     const r = await fetch(`${API}/api/emergency`, {
@@ -155,6 +179,8 @@ export default function useApi(isOnline) {
     getQrUrl,
     getDownloadUrl,
     getDiagnostics,
+    testLed,
+    testLedChannel,
     emergencyAction,
     changePin,
     getRecentLogs,

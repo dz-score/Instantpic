@@ -1,0 +1,195 @@
+/* ── LedTab ── */
+
+/* `sys-dot`, `sys-dot--green/red` and `sys-action-result` are reused from
+   SystemTab.css rather than duplicated. AdminPanel imports SystemTab at module
+   level, so that stylesheet is always in the bundle regardless of which tab is
+   showing, and a second copy of a status dot would drift from the first. */
+
+.led-tab {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.led-section {
+  padding-bottom: var(--space-md);
+  border-bottom: 1px solid var(--surface-border);
+}
+
+.led-section:last-child {
+  border-bottom: none;
+}
+
+.led-section__title {
+  font-family: var(--font-display);
+  font-size: var(--text-h3);
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: var(--space-sm);
+}
+
+/* ── Status ── */
+
+.led-status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm);
+  border-radius: var(--radius-sm);
+  background: var(--bg-base);
+  border: 1px solid var(--surface-border);
+}
+
+.led-status__text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+  min-width: 0;
+  flex: 1;
+}
+
+.led-status__value {
+  font-size: var(--text-body);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.led-status__sub {
+  font-size: var(--text-caption);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.led-status__latency {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-2xs);
+  flex-shrink: 0;
+}
+
+.led-status__latency-value {
+  font-size: var(--text-body);
+  font-weight: 600;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.led-status__latency-label {
+  font-size: var(--text-caption);
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-hairline);
+}
+
+/* ── Connection ── */
+
+.led-host-row {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-sm);
+  margin-top: var(--space-sm);
+}
+
+.led-host-field {
+  flex: 1;
+}
+
+.led-hint {
+  margin-top: var(--space-xs);
+  font-size: var(--text-caption);
+  color: var(--text-secondary);
+}
+
+.led-hint--lead {
+  margin-top: 0;
+  margin-bottom: var(--space-sm);
+}
+
+/* ── Buttons ── */
+
+.led-btn {
+  height: 44px;
+  padding: 0 var(--space-md);
+  border-radius: var(--radius-sm);
+  border: 1.5px solid var(--surface-border);
+  background: var(--bg-elevated);
+  font-size: var(--text-caption);
+  font-weight: 600;
+  color: var(--text-primary);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all var(--duration-fast) ease;
+}
+
+.led-btn:active:not(:disabled) {
+  transform: scale(0.97);
+  background: var(--champagne-light);
+}
+
+.led-btn--primary {
+  border-color: var(--champagne);
+}
+
+.led-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* ── Strip test ── */
+
+.led-swatch-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--space-sm);
+}
+
+/* Deliberately large: this is tapped on a kiosk screen by someone holding a
+   strip in the other hand. */
+.led-swatch {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  min-height: 64px;
+  padding: var(--space-sm);
+  border-radius: var(--radius-sm);
+  border: 1.5px solid var(--surface-border);
+  background: var(--bg-elevated);
+  cursor: pointer;
+  text-align: left;
+  transition: all var(--duration-fast) ease;
+}
+
+.led-swatch:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.led-swatch:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* The chip is the colour sample, so it carries the glow rather than the button
+   — a fully tinted button at these sizes is louder than anything else in the
+   panel and reads as a warning. */
+.led-swatch__chip {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--swatch);
+  box-shadow: 0 0 12px var(--swatch);
+  border: 1px solid rgba(0, 0, 0, 0.15);
+}
+
+.led-swatch__label {
+  font-size: var(--text-caption);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.led-test-actions {
+  display: flex;
+  gap: var(--space-sm);
+  margin-top: var(--space-sm);
+}

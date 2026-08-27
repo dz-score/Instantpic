@@ -143,6 +143,13 @@ export default function App() {
     return api.sendEvent('FIRE_SHOT');
   }, [api]);
 
+  // The instant the numerals actually start. Only the browser knows it: the
+  // count waits on the preview painting its first frame, which the backend
+  // cannot observe. The backend uses it to start the LED ring's sweep.
+  const handleCountdownStarted = useCallback(() => {
+    return api.sendEvent('COUNTDOWN_STARTED');
+  }, [api]);
+
   const handleRetake = useCallback(() => {
     logger.info('ui', 'ui_retake', 'Retake requested');
     api.sendEvent('RETAKE');
@@ -217,6 +224,7 @@ export default function App() {
           totalShots={appState?.totalShots || 1}
           capturedCount={appState?.capturedImages?.length || 0}
           fireShot={handleFireShot}
+          onCountdownStarted={handleCountdownStarted}
           resumePreview={api.resumeCameraPreview}
           cameraJob={sse.cameraJob}
           cameraStatus={sse.cameraStatus}
@@ -313,6 +321,8 @@ export default function App() {
           onSave={handleAdminSave}
           onClose={() => setShowAdmin(false)}
           getDiagnostics={api.getDiagnostics}
+          testLed={api.testLed}
+          testLedChannel={api.testLedChannel}
           emergencyAction={api.emergencyAction}
           changePin={api.changePin}
           getRecentLogs={api.getRecentLogs}

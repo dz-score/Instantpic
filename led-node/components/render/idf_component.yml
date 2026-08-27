@@ -1,0 +1,7 @@
+dependencies:
+  # Must be 3.x on ESP-IDF 6. led_strip 2.5.5 declares only `idf: >=4.4`, so the
+  # component manager will happily install it here, but its SPI backend uses
+  # MALLOC_CAP_* and heap_caps_calloc without including esp_heap_caps.h and
+  # relies on a transitive include that IDF 6 removed. That file is compiled on
+  # any target with GPSPI whichever backend we use, so it cannot be avoided.
+  espressif/led_strip: "^3.0"

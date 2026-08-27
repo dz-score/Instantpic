@@ -1,0 +1,13 @@
+# The render task runs at 125 Hz and must not be starved by the HTTP task.
+CONFIG_FREERTOS_HZ=1000
+
+# httpd handlers block on the reply queue, so they need a little headroom.
+CONFIG_HTTPD_MAX_REQ_HDR_LEN=1024
+
+# --- Booth build only -------------------------------------------------------
+# When CONFIG_LED_NODE_TRANSPORT_UART is selected with UART port 0, the console
+# shares the line the Pi reads and ESP_LOG output will corrupt the protocol.
+# Uncomment for booth builds (or route the console to USB Serial JTAG on parts
+# that have a separate peripheral for it):
+#
+# CONFIG_ESP_CONSOLE_NONE=y

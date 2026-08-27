@@ -48,6 +48,15 @@ def get_camera(request: Request):
     return request.app.state.camera
 
 
+def get_led(request: Request):
+    """The LED controller the lifespan built.
+
+    Always present and always safe to call — create_led_controller returns an
+    inert controller rather than None when no ring is configured.
+    """
+    return request.app.state.led
+
+
 def require_camera(camera=Depends(get_camera)):
     """For routes that cannot work without a camera at all."""
     if camera is None:

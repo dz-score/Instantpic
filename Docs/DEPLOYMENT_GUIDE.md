@@ -154,6 +154,79 @@ sudo apt install -y hostapd dnsmasq
 5. (Advanced) Use **nodogsplash** or **captive‑portal** package for a simple landing page.
 > Detailed AP configuration varies per venue; copy the snippets from the repo’s `config.json` under the `wifi` section.
 
+## 1️⃣1️⃣ LED Ring (optional)
+
+The ring is an ESP32 node on the booth's own Wi-Fi, driven over HTTP. The booth
+runs unchanged without one — every command is a no-op when it is disabled or
+unreachable, and a dead ring never stops a photo being taken. Firmware, wiring
+and the command vocabulary live in `led-node/README.md`; this section is only
+what the Pi side needs.
+
+Bring it up in this order. Each step is a precondition for the next.
+
+**1. Power, before anything else.** The strip needs its own 5 V supply — a Pi 5's
+official 5 A total cannot carry the ~1.8 A the ring draws at Capture, and
+browning out the Pi mid-session is a far worse failure than having no ring.
+Inject power at both ends of the strip, and put a 74AHCT125 on the data line:
+the ESP32 drives 3.3 V and SK6812s want 5 V logic.
+
+**2. Wi-Fi credentials into the firmware.** Set them under `LED Node
+Configuration → Command transport` in `idf.py menuconfig`. They land in
+`sdkconfig`, which is gitignored. **Never** put them in `sdkconfig.defaults`,
+which is tracked.
+
+**3. Give the node a fixed address.** The Pi's config stores one address, so the
+node must always get the same one. Reserve it by MAC in `dnsmasq` rather than
+configuring a static IP on the node — that keeps the address visible on the Pi,
+where whoever is troubleshooting at the venue can actually see it:
+
+```bash
+# Read the MAC off the node's first boot:  idf.py monitor
+#   wifi: connected — open http://192.168.4.50/
+# ...or, once it has associated, from the Pi:
+sudo arp -a | grep -i wlan0
+
+# /etc/dnsmasq.conf — one line, MAC to address
+dhcp-host=aa:bb:cc:dd:ee:ff,192.168.4.50
+
+sudo systemctl restart dnsmasq
+```
+
+Put the node on the booth's own AP as its only client, and hand-pick the
+channel. A wedding venue is a hostile 2.4 GHz environment, and retries land
+exactly in the countdown-to-shutter window (`Docs/LED_UART_SWITCH.md`).
+
+**4. Point the booth at it.** Admin → **LEDs**: turn the ring on, enter the
+address (host or IP only — no scheme, no port), then tap **Ping Node**. A healthy
+node answers `PONG` in a few milliseconds. Changes apply immediately; there is no
+restart.
+
+**5. Check the strip.** Still on the LEDs tab, tap All Red, All Green, All Blue
+and All White in turn and walk the ring. Each lights one physical die flat at
+full brightness, so a pixel that is dead, miswired or has one channel out is
+obvious — which it is not under any of the booth patterns, since they all mix
+dies. Tap **Back to Idle** when done (the node returns on its own after two
+minutes either way). These are refused unless the booth is on its idle screen.
+
+**6. Confirm the card.** The LED Ring card in System → Live Diagnostics goes green and
+starts reporting CAPTURE p95 once a session has run. That number is the one the
+transport decision rests on — see `Docs/LED_UART_SWITCH.md` for the thresholds
+that would trigger a move to UART, and record it at the venue rather than in a
+quiet room.
+
+### When the ring is stuck on the link-lost pattern
+
+The node enters Link Lost after 10 s with no inbound line, and it recovers on
+the heartbeat alone — a `PING` is enough. So:
+
+- Restarting the backend is sufficient. No reflash, no power cycle.
+- If it does not recover, the node is not receiving anything: check the Test
+  Ring result, then the DHCP reservation, then that the node associated at all
+  (`sudo arp -a`).
+- A red card with `ERR` text in it means the opposite problem — the node is
+  answering and refusing the command. That is a protocol mismatch, not a link
+  fault; see `Docs/LED_PROTOCOL.md`.
+
 ## 📋 Quick Checklist
 - [ ] OS updated, core packages installed
 - [ ] Repository cloned
@@ -164,6 +237,7 @@ sudo apt install -y hostapd dnsmasq
 - [ ] Chromium kiosk autostart configured
 - [ ] (Optional) VNC/Xvfb for headless operation
 - [ ] (Optional) Wi‑Fi AP & captive portal configured
+- [ ] (Optional) LED ring: own 5 V supply, DHCP reservation, address entered, ping green, all four dies checked
 
 ---
 **You can now power the Pi, let it boot, and the photo‑booth UI will appear automatically in kiosk mode.**

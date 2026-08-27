@@ -31,6 +31,55 @@ SHOTS_PER_LAYOUT = {
     "collage": 3,
 }
 
+class _NoLed:
+    """Stand-in when no ring is injected, so call sites need no guard.
+
+    Mirrors LedController's degraded behaviour exactly: everything succeeds
+    silently, and capture() reports False — nothing was acknowledged because
+    nothing was sent. The FSM fires the shutter anyway.
+    """
+
+    enabled = False
+
+    async def idle(self): ...
+    async def ready(self): ...
+    async def phase(self, hue): ...
+    async def countdown(self, duration_ms): ...
+    async def release(self): ...
+    async def printing(self): ...
+    async def finished(self, duration_ms): ...
+    async def error(self, code=1): ...
+
+    async def capture(self) -> bool:
+        return False
+
+
+# Decorative hue per screen. The node is count- and screen-agnostic by design
+# (Docs/LED_SPEC.md): it is handed a hue and spins, so the mapping from booth
+# workflow to colour is the Pi's to own and lives here rather than in firmware.
+SCREEN_HUE = {
+    "CHOOSE_STYLE": 280,
+    "REVEAL": 140,
+    "PICK_FAVORITE": 200,
+    "FRAME_PICKER": 320,
+}
+
+
+def countdown_ms(settings: AppSettings) -> int:
+    """Effective countdown in ms, matching what the browser shows.
+
+    Two clocks run this countdown, the browser's and the node's, and they always
+    agreed on the duration — the browser derives the same number from the same
+    two settings. What they disagreed on was the start: the FSM entered the
+    countdown screen immediately, while the browser waited for the preview to
+    paint its first frame, 1-3.5 s later. The node is now started by the browser
+    reporting that its numbers began (COUNTDOWN_STARTED), so both run the same
+    span from the same instant.
+    """
+    speed = settings.countdown_speed or 1.0
+    return int(settings.countdown_duration / speed * 1000)
+
+
 VALID_TRANSITIONS = {
     "ATTRACT": ["START_SESSION"],
     "CHOOSE_STYLE": ["SELECT_LAYOUT"],
@@ -58,12 +107,14 @@ class StateMachine:
     # sees touches); this one deliberately loses that race — see _manage_watchdog.
     SESSION_WATCHDOG_GRACE_S = 60
 
-    def __init__(self, sse, job_queue, camera=None):
+    def __init__(self, sse, job_queue, camera=None, led=None):
         self._state = BoothState()
         self._lock = None
         self._sse = sse
         self._job_queue = job_queue
         self._camera = camera
+        # Inert when no ring is configured, so there is no null check below.
+        self._led = led or _NoLed()
         # True while a capture is between FIRE_SHOT and its terminal callback;
         # guards against double-firing the shutter.
         self._shot_in_flight = False
@@ -102,6 +153,21 @@ class StateMachine:
 
     async def handle_event(self, event_type: str, payload: dict, settings: AppSettings):
         async with self._get_lock():
+            if event_type == "COUNTDOWN_STARTED":
+                # A cue, not a transition — deliberately handled before the
+                # table, which stays a table of transitions. The browser owns
+                # the instant its numerals start (it waits on the preview
+                # painting, which the backend cannot observe), so this is the
+                # only honest source for when the ring should start sweeping.
+                # Same shape as FIRE_SHOT, which is the browser reporting that
+                # the same countdown ended.
+                if self._state.screen != "COUNTDOWN":
+                    log.warn("state_machine", "countdown_cue_ignored",
+                             f"COUNTDOWN_STARTED in {self._state.screen} — ignored")
+                    return
+                await self._led.countdown(countdown_ms(settings))
+                return
+
             if event_type not in GLOBAL_EVENTS:
                 valid_events = VALID_TRANSITIONS.get(self._state.screen, [])
                 if event_type not in valid_events:
@@ -139,6 +205,23 @@ class StateMachine:
                               "FIRE_SHOT with no camera service injected")
                     return
                 self._shot_in_flight = True
+
+                # Light the ring BEFORE the shutter and wait for the node to
+                # acknowledge. At Capture the ring is the key light, not
+                # decoration — firing early photographs it mid-ramp.
+                #
+                # We fire regardless of the answer. False means unacknowledged,
+                # not "definitely dark": a transport timeout and an ERR TIMEOUT
+                # reply are both ambiguous (Docs/LED_PROTOCOL.md), and resolving
+                # it costs another round trip on a link that just proved slow.
+                # Refusing to shoot because a decorative-ish peripheral went
+                # quiet is the worse failure — a dim photo beats no photo, and
+                # the guest can retake.
+                if not await self._led.capture():
+                    log.warn("state_machine", "led_capture_unacked",
+                             "Ring did not acknowledge CAPTURE — firing anyway; "
+                             "this frame may be underexposed")
+
                 self._camera.enqueue_capture(
                     on_complete=lambda filename: self.shot_completed(filename, settings),
                     on_failure=self.shot_failed,
@@ -201,10 +284,40 @@ class StateMachine:
                 return
 
             self._manage_watchdog(settings)
+            await self._sync_led(settings)
             state_dict = self._state.model_dump()
 
         # Broadcast outside the lock to avoid blocking
         await self.broadcast_state(state_dict)
+
+    async def _sync_led(self, settings: Optional[AppSettings] = None):
+        """Point the ring at whatever screen the transition landed on.
+
+        Driven from the resulting screen rather than from each event branch, so
+        a new transition cannot forget the ring and there is exactly one place
+        the mapping lives. Capture and Release are not here: they bracket the
+        shutter, not a screen.
+
+        These are fire-and-forget — the controller serializes them on its own
+        task, so this does not put a round trip inside the handler lock.
+
+        `settings` is optional for the same reason _manage_watchdog's is: job
+        callbacks land the guest on a new screen without being handed settings,
+        so they fall back to the snapshot that armed the session. Only COUNTDOWN
+        reads it at all.
+        """
+        settings = settings or self._watchdog_settings
+        screen = self._state.screen
+        if screen == "ATTRACT":
+            await self._led.idle()
+        elif screen == "COUNTDOWN":
+            # Parked, not counting. The count starts on COUNTDOWN_STARTED,
+            # which is the browser telling us its numerals began.
+            await self._led.ready()
+        elif screen == "PRINTING":
+            await self._led.printing()
+        elif screen in SCREEN_HUE:
+            await self._led.phase(SCREEN_HUE[screen])
 
     def _manage_watchdog(self, settings: Optional[AppSettings] = None):
         """(Re)arm or cancel the backend session floor. Runs under the handler
@@ -335,6 +448,14 @@ class StateMachine:
             # Otherwise stay in COUNTDOWN; broadcasting the new state lets the
             # UI advance its shot-progress presentation.
             self._manage_watchdog(settings)
+            # Takes the ring out of Capture. No explicit RELEASE is needed on
+            # this path: whichever mode follows (Reveal's hue, or the parked
+            # Ready of the next shot) leaves full white on its own.
+            #
+            # On the multi-shot path this parks the ring while the browser sits
+            # out shot_interval_ms, and the next sweep starts with the next
+            # shot's numerals rather than ahead of them.
+            await self._sync_led(settings)
             state_dict = self._state.model_dump()
         await self.broadcast_state(state_dict)
 
@@ -343,6 +464,11 @@ class StateMachine:
             self._shot_in_flight = False
             log.error("state_machine", "shot_failed",
                       f"Capture failed permanently: {error}")
+            # The one path that needs an explicit RELEASE. State is unchanged,
+            # so no transition follows to take the ring out of Capture, and the
+            # node would otherwise sit at full white until its own 30 s timeout
+            # — the highest-current, highest-heat state in the system.
+            await self._led.release()
         # State unchanged: the UI shows its retry overlay from the camera_job
         # 'failed' SSE event (a retry re-fires FIRE_SHOT), and the stall
         # watchdog remains the floor if the guest walks away.
@@ -370,8 +496,11 @@ class StateMachine:
             self._state.finalPhoto = filename
             await self._enter_printing()
             # Screen changed outside handle_event, so re-arm here too — this is
-            # the one callback path that lands the guest on a new screen.
+            # the one callback path that lands the guest on a new screen. The
+            # ring needs the same treatment for the same reason: without this it
+            # would sit on the frame-picker hue for the whole print.
             self._manage_watchdog()
+            await self._sync_led()
             state_dict = self._state.model_dump()
         await self.broadcast_state(state_dict)
 

@@ -1,0 +1,112 @@
+menu "LED Node Configuration"
+
+    menu "Ring geometry"
+
+        config LED_NODE_RING_LEDS
+            int "Number of LEDs in the ring"
+            default 60
+            range 1 300
+            help
+                Physical pixel count. The spec assumes 60 (one per second on a
+                clock face), which is what makes the countdown sweep land at
+                exactly one pixel per 16.67 ms.
+
+        config LED_NODE_DATA_GPIO
+            int "Data GPIO"
+            default 27
+            help
+                Drives the strip through a 74AHCT125 level shifter (pin 2, 1A;
+                strip DIN comes off pin 3, 1Y). 3.3V direct into a 5V strip is
+                marginal and flaky.
+
+                Any output-capable pin works — RMT reaches it through the GPIO
+                matrix. Avoid GPIO 34-39, which are input-only, and the
+                strapping pins: GPIO 12 held high at reset selects a 1.8V flash
+                voltage and the module will not boot.
+
+        config LED_NODE_RING_OFFSET
+            int "Pixel index at visual 12 o'clock"
+            default 0
+            range 0 299
+            help
+                The strip's seam can be mounted wherever is physically
+                convenient; this rotates the logical ring to compensate.
+                Animations work in degrees and never see a pixel index.
+
+        config LED_NODE_RING_REVERSED
+            bool "Reverse direction"
+            default n
+            help
+                Enable if increasing pixel index runs counter-clockwise from
+                the guest's point of view.
+
+    endmenu
+
+    menu "Command transport"
+
+        choice LED_NODE_TRANSPORT
+            prompt "Transport"
+            default LED_NODE_TRANSPORT_HTTP
+            help
+                HTTP is the development transport: it leaves the USB port free
+                for flashing, which the booth wiring otherwise occupies. UART is
+                the booth transport. Both share one parser and one command
+                vocabulary, so the swap is behavior-identical.
+
+            config LED_NODE_TRANSPORT_HTTP
+                bool "HTTP (development)"
+
+            config LED_NODE_TRANSPORT_UART
+                bool "UART (booth)"
+        endchoice
+
+        config LED_NODE_WIFI_SSID
+            string "WiFi SSID"
+            depends on LED_NODE_TRANSPORT_HTTP
+            default "photobooth"
+            help
+                The development hotspot (the Pi's, or your PC's while
+                bringing things up).
+
+                NOTE: classic ESP32 is 2.4 GHz only. A Windows PC hotspot
+                often defaults to 5 GHz, in which case the node never sees
+                the network and the failure looks exactly like a wrong
+                password. Set the hotspot band explicitly.
+
+        config LED_NODE_WIFI_PASSWORD
+            string "WiFi password"
+            depends on LED_NODE_TRANSPORT_HTTP
+            default ""
+            help
+                Stored in sdkconfig, which is gitignored. Do not put this in
+                sdkconfig.defaults — that file is tracked.
+
+        config LED_NODE_UART_PORT
+            int "UART port number"
+            depends on LED_NODE_TRANSPORT_UART
+            default 0
+            range 0 2
+            help
+                Port 0 is the one wired to the USB bridge, which is how the Pi
+                connects. NOTE: that is also the console port. Set
+                CONFIG_ESP_CONSOLE_NONE (or route the console to USB Serial JTAG
+                on parts that have it) or ESP_LOG output will corrupt the
+                protocol stream.
+
+        config LED_NODE_UART_BAUD
+            int "UART baud rate"
+            depends on LED_NODE_TRANSPORT_UART
+            default 115200
+
+    endmenu
+
+    config LED_NODE_DEFAULT_BRIGHTNESS
+        int "Default global brightness (percent)"
+        default 70
+        range 1 100
+        help
+            Applied to every mode except Capture, which always runs at full
+            brightness because PWM dimming bands the photo. Venue lighting
+            varies, so this is runtime-settable too.
+
+endmenu
