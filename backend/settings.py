@@ -62,16 +62,12 @@ class LedConfig(BaseModel):
 class PrinterMockConfig(BaseModel):
     """Shapes MockPrinterDriver so a dev box can rehearse a real dye-sub.
 
-    The defaults model a DNP DS-RX1HS on a 4x6 roll. They matter because the
-    mock is not a stub here: on Windows it is the ONLY driver that ever runs
-    (see PrintService._reload_driver), so every print path this project has —
-    the printing animation's dwell, a failure reaching the guest, an operator
-    watching media run down — is developed and tested against these numbers.
-    Correct them from the real printer once it is on the bench.
+    The defaults model a DNP DS-RX1HS on a 4x6 roll and are what every print
+    path is developed against before hardware exists, so correct them from the
+    real printer once it is on the bench (CONSTRAINTS.md §10).
     """
-    # One 4x6 print, measured end to end. The guest watches the printing
-    # animation for exactly this long, so a wrong value here makes the screen
-    # look right in development and wrong at the event.
+    # One 4x6 print, end to end. The printing animation dwells for exactly this
+    # long, so a wrong value looks right in development and wrong at the event.
     job_duration_s: float = 13.0
     # Prints on a full roll. Changing this is "load a new roll" — the driver
     # reseeds its counter when the value moves.
@@ -121,23 +117,14 @@ class AppSettings(BaseModel):
     show_names_on_photo: bool = True
     printer_name: str = "mock"
     # Passed to `lp -o` verbatim, one option per whitespace-separated token.
-    #
-    # `scaling=100` means "fill the page", which with a 3:2 canvas on 3:2 media
-    # is a full-bleed 1:1 map. It replaces `fit-to-page`, which asks CUPS to
-    # decide a scale and is how a 6x4 ends up letterboxed or squeezed on a
-    # dye-sub. The composite now carries a real 300 DPI tag as well, so nothing
-    # downstream has to guess the physical size.
-    #
-    # `w288h432` is 4x6in in CUPS media names. Whether the Gutenprint DS-RX1 PPD
-    # wants exactly that, or its own PageSize choice, is the first thing to check
-    # on the bench — which is why this is editable from the Printer tab and takes
-    # effect on the next print with no restart.
+    # Not `fit-to-page`: that hands the scaling decision back to CUPS, which is
+    # the decision CONSTRAINTS.md §6 exists to take away from it. The exact
+    # media name is unconfirmed against the real PPD, which is why this is
+    # editable from the Printer tab (PRINTER_NOTES.md, hardware run step 2).
     printer_options: str = "media=w288h432 scaling=100"
-    # Prints left on the ribbon below which the booth starts saying so. A
-    # judgement about the event, not about the hardware, which is why it is
-    # config: 25 is a comfortable "go find the spare roll" at a wedding and
-    # would be absurd at a two-hour party. Warned about, never enforced — the
-    # booth does not refuse to print because a roll is nearly done.
+    # Prints left below which the booth starts saying so. A judgement about the
+    # event rather than the hardware, hence config. Warned about, never
+    # enforced — a nearly-done roll must not stop the booth printing.
     printer_media_low_threshold: int = 25
     # Only consulted when the mock driver is the one in use.
     printer_mock: PrinterMockConfig = PrinterMockConfig()

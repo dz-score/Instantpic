@@ -13,10 +13,8 @@ class JobQueue:
     Two lanes, not one, because the two workloads have opposite profiles.
     Processing sits on the guest's critical path — the REVEAL spinner is
     waiting on it — and takes seconds. A print blocks for as long as the paper
-    takes: PrintService submits, then waits out the job so the outcome it
-    reports is the printed outcome, which is ~12s for a 4x6 dye-sub and up to
-    ~96s worst case (two 30s submit timeouts + RETRY_DELAY_S, or a 90s
-    JOB_TIMEOUT_S). Sharing a single serial lane meant a guest who tapped "Another"
+    takes, because PrintService waits the job out: ~12s for a 4x6 dye-sub and
+    up to ~96s worst case. Sharing a single serial lane meant a guest who tapped "Another"
     could queue their processing job behind the *previous* guest's retrying
     print and sit watching the spinner for a minute over someone else's paper
     jam. Splitting them decouples the guest-visible path from the slow external

@@ -17,9 +17,7 @@ from backend.paths import PHOTOS_DIR, OVERLAYS_DIR
 # built-in default rather than blocking the job worker on a network call.
 from backend.paths import FONT_PATH
 
-# 6x4 inches at 300 DPI, the fixed output geometry (Docs/CONSTRAINTS.md §6).
-# PRINT_DPI is not cosmetic: it is written into the JPEG so CUPS maps the image
-# 1:1 onto a 4x6 page instead of inventing a scale for an untagged bitmap.
+# The fixed output geometry. Changing either is a Docs/CONSTRAINTS.md §6 change.
 CANVAS_W, CANVAS_H = 1800, 1200
 PRINT_DPI = 300
 
@@ -215,10 +213,8 @@ def process_photo_layout(images_base64: list, layout_type: str, text: str, overl
     filename = f"photo_{uuid.uuid4().hex[:10]}.jpg"
     filepath = os.path.join(PHOTOS_DIR, filename)
     
-    # Save as high-quality JPEG. The dpi tag is what makes the geometry
-    # deterministic at the printer: an untagged bitmap leaves CUPS free to pick
-    # a scale, which is how a 6x4 canvas ends up letterboxed or squeezed on a
-    # dye-sub. Tagged at 300, 1800x1200 IS 6x4 inches and maps 1:1.
+    # Keep the dpi tag. Untagged, CUPS picks its own scale for the bitmap and
+    # the print comes out letterboxed or squeezed (CONSTRAINTS.md §6).
     canvas.save(filepath, "JPEG", quality=95, dpi=(PRINT_DPI, PRINT_DPI))
     return filename
 
@@ -226,20 +222,13 @@ def process_photo_layout(images_base64: list, layout_type: str, text: str, overl
 def generate_alignment_card(printer_name: str, options: str) -> str:
     """Draw a 4x6 geometry target and save it like any other print.
 
-    A test print of a photo answers "did paper come out". This answers the
-    question that actually matters when a dye-sub is first set up: did the
-    whole 6x4 reach the paper, at the right scale, the right way round. It is
-    the paper counterpart to the LED strip test — a permanent bench instrument,
-    not scaffolding for one bug.
+    A photo only answers "did paper come out". This answers whether the whole
+    6x4 reached the paper, at the right scale, the right way round. Permanent
+    bench instrument, the paper counterpart to the LED strip test — so Rule 24
+    does not apply to it.
 
-    Read it like this:
-      - The outer rule sits ON the edge. Any of it missing is bleed being lost.
-      - Ticks are every half inch, numbered in inches. Count what survived to
-        measure how much was cropped, and compare the two axes to catch a
-        squeeze (Gutenprint has a known one on the DS-RX1HS).
-      - "TOP LEFT" in the corner catches a rotated or mirrored page.
-      - The circle is a true circle. If it prints as an ellipse the aspect is
-        wrong, which no amount of counting ticks makes as obvious.
+    Docs/PRINTER_NOTES.md explains how to read what comes out. Every mark below
+    exists to make one specific distortion visible; none of it is decoration.
     """
     os.makedirs(PHOTOS_DIR, exist_ok=True)
 
@@ -251,8 +240,7 @@ def generate_alignment_card(printer_name: str, options: str) -> str:
     # Edge rule, one pixel in from each edge so it renders at all.
     draw.rectangle([0, 0, CANVAS_W - 1, CANVAS_H - 1], outline=ink, width=3)
 
-    # Half-inch ticks, inch numbers. PRINT_DPI is the whole point of the card:
-    # if these do not land on inch marks under a ruler, the scale is wrong.
+    # The scale check: these must land on real inch marks under a ruler.
     half = PRINT_DPI // 2
     tick_font = get_font(28)
     for x in range(half, CANVAS_W, half):
@@ -268,19 +256,18 @@ def generate_alignment_card(printer_name: str, options: str) -> str:
         if long:
             draw.text((44, y + 8), f"{y // PRINT_DPI}\"", fill=ink, font=tick_font)
 
-    # Centre cross and a true circle — an ellipse here means a squeezed page.
+    # The aspect check. Must stay a circle, not an ellipse-by-accident.
     cx, cy = CANVAS_W // 2, CANVAS_H // 2
     r = PRINT_DPI  # 1 inch radius
     draw.ellipse([cx - r, cy - r, cx + r, cy + r], outline=faint, width=3)
     draw.line([cx - r - 60, cy, cx + r + 60, cy], fill=faint, width=2)
     draw.line([cx, cy - r - 60, cx, cy + r + 60], fill=faint, width=2)
 
-    # Orientation marker, so a rotated or mirrored page is unmistakable.
+    # The orientation check.
     draw.text((70, 110), "TOP LEFT", fill=ink, font=get_font(40))
 
-    # What produced this print, so a stack of test cards stays readable. Kept
-    # clear of the circle — a label crossing it hides the distortion it exists
-    # to reveal.
+    # Provenance, so a stack of test cards stays readable. Kept clear of the
+    # circle: a label crossing it hides the distortion the circle reveals.
     lines = [
         (f'{CANVAS_W} x {CANVAS_H} px  |  6" x 4" at {PRINT_DPI} dpi', get_font(34), ink),
         (f"queue: {printer_name}", get_font(26), faint),

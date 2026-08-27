@@ -11,12 +11,9 @@ Architecture:
 Swapping printers = changing printer_name in config.json (CUPS queue name).
 No code changes needed.
 
-A print is two phases, and the driver contract keeps them apart: print_file()
-SUBMITS the job (a dye-sub queue accepts one in ~100ms), await_job() blocks until
-that job reaches a terminal state (a DNP RX1HS takes ~12s per 4x6). Every failure
-that matters at an event — ribbon out, paper out, jam, printer switched off —
-happens after submission, so a service that reported the submit result as the
-print result would tell a guest "done" and hand them nothing.
+A print is two phases and the driver contract keeps them apart: print_file()
+submits, await_job() blocks until the job is terminal. Success from this service
+means paper, never acceptance — see CONSTRAINTS.md §10 and PRINTER_NOTES.md.
 """
 
 import os
@@ -76,20 +73,17 @@ class PrinterStatus:
     ready: bool             # idle and accepting jobs
     printer_name: str
     status_text: str        # "Idle", "Printing", "Offline", etc.
-    # Which driver answered. The operator needs this: on Windows the mock is
-    # selected whatever printer_name says, and a status card that looks healthy
-    # without saying it is simulated is the same lie this whole area is fixing.
+    # Which driver answered — the mock can be selected without printer_name
+    # saying so, and the UI has to be able to admit that.
     driver: str = "cups"
     error: Optional[str] = None
-    # Consumables. None means the driver has no way to know — an inkjet on CUPS
-    # cannot answer this, and neither can a dye-sub whose backend does not
-    # report markers. Absent is not the same as empty, so keep them Optional.
+    # Consumables. None means the driver cannot know, which is NOT empty — keep
+    # them Optional so nothing downstream can render an unearned zero.
     media_type: Optional[str] = None
     prints_remaining: Optional[int] = None
-    # Whether prints_remaining has crossed the operator's threshold. Decided by
-    # PrintService, not the driver (which has no config) and not the UI (Rule 14
-    # — "is this low?" is a booth decision, and one authority for it means the
-    # admin panel and the log can never disagree about it).
+    # Set by PrintService, the only holder of both the reading and the
+    # threshold. Deriving it again in the UI would let the panel and the log
+    # disagree about what counts as low (Rule 14).
     media_low: bool = False
 
     def to_dict(self):
@@ -145,10 +139,8 @@ class CupsPrinterDriver(PrinterDriver):
 
     # ── Consumables ───────────────────────────────────────────────────────────
 
-    # Stock ipptool test that asks a queue for everything it knows about itself.
-    # Read-only, and it goes through cupsd — which is the point. The Gutenprint
-    # backend that reports these markers owns the USB device while CUPS has the
-    # printer, so invoking it directly would be fighting the daemon for the port.
+    # Read through cupsd, never by invoking the Gutenprint backend directly:
+    # that backend owns the USB device while CUPS has the printer.
     IPPTOOL_TEST = "/usr/share/cups/ipptool/get-printer-attributes.test"
     _MARKER_LINE = re.compile(r"^\s*(marker-[a-z-]+)\s*\([^)]*\)\s*=\s*(.*?)\s*$")
 
@@ -188,17 +180,11 @@ class CupsPrinterDriver(PrinterDriver):
     def _read_media(self) -> tuple:
         """(media_type, prints_remaining) from CUPS marker attributes.
 
-        UNVERIFIED against a real DS-RX1HS — written from the CUPS marker
-        convention and Gutenprint's changelog, not from output anyone has seen.
-        Run backend/tools/printer_markers_probe.py against the printer and
-        correct this against what it actually prints; the probe exists precisely
-        so that is a five-minute job rather than a guess.
+        UNVERIFIED against real hardware. Docs/PRINTER_NOTES.md records what is
+        assumed; backend/tools/printer_markers_probe.py settles it.
 
-        The count comes from `marker-message` rather than `marker-levels`
-        because CUPS marker-levels is a 0-100 percentage (and -1/-2/-3 for
-        unknown), while the dyesub backend puts the native prints-remaining in
-        the message. Anything unparseable yields None: absent is not empty, and
-        reporting a confident zero for a full roll would be worse than silence.
+        The count comes from `marker-message`, not `marker-levels` — levels is a
+        0-100 percentage by CUPS convention. Unparseable yields None, never 0.
         """
         markers = self._ipp_attributes()
         if not markers:
@@ -324,19 +310,13 @@ class CupsPrinterDriver(PrinterDriver):
             )
 
     def await_job(self, job_id: str, timeout_s: float) -> JobOutcome:
-        """Poll CUPS until the job is off the queue, the queue stops, or we run out
-        of patience.
+        """Poll CUPS until the job is off the queue, the queue stops, or we run
+        out of patience.
 
-        Why the queue's state and not the job's: `lpstat -W completed` is IPP
-        `which-jobs=completed`, which returns completed, aborted AND canceled jobs
-        together — it cannot tell success from failure. The queue can. Out of
-        ribbon, out of paper, a jam and a power-off all stop the queue and leave
-        our job sitting in it, which is exactly the pair of facts we check.
-
-        Known imprecision: a job an operator cancels from the CUPS web UI also
-        leaves the queue and reads here as completed. That mislabels an outcome
-        the operator caused deliberately and already knows about, which is a far
-        better trade than missing a jam.
+        Watches the QUEUE, not the job: `lpstat -W completed` cannot tell a
+        completed job from an aborted one, so do not "simplify" this into
+        reading job states. Docs/PRINTER_NOTES.md has the reasoning and the one
+        outcome this deliberately mislabels.
         """
         deadline = time.monotonic() + timeout_s
         misses = 0
@@ -461,19 +441,12 @@ class CupsPrinterDriver(PrinterDriver):
 # ── Mock driver ───────────────────────────────────────────────────────────────
 
 class MockPrinterDriver(PrinterDriver):
-    """Development mock, shaped like a DNP DS-RX1HS.
+    """Development mock, shaped like a DNP DS-RX1HS. Production code, not a
+    stub — CONSTRAINTS.md §10 has why it must fail the way a dye-sub does.
 
-    Not a stub. `_reload_driver` picks this driver on Windows whatever
-    `printer_name` says, so until the real printer is on the bench it is the
-    only printer this project can be developed against. That means it has to be
-    wrong in the same ways a dye-sub is wrong — accept a job instantly, take
-    ~13 s to actually print it, run out of ribbon, jam — or none of the handling
-    for those cases can be written, let alone tested.
-
-    Knobs live in `AppSettings.printer_mock`. It holds the SettingsService
-    rather than a snapshot for the same reason PrintService does: a fault
-    flipped in the admin panel has to land on the next print, not the next
-    restart.
+    Knobs live in `AppSettings.printer_mock`. It holds the SettingsService and
+    not a snapshot, so a fault flipped in the admin panel lands on the next
+    print rather than the next restart.
     """
 
     # How a submitted job is going to end, decided at submit time.
@@ -614,11 +587,9 @@ class PrintService:
 
     RETRY_DELAY_S = 3
     STATUS_CACHE_TTL_S = 5
-    # Ceiling on phase 2. A DNP RX1HS is ~12s per 4x6 and the job queue's print
-    # lane is serial, so ours is the only job in CUPS — this is slack, not a
-    # budget. It also has to stay under the LED firmware's ~120s printing-mode
-    # timeout (Docs/LED_SPEC.md) so the ring only falls to Error if the backend
-    # itself has hung, not merely because a print was slow.
+    # Ceiling on phase 2, against ~12s for a real 4x6. Must stay under the LED
+    # firmware's printing-mode timeout (Docs/LED_SPEC.md §5), or a merely slow
+    # print drops the ring to Error on its own.
     JOB_TIMEOUT_S = 90
 
     def __init__(self, settings: SettingsService):
@@ -709,10 +680,7 @@ class PrintService:
             return PrintResult(success=False, error=result.error, duration_ms=elapsed_ms())
 
         # ── Phase 2: wait for paper ──────────────────────────────────────────
-        # No retry past this point. A jam that gets cleared and silently reprinted
-        # hands the guest two photos and burns two prints of media; a failure the
-        # operator can see is the better outcome. Docs/API_PROTOCOL.md promises
-        # exactly this ("The booth does not automatically retry printing").
+        # No retry past this point — CONSTRAINTS.md §10 has why.
         if not result.job_id:
             # The driver accepted the file but gave us nothing to follow. Say so
             # rather than dressing an unverified submission up as a finished print.
@@ -754,14 +722,9 @@ class PrintService:
     def _apply_media_policy(self, status: PrinterStatus) -> None:
         """Decide whether the ribbon counts as low, and say so once per crossing.
 
-        The threshold is config and the driver has none, so this is the one place
-        that can make the call — which also means the admin panel and the log can
-        never disagree about it (Rule 14).
-
-        Edge-triggered on purpose. The admin panel polls status every five
-        seconds; a level-triggered warning would be seven hundred identical
-        lines an hour, and a log nobody can read a session out of is the first
-        thing Rule 16 loses.
+        Edge-triggered on purpose: the admin panel polls status every five
+        seconds, so level-triggered would be seven hundred identical lines an
+        hour and Rule 16 would be the first casualty.
         """
         remaining = status.prints_remaining
         if remaining is None:

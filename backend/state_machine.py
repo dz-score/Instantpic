@@ -271,17 +271,11 @@ class StateMachine:
                 await self._enter_printing()
                 
             elif event_type == "REPRINT":
-                # Only after a failure, never after a success. The two look the
-                # same on this screen and are not the same situation: retrying a
-                # print that came out spends a second sheet of media on a copy
-                # nobody agreed to (one print per session is a booth decision,
-                # Rule 14), while retrying a jam is the guest getting the photo
-                # they were already promised.
-                #
-                # The guard is also what makes this idempotent. The first
-                # REPRINT moves printStatus to "printing", so a second tap —
-                # or a stale browser retrying the POST — is refused here rather
-                # than queueing a duplicate behind the first.
+                # Failure only: retrying a print that came out spends a second
+                # sheet on a copy nobody agreed to. The guard doubles as the
+                # idempotency — the first REPRINT moves printStatus off
+                # "failed", so a double tap is refused here rather than
+                # queueing a duplicate. Contract in Docs/API_PROTOCOL.md.
                 if self._state.printStatus != "failed":
                     log.warn("state_machine", "reprint_rejected",
                              f"REPRINT ignored — printStatus is "

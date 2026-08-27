@@ -1,31 +1,16 @@
-#!/usr/bin/env python3
 """
 printer_markers_probe — find out what the printer actually says about its media.
 
-WHY THIS EXISTS (2026-08-27). CupsPrinterDriver._read_media() was written
-against the CUPS marker convention and Gutenprint's changelog, with no DNP
-DS-RX1HS on the bench to check it. Nobody has seen the real output. The parser
-is therefore a hypothesis, and shipping a hypothesis that reports a confident
-"612 prints left" would be worse than reporting nothing.
-
-This dumps the ground truth beside what the parser made of it, so correcting one
-against the other is a five-minute job on the day the printer arrives rather
-than an afternoon of poking.
-
     python3 backend/tools/printer_markers_probe.py DS-RX1
 
-Run it on the Pi, with the printer on, powered, and idle. Then run it again with
-a nearly-spent ribbon if you can — the interesting question is not whether the
-count parses, it is whether it parses the same way near zero.
+Dumps the queue's raw CUPS marker attributes beside what
+CupsPrinterDriver._read_media() makes of them. Run it on the Pi with the printer
+on, powered and idle, then compare RAW against PARSED.
 
-WHAT TO DO WITH THE OUTPUT
-  - If PARSED matches the RAW markers, delete this file. The question is
-    answered and Rule 24 says the scaffolding goes.
-  - If it does not, fix CupsPrinterDriver._read_media() against the RAW block
-    and record what the printer actually reports in Docs/CONSTRAINTS.md §10.
-  - If there are no markers at all, the DNP backend is not reporting them
-    through this queue. Say so in the docs and leave prints_remaining as None —
-    the UI already treats absent as "cannot know" rather than "empty".
+The parser was written without a DS-RX1HS on the bench, so it is a hypothesis;
+Docs/PRINTER_NOTES.md records exactly what it assumes and what to do with each
+outcome here, including deleting this file once the question is answered
+(Rule 24).
 """
 
 import shutil
@@ -93,7 +78,7 @@ def main():
     except Exception as e:
         section("PARSED — failed", f"{type(e).__name__}: {e}")
 
-    print("\nCompare RAW against PARSED. See the header of this file for what to "
+    print("\nCompare RAW against PARSED. Docs/PRINTER_NOTES.md says what to "
           "do with each outcome.")
     return 0
 

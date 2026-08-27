@@ -185,9 +185,8 @@ export default function App() {
     api.sendEvent('ANOTHER');
   }, [api]);
 
-  // Not a new session — the same photo, sent to the printer again after a
-  // failure. The FSM refuses REPRINT unless printStatus is 'failed', so this
-  // cannot turn into a second-copy button.
+  // Not a new session: the same photo, sent again. Deliberately does not touch
+  // the session bookkeeping that handleAnother does.
   const handleReprint = useCallback(() => {
     logger.info('session', 'print_retry', 'Guest retried a failed print');
     api.sendEvent('REPRINT');

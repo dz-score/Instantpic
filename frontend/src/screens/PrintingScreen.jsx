@@ -19,18 +19,14 @@ const AUTO_RESET_SECONDS = 25;
  *   - Animated printer icon + warm patience message
  *
  * Phase 2 (DONE): printStatus === 'printed'
- *   - The print has physically finished — the backend waits the job out, so
- *     this is a real completion and not an accepted submission
+ *   - A real completion: the backend waits the job out, so the paper is out
  *   - Photo preview + QR code to download
  *   - Blush "Take Another" button + auto-reset countdown
  *
  * Phase 2 (ERROR): printStatus === 'failed'
- *   - Says plainly that nothing came out, and points at an attendant. The two
- *     outcomes used to read almost identically, which left a guest looking at
- *     a "save your photo" screen with no idea their print had jammed.
- *   - The photo is still safe and still downloadable, so the QR stays.
- *   - Offers a retry. The FSM only accepts REPRINT while printStatus is
- *     'failed', so this cannot become a second-copy button.
+ *   - Says plainly that nothing came out, and points at an attendant
+ *   - The photo is still safe and still downloadable, so the QR stays
+ *   - Offers REPRINT, which the FSM accepts only from 'failed' 
  *
  * Background from ScreenShell (bg-wedding.png).
  */

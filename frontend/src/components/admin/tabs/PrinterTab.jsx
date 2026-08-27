@@ -3,19 +3,17 @@ import './PrinterTab.css';
 
 /**
  * Printer tab — configure the queue, watch the media, and prove the geometry.
+ * Docs/PRINTER_NOTES.md is the background; this is the operator's surface onto
+ * it, and its hardware run is what the test print is for.
  *
- * The test print is the reason this tab exists. A dye-sub's first setup
- * question is not "does paper come out", it is "did the whole 6x4 reach the
- * paper, at the right scale, the right way round" — so the button prints an
- * alignment card (ruled edge, half-inch ticks, a true circle) rather than a
- * photo. The backend refuses it outside ATTRACT, because it queues onto the
- * same serial print lane a guest's photo uses; that refusal comes back as an
- * ordinary message, not an error.
+ * Print options are a free text field rather than pickers on purpose: which
+ * `lp -o` string a given PPD wants is unknown until the printer is on the
+ * bench, and the operator standing in front of it has to be able to try one
+ * and print again rather than wait for a release.
  *
- * Print options are a text field and not a set of pickers on purpose. Which
- * `lp -o` incantation a given PPD wants is not known until the printer is on
- * the bench, and the operator standing in front of it needs to be able to try
- * one and print again — not wait for a release.
+ * A 409 from the test print means the booth is mid-session, which is a real
+ * answer and is rendered as one — the backend will not put a diagnostic in
+ * front of a guest's print.
  *
  * Rule 7 escape hatch, same as SystemTab and LedTab: printer health is polled
  * over REST because it is a live CUPS query with no event source. Only while
