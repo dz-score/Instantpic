@@ -133,6 +133,12 @@ class AppSettings(BaseModel):
     # on the bench — which is why this is editable from the Printer tab and takes
     # effect on the next print with no restart.
     printer_options: str = "media=w288h432 scaling=100"
+    # Prints left on the ribbon below which the booth starts saying so. A
+    # judgement about the event, not about the hardware, which is why it is
+    # config: 25 is a comfortable "go find the spare roll" at a wedding and
+    # would be absurd at a two-hour party. Warned about, never enforced — the
+    # booth does not refuse to print because a roll is nearly done.
+    printer_media_low_threshold: int = 25
     # Only consulted when the mock driver is the one in use.
     printer_mock: PrinterMockConfig = PrinterMockConfig()
     # Cap on FILES in the photos dir, not on sessions or on keepsakes. One

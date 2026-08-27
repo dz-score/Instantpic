@@ -323,3 +323,35 @@ def test_test_print_is_refused_mid_session(client):
 
     assert r.status_code == 409
     assert "busy" in r.json()["detail"].lower()
+
+
+def test_media_low_threshold_is_operator_settable(client):
+    r = client.post("/api/config", json={"printer_media_low_threshold": 40})
+    assert r.status_code == 200
+    assert r.json()["printer_media_low_threshold"] == 40
+
+
+def test_low_media_reaches_the_admin_panel(client):
+    """The threshold is applied by the backend, not re-derived in the UI, so the
+    log and the panel can never disagree about what counts as low."""
+    client.post("/api/config", json={
+        "printer_media_low_threshold": 25,
+        "printer_mock": {"media_total": 10},
+    })
+
+    printer = client.get("/api/diagnostics").json()["printer"]
+
+    assert printer["prints_remaining"] == 10
+    assert printer["media_low"] is True
+
+
+def test_a_full_roll_is_not_reported_low(client):
+    client.post("/api/config", json={
+        "printer_media_low_threshold": 25,
+        "printer_mock": {"media_total": 700},
+    })
+
+    printer = client.get("/api/diagnostics").json()["printer"]
+
+    assert printer["prints_remaining"] == 700
+    assert printer["media_low"] is False

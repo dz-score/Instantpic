@@ -75,6 +75,12 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Only the number turns, not the whole card — an operator scanning the panel
+   should find the one thing that needs acting on, not a wall of alarm. */
+.printer-status__media--low .printer-status__media-value {
+  color: var(--status-warning);
+}
+
 .printer-status__media-label {
   font-size: var(--text-caption);
   color: var(--text-secondary);

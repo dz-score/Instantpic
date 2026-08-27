@@ -1,6 +1,8 @@
 import asyncio
 import socket
 
+import anyio.to_thread
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
@@ -28,8 +30,14 @@ async def health_check():
 
 @router.get("/api/printer/status")
 async def printer_status(print_svc: PrintService = Depends(get_print_service)):
-    """Get current printer status (connected, ready, errors)."""
-    status = print_svc.get_status()
+    """Get current printer status (connected, ready, media, errors).
+
+    Off the event loop: a cache miss shells out to lpstat and then to ipptool,
+    each with a 5s timeout, and a printer that has been switched off can take
+    both of them. Blocking the loop for that long stalls every SSE stream, which
+    on this booth means the guest's screen.
+    """
+    status = await anyio.to_thread.run_sync(print_svc.get_status)
     return status.to_dict()
 
 
@@ -98,7 +106,9 @@ async def get_diagnostics(
     led=Depends(get_led),
 ):
     from backend.diagnostics import get_diagnostics
-    return get_diagnostics(settings, print_svc, led)
+    # Same reasoning as /api/printer/status, and this one also does a
+    # disk_usage() and a glob over the photos directory.
+    return await anyio.to_thread.run_sync(get_diagnostics, settings, print_svc, led)
 
 
 @router.post("/api/led/test")

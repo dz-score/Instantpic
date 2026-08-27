@@ -86,9 +86,9 @@ export default function PrinterTab({
   // a save per keystroke — each one an atomic file write and an SSE broadcast —
   // and typing "700" is not three edits. The key remounts the field if the value
   // changes from somewhere else, which is the only thing local state bought.
-  const commitNumber = useCallback((value, current, key) => {
+  const commitNumber = useCallback((value, current, key, save = onSaveMock) => {
     const n = Number(value);
-    if (value !== '' && Number.isFinite(n) && n !== current) onSaveMock({ [key]: n });
+    if (value !== '' && Number.isFinite(n) && n !== current) save({ [key]: n });
   }, [onSaveMock]);
 
   const isMock = printer?.driver === 'mock';
@@ -109,7 +109,8 @@ export default function PrinterTab({
         <div className="printer-status">
           <span className={`sys-dot ${
             !printer ? '' : !printer.connected ? 'sys-dot--red'
-              : printer.ready ? 'sys-dot--green' : 'sys-dot--yellow'
+              : (!printer.ready || printer.media_low) ? 'sys-dot--yellow'
+              : 'sys-dot--green'
           }`} />
           <div className="printer-status__text">
             <span className="printer-status__value">
@@ -122,8 +123,12 @@ export default function PrinterTab({
             </span>
           </div>
 
+          {/* Absent is not empty: a printer with no marker reporting shows no
+              number at all rather than a zero it has not earned. */}
           {remaining != null && (
-            <div className="printer-status__media">
+            <div className={`printer-status__media ${
+              printer.media_low ? 'printer-status__media--low' : ''
+            }`}>
               <span className="printer-status__media-value">{remaining}</span>
               <span className="printer-status__media-label">
                 prints left{printer?.media_type ? ` · ${printer.media_type}` : ''}
@@ -131,6 +136,14 @@ export default function PrinterTab({
             </div>
           )}
         </div>
+
+        {printer?.media_low && (
+          <div className="sys-action-result sys-action-result--err">
+            {remaining > 0
+              ? `Media is running low — ${remaining} prints left. Find the spare roll.`
+              : 'Out of media — prints will fail until the roll is replaced.'}
+          </div>
+        )}
 
         {isMock && (
           <div className="printer-mock-banner">
@@ -177,6 +190,24 @@ export default function PrinterTab({
             autoCapitalize="off"
             autoCorrect="off"
             spellCheck={false}
+          />
+        </label>
+
+        <label className="admin-field printer-field--wide">
+          <span className="admin-field__label">Warn when prints left drops below</span>
+          <input
+            className="admin-field__input"
+            type="number"
+            min="0"
+            step="1"
+            key={`lowat-${config?.printer_media_low_threshold}`}
+            defaultValue={config?.printer_media_low_threshold ?? 25}
+            onBlur={(e) => commitNumber(
+              e.target.value,
+              config?.printer_media_low_threshold,
+              'printer_media_low_threshold',
+              onSaveConfig,
+            )}
           />
         </label>
 

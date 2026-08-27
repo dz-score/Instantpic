@@ -158,7 +158,8 @@ export default function SystemTab({ getDiagnostics, emergencyAction, changePin, 
             <div className="sys-diag-card__header">
               <span className={`sys-dot ${
                 !printer ? '' : !printer.connected ? 'sys-dot--red'
-                  : printer.ready ? 'sys-dot--green' : 'sys-dot--yellow'
+                  : (!printer.ready || printer.media_low) ? 'sys-dot--yellow'
+                  : 'sys-dot--green'
               }`} />
               <span className="sys-diag-card__label">Printer</span>
             </div>

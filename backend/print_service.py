@@ -27,6 +27,7 @@ import subprocess
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, asdict
 from typing import Dict, Optional
+from urllib.parse import quote
 
 from backend.settings import PrinterMockConfig, SettingsService
 from backend.logger import log
@@ -85,6 +86,11 @@ class PrinterStatus:
     # report markers. Absent is not the same as empty, so keep them Optional.
     media_type: Optional[str] = None
     prints_remaining: Optional[int] = None
+    # Whether prints_remaining has crossed the operator's threshold. Decided by
+    # PrintService, not the driver (which has no config) and not the UI (Rule 14
+    # — "is this low?" is a booth decision, and one authority for it means the
+    # admin panel and the log can never disagree about it).
+    media_low: bool = False
 
     def to_dict(self):
         return asdict(self)
@@ -134,6 +140,86 @@ class CupsPrinterDriver(PrinterDriver):
 
     def __init__(self, printer_name: str):
         self.printer_name = printer_name
+        # Latched on the first attempt; see _ipp_attributes.
+        self._ipptool_missing = False
+
+    # ── Consumables ───────────────────────────────────────────────────────────
+
+    # Stock ipptool test that asks a queue for everything it knows about itself.
+    # Read-only, and it goes through cupsd — which is the point. The Gutenprint
+    # backend that reports these markers owns the USB device while CUPS has the
+    # printer, so invoking it directly would be fighting the daemon for the port.
+    IPPTOOL_TEST = "/usr/share/cups/ipptool/get-printer-attributes.test"
+    _MARKER_LINE = re.compile(r"^\s*(marker-[a-z-]+)\s*\([^)]*\)\s*=\s*(.*?)\s*$")
+
+    def _ipp_attributes(self) -> Optional[dict]:
+        """Ask cupsd for this queue's marker attributes.
+
+        Returns a {name: value} dict of just the marker-* lines, or None if we
+        could not ask. `ipptool` lives in cups-ipp-utils and is not always
+        installed, so its absence is latched after the first attempt rather than
+        costing a failed subprocess on every 5s status poll.
+        """
+        if self._ipptool_missing:
+            return None
+
+        uri = f"ipp://localhost/printers/{quote(self.printer_name)}"
+        try:
+            r = subprocess.run(
+                ["ipptool", "-t", uri, self.IPPTOOL_TEST],
+                capture_output=True, text=True, timeout=5,
+            )
+        except FileNotFoundError:
+            self._ipptool_missing = True
+            log.info("printer", "printer_markers_unavailable",
+                     "ipptool is not installed — no media reporting. "
+                     "Install cups-ipp-utils to see prints remaining.")
+            return None
+        except (subprocess.TimeoutExpired, OSError):
+            return None
+
+        found = {}
+        for line in r.stdout.splitlines():
+            m = self._MARKER_LINE.match(line)
+            if m:
+                found[m.group(1)] = m.group(2)
+        return found or None
+
+    def _read_media(self) -> tuple:
+        """(media_type, prints_remaining) from CUPS marker attributes.
+
+        UNVERIFIED against a real DS-RX1HS — written from the CUPS marker
+        convention and Gutenprint's changelog, not from output anyone has seen.
+        Run backend/tools/printer_markers_probe.py against the printer and
+        correct this against what it actually prints; the probe exists precisely
+        so that is a five-minute job rather than a guess.
+
+        The count comes from `marker-message` rather than `marker-levels`
+        because CUPS marker-levels is a 0-100 percentage (and -1/-2/-3 for
+        unknown), while the dyesub backend puts the native prints-remaining in
+        the message. Anything unparseable yields None: absent is not empty, and
+        reporting a confident zero for a full roll would be worse than silence.
+        """
+        markers = self._ipp_attributes()
+        if not markers:
+            return None, None
+
+        remaining = None
+        message = markers.get("marker-message", "")
+        digits = re.search(r"\d+", message)
+        if digits:
+            remaining = int(digits.group())
+
+        # marker-names is what the printer calls its consumable ("Ribbon"); the
+        # message usually carries the size. Prefer the size when it is there.
+        media_type = None
+        size = re.search(r"\b(\d+x\d+)\b", message)
+        if size:
+            media_type = size.group(1)
+        elif markers.get("marker-names"):
+            media_type = markers["marker-names"]
+
+        return media_type, remaining
 
     # ── lpstat helpers ────────────────────────────────────────────────────────
 
@@ -324,11 +410,15 @@ class CupsPrinterDriver(PrinterDriver):
                 status_text = output[:80]
                 ready = True
 
+            media_type, prints_remaining = self._read_media()
+
             return PrinterStatus(
                 connected=True,
                 ready=ready,
                 printer_name=self.printer_name,
                 status_text=status_text,
+                media_type=media_type,
+                prints_remaining=prints_remaining,
             )
 
         except subprocess.TimeoutExpired:
@@ -539,6 +629,9 @@ class PrintService:
         self._driver: Optional[PrinterDriver] = None
         self._cached_status: Optional[PrinterStatus] = None
         self._status_cache_time: float = 0
+        # Last media band we told the log about — None until the first reading.
+        # See _apply_media_policy for why this is edge-triggered.
+        self._media_band: Optional[str] = None
         # No driver built here — Rule 19 forbids work in a constructor. Every public
         # entry point (print/get_status/cancel_all) calls _reload_driver() anyway.
 
@@ -658,6 +751,48 @@ class PrintService:
             duration_ms=elapsed_ms(),
         )
 
+    def _apply_media_policy(self, status: PrinterStatus) -> None:
+        """Decide whether the ribbon counts as low, and say so once per crossing.
+
+        The threshold is config and the driver has none, so this is the one place
+        that can make the call — which also means the admin panel and the log can
+        never disagree about it (Rule 14).
+
+        Edge-triggered on purpose. The admin panel polls status every five
+        seconds; a level-triggered warning would be seven hundred identical
+        lines an hour, and a log nobody can read a session out of is the first
+        thing Rule 16 loses.
+        """
+        remaining = status.prints_remaining
+        if remaining is None:
+            # No reporting at all (an inkjet, no ipptool, a backend that does not
+            # answer). Absent is not empty — say nothing and claim nothing.
+            self._media_band = None
+            return
+
+        threshold = self._settings.get().printer_media_low_threshold
+        band = "empty" if remaining <= 0 else "low" if remaining <= threshold else "ok"
+        status.media_low = band != "ok"
+
+        if band == self._media_band:
+            return
+        previous, self._media_band = self._media_band, band
+
+        data = {"prints_remaining": remaining, "threshold": threshold,
+                "media_type": status.media_type}
+        if band == "empty":
+            log.error("printer", "printer_media_empty",
+                      "Printer is out of media — prints will fail until it is reloaded",
+                      data=data)
+        elif band == "low":
+            log.warn("printer", "printer_media_low",
+                     f"Printer media is low: {remaining} prints left "
+                     f"(warning below {threshold})", data=data)
+        elif previous is not None:
+            log.info("printer", "printer_media_ok",
+                     f"Printer media back above the warning level: "
+                     f"{remaining} prints left", data=data)
+
     def get_status(self) -> PrinterStatus:
         """Get printer status with caching to avoid spamming lpstat."""
         now = time.monotonic()
@@ -665,7 +800,9 @@ class PrintService:
             return self._cached_status
 
         self._reload_driver()
-        self._cached_status = self._driver.get_status()
+        status = self._driver.get_status()
+        self._apply_media_policy(status)
+        self._cached_status = status
         self._status_cache_time = now
 
         log.debug("printer", "printer_status_check", f"Printer status: {self._cached_status.status_text}", data={

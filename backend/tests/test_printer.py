@@ -116,7 +116,8 @@ def test_print_service_file_not_found(mocker):
     # PrintService takes its settings service, so a stub goes straight in.
     settings_svc = mocker.Mock()
     settings_svc.get.return_value = mocker.Mock(
-        printer_name="mock", printer_options="fit-to-page"
+        printer_name="mock", printer_options="fit-to-page",
+        printer_media_low_threshold=25,
     )
     svc = PrintService(settings_svc)
     result = svc.print("/nonexistent/file.jpg")
@@ -270,7 +271,8 @@ def _service_with_driver(mocker, driver):
     has to survive _reload_driver."""
     settings_svc = mocker.Mock()
     settings_svc.get.return_value = mocker.Mock(
-        printer_name="mock", printer_options="media=4x6"
+        printer_name="mock", printer_options="media=4x6",
+        printer_media_low_threshold=25,
     )
     svc = PrintService(settings_svc)
     mocker.patch.object(svc, "_reload_driver", side_effect=lambda: None)
@@ -373,13 +375,16 @@ def test_print_does_not_claim_a_print_it_cannot_track(mocker, tmp_path):
 
 # ── Mock driver shaped like a DS-RX1HS ───────────────────────────────────────
 
-def _mock_settings(mocker, printer_name="mock", **overrides):
+def _mock_settings(mocker, printer_name="mock", media_low_threshold=25, **overrides):
     """The mock driver's whole behaviour comes from AppSettings.printer_mock,
     so tests configure it the same way the admin panel does."""
     cfg = PrinterMockConfig(**{"job_duration_s": 0.0, **overrides})
     svc = mocker.Mock()
     svc.get.return_value = mocker.Mock(
-        printer_name=printer_name, printer_options="media=4x6", printer_mock=cfg
+        printer_name=printer_name,
+        printer_options="media=4x6",
+        printer_media_low_threshold=media_low_threshold,
+        printer_mock=cfg,
     )
     return svc
 
@@ -578,3 +583,170 @@ def test_service_reports_a_mid_job_jam_as_a_failure(mocker, tmp_path):
 
     assert result.success is False
     assert "Paper jam." in result.error
+
+
+# ── Reading consumables out of CUPS ──────────────────────────────────────────
+
+# What ipptool prints for a queue that reports media. UNVERIFIED against a real
+# DS-RX1HS — see backend/tools/printer_markers_probe.py, which exists to replace
+# this with the truth. If the probe disagrees, this fixture is what changes.
+IPPTOOL_OUTPUT = """\
+"/usr/share/cups/ipptool/get-printer-attributes.test":
+    Get-Printer-Attributes:
+        attributes-charset (charset) = utf-8
+        printer-state (enum) = idle
+        marker-change-time (integer) = 1756290000
+        marker-colors (1setOf nameWithoutLanguage) = #00FFFF#FF00FF#FFFF00
+        marker-high-levels (1setOf integer) = 100
+        marker-levels (1setOf integer) = 87
+        marker-low-levels (1setOf integer) = 10
+        marker-message (textWithoutLanguage) = 612 native prints remaining on 4x6 ribbon
+        marker-names (1setOf nameWithoutLanguage) = Ribbon
+        marker-types (1setOf keyword) = ribbon
+    [PASS]
+"""
+
+
+def test_ipp_attributes_keeps_only_the_marker_lines(mocker):
+    run = mocker.patch("backend.print_service.subprocess.run")
+    run.return_value = subprocess.CompletedProcess(
+        args=[], returncode=0, stdout=IPPTOOL_OUTPUT, stderr="")
+
+    markers = CupsPrinterDriver("DS-RX1")._ipp_attributes()
+
+    assert markers["marker-names"] == "Ribbon"
+    assert markers["marker-levels"] == "87"
+    assert "612 native prints remaining" in markers["marker-message"]
+    assert "printer-state" not in markers
+
+
+def test_ipp_attributes_latches_a_missing_ipptool(mocker):
+    """cups-ipp-utils is not always installed. Without the latch its absence
+    would cost a failed subprocess on every 5s status poll, forever."""
+    run = mocker.patch("backend.print_service.subprocess.run",
+                       side_effect=FileNotFoundError())
+    driver = CupsPrinterDriver("DS-RX1")
+
+    assert driver._ipp_attributes() is None
+    assert driver._ipp_attributes() is None
+    assert driver._ipp_attributes() is None
+
+    assert run.call_count == 1
+
+
+def test_read_media_takes_the_count_from_the_message(mocker):
+    """marker-levels is a 0-100 percentage by CUPS convention; the dyesub
+    backend puts the native prints-remaining in marker-message. Taking 87 here
+    would be reporting a percentage as a print count."""
+    driver = CupsPrinterDriver("DS-RX1")
+    mocker.patch.object(driver, "_ipp_attributes", return_value={
+        "marker-levels": "87",
+        "marker-message": "612 native prints remaining on 4x6 ribbon",
+        "marker-names": "Ribbon",
+    })
+
+    media_type, remaining = driver._read_media()
+
+    assert remaining == 612
+    assert media_type == "4x6"
+
+
+def test_read_media_falls_back_to_the_marker_name(mocker):
+    driver = CupsPrinterDriver("DS-RX1")
+    mocker.patch.object(driver, "_ipp_attributes", return_value={
+        "marker-message": "300 prints remaining",
+        "marker-names": "Ribbon",
+    })
+    assert driver._read_media() == ("Ribbon", 300)
+
+
+def test_read_media_claims_nothing_without_markers(mocker):
+    """Absent is not empty. A printer that cannot report must not be shown as
+    a spent one."""
+    driver = CupsPrinterDriver("DS-RX1")
+    mocker.patch.object(driver, "_ipp_attributes", return_value=None)
+    assert driver._read_media() == (None, None)
+
+
+def test_read_media_survives_an_unparseable_message(mocker):
+    driver = CupsPrinterDriver("DS-RX1")
+    mocker.patch.object(driver, "_ipp_attributes", return_value={
+        "marker-message": "Ribbon status unknown",
+    })
+    assert driver._read_media() == (None, None)
+
+
+# ── The low-media threshold ──────────────────────────────────────────────────
+
+def _poll(svc):
+    """A status read that actually reaches the driver — get_status caches for
+    five seconds and we are testing what happens across polls."""
+    svc._status_cache_time = 0
+    return svc.get_status()
+
+
+def test_media_low_is_set_below_the_threshold(mocker):
+    svc = PrintService(_mock_settings(mocker, media_total=10, media_low_threshold=25))
+    status = _poll(svc)
+    assert status.prints_remaining == 10
+    assert status.media_low is True
+
+
+def test_media_low_is_clear_above_the_threshold(mocker):
+    svc = PrintService(_mock_settings(mocker, media_total=700, media_low_threshold=25))
+    assert _poll(svc).media_low is False
+
+
+def test_media_low_is_never_claimed_without_a_reading(mocker):
+    """A driver with no marker reporting leaves prints_remaining None, and the
+    threshold must not turn that into 'low'."""
+    svc = PrintService(_mock_settings(mocker))
+    mocker.patch.object(MockPrinterDriver, "get_status", return_value=PrinterStatus(
+        connected=True, ready=True, printer_name="mock", status_text="Idle",
+    ))
+    status = _poll(svc)
+    assert status.prints_remaining is None
+    assert status.media_low is False
+
+
+def test_low_media_is_logged_once_per_crossing(mocker):
+    """The admin panel polls every five seconds. Level-triggered, this would be
+    seven hundred identical lines an hour."""
+    log = mocker.patch("backend.print_service.log")
+    svc = PrintService(_mock_settings(mocker, media_total=10, media_low_threshold=25))
+
+    for _ in range(5):
+        _poll(svc)
+
+    warnings = [c for c in log.warn.call_args_list if c[0][1] == "printer_media_low"]
+    assert len(warnings) == 1
+
+
+def test_an_empty_roll_is_an_error_not_a_warning(mocker):
+    log = mocker.patch("backend.print_service.log")
+    svc = PrintService(_mock_settings(mocker, media_total=0, media_low_threshold=25))
+
+    _poll(svc)
+
+    assert [c for c in log.error.call_args_list if c[0][1] == "printer_media_empty"]
+
+
+def test_reloading_the_roll_is_reported_and_rearms_the_warning(mocker):
+    log = mocker.patch("backend.print_service.log")
+    settings = _mock_settings(mocker, media_total=10, media_low_threshold=25)
+    svc = PrintService(settings)
+    _poll(svc)
+
+    # A fresh roll goes in.
+    settings.get.return_value.printer_mock = PrinterMockConfig(
+        job_duration_s=0.0, media_total=700)
+    assert _poll(svc).media_low is False
+    assert [c for c in log.info.call_args_list if c[0][1] == "printer_media_ok"]
+
+    # ...and runs down again. The warning must fire a second time.
+    settings.get.return_value.printer_mock = PrinterMockConfig(
+        job_duration_s=0.0, media_total=5)
+    _poll(svc)
+
+    warnings = [c for c in log.warn.call_args_list if c[0][1] == "printer_media_low"]
+    assert len(warnings) == 2

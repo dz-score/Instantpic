@@ -14,6 +14,7 @@ router = APIRouter(tags=["config"])
 class ConfigUpdateRequest(BaseModel):
     printer_name: Optional[str] = None
     printer_options: Optional[str] = None
+    printer_media_low_threshold: Optional[int] = None
     max_photos: Optional[int] = None
     disk_min_free_gb: Optional[float] = None
     couple_names: Optional[str] = None
