@@ -341,10 +341,7 @@ class StateMachine:
         every touch, which the backend cannot observe, so it stays where it is.
         This is the floor underneath it — for when that timer can never fire at
         all because the kiosk tab crashed, froze, or lost the network. Ending a
-        session is workflow, and workflow is backend-owned (Rule 1); leaving it
-        solely to the browser meant a tab that died at REVEAL or PICK_FAVORITE
-        stranded the booth in that screen indefinitely, so the next guest walked
-        up to the previous guest's photos.
+        session is workflow, and workflow is backend-owned (Rule 1).
 
         Two windows, because the two failures differ in kind:
           - COUNTDOWN keeps capture_stall_timeout: a tight, capture-specific

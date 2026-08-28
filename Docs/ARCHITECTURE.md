@@ -189,12 +189,9 @@ Each state change broadcasts via `sse_svc.dispatch_event("state_update", ...)`. 
 ### `job_queue.py` — Async Work Queue
 **Responsibility:** Offloads blocking work (CPU-bound image processing, shelling out to CUPS) from the asyncio event loop to a thread pool, then reports the result through per-job `on_success`/`on_failure` coroutines supplied by the submitter. The queue does not know or import whoever consumes the results — the submitter owns that wiring.
 
-**Two lanes.** Printing and processing have opposite latency profiles, and
-processing is the one the guest is watching. A print blocks its worker for up
-to ~63s (CUPS 30s timeout + retry delay + 30s retry); on a shared lane a guest
-who tapped "Another" could queue their processing job behind the *previous*
-guest's retrying print and watch the REVEAL spinner through someone else's
-paper jam. Each lane is still strictly serial in itself.
+**Two lanes**, printing and processing, because they have opposite latency
+profiles and processing is the one the guest is watching. Each lane is strictly
+serial in itself. `job_queue.py`'s own docstring carries the reasoning.
 
 **Architecture:**
 ```
@@ -317,8 +314,7 @@ PrintService (built by the lifespan)
 **Printer selection:** determined at runtime by `config.json -> printer_name`.
 `"mock"` -> `MockPrinterDriver`; any other string -> `CupsPrinterDriver` with that
 CUPS queue name. On Windows the mock is selected regardless, which is why
-`PrinterStatus` carries a `driver` field the admin panel shows — a status card
-that looks healthy without saying it is simulated is a lie.
+`PrinterStatus` carries a `driver` field ([CONSTRAINTS](CONSTRAINTS.md) §10).
 
 See [PRINTER_NOTES.md](PRINTER_NOTES.md) for the DNP DS-RX1HS specifics and for
 which parts of the CUPS integration are still unverified against hardware.
@@ -481,7 +477,7 @@ Mounts `<App />` into `#root`. Minimal boilerplate.
 | `useCamera(cameraStatus)` | Preview URL, capture, standby, resume |
 | `useApi(isOnline)` | All REST calls, config, events |
 
-**Screen routing:** driven entirely by `appState.screen` from the backend FSM. The frontend has **no independent state machine** — it reflects what the backend tells it.
+**Screen routing:** driven entirely by `appState.screen` from the backend FSM — the frontend has no state machine of its own ([CONSTRAINTS](CONSTRAINTS.md) §5).
 
 **Inactivity timer:** `pointerdown` resets a `setTimeout` of `config.session_timeout` seconds. On expiry, fires `api.sendEvent('TIMEOUT')`.
 
