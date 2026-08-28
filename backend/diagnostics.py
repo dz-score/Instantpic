@@ -51,8 +51,13 @@ def get_diagnostics(settings: AppSettings, print_svc: PrintService, led=None):
         diag["led"] = led.health()
     return diag
 
-def execute_emergency(action: str):
-    """Execute an emergency control action."""
+def execute_emergency(action: str, print_svc: PrintService = None):
+    """Execute an emergency control action.
+
+    `print_svc` is required for clear_queue: shelling out to `cancel` from here
+    would leave an in-flight await_job reporting the cancelled job as a finished
+    print (Rule 5 — the print service owns printer access).
+    """
     if sys.platform == "win32":
         return {
             "status": "mock",
@@ -84,9 +89,12 @@ def execute_emergency(action: str):
             return {"status": "success", "detail": "CUPS service restarted"}
         
         elif action == "clear_queue":
-            subprocess.run(["cancel", "-a"],
-                         capture_output=True, timeout=5)
-            return {"status": "success", "detail": "Print queue cleared"}
+            if print_svc is None:
+                return {"status": "error",
+                        "detail": "Print service unavailable; queue not cleared"}
+            ok = print_svc.cancel_all()
+            return {"status": "success" if ok else "error",
+                    "detail": "Print queue cleared" if ok else "Could not clear the print queue"}
         
         else:
             return {"status": "error", "detail": f"Unknown action: {action}"}

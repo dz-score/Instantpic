@@ -19,6 +19,7 @@ means paper, never acceptance — see CONSTRAINTS.md §10 and PRINTER_NOTES.md.
 import os
 import re
 import sys
+import threading
 import time
 import subprocess
 from abc import ABC, abstractmethod
@@ -49,6 +50,7 @@ JOB_COMPLETED = "completed"
 JOB_FAILED = "failed"      # printer stopped mid-job: out of media, jam, powered off
 JOB_TIMEOUT = "timeout"    # still not terminal when we gave up waiting
 JOB_UNKNOWN = "unknown"    # we lost the ability to observe the job at all
+JOB_ABORTED = "aborted"    # we stopped waiting on purpose: shutdown, or cancelled
 
 
 @dataclass
@@ -132,10 +134,14 @@ class CupsPrinterDriver(PrinterDriver):
     # job. One hiccup while cupsd reloads should not fail a good print.
     OBSERVE_FAILURE_LIMIT = 3
 
-    def __init__(self, printer_name: str):
+    def __init__(self, printer_name: str, abort: Optional[threading.Event] = None):
         self.printer_name = printer_name
         # Latched on the first attempt; see _ipp_attributes.
         self._ipptool_missing = False
+        # Set when the booth is stopping. await_job runs in a thread pool, where
+        # cancelling the awaiting coroutine does nothing, so without this a
+        # shutdown waits out the whole JOB_TIMEOUT_S.
+        self._abort = abort if abort is not None else threading.Event()
 
     # ── Consumables ───────────────────────────────────────────────────────────
 
@@ -350,7 +356,10 @@ class CupsPrinterDriver(PrinterDriver):
                     JOB_TIMEOUT,
                     f"Job {job_id} still queued after {timeout_s:.0f}s",
                 )
-            time.sleep(self.JOB_POLL_INTERVAL_S)
+            # Doubles as the poll interval and the shutdown check: a set abort
+            # returns immediately instead of sleeping out the last interval.
+            if self._abort.wait(self.JOB_POLL_INTERVAL_S):
+                return JobOutcome(JOB_ABORTED, "Stopped waiting on this job")
 
     def get_status(self) -> PrinterStatus:
         try:
@@ -454,9 +463,12 @@ class MockPrinterDriver(PrinterDriver):
     _END_OUT_OF_MEDIA = "out_of_media"
     _END_JAM = "abort_mid_job"
 
-    def __init__(self, printer_name: str = "mock", settings: Optional[SettingsService] = None):
+    def __init__(self, printer_name: str = "mock",
+                 settings: Optional[SettingsService] = None,
+                 abort: Optional[threading.Event] = None):
         self.printer_name = printer_name
         self._settings = settings
+        self._abort = abort if abort is not None else threading.Event()
         self._job_counter = 0
         # Seeded on first use, not here: constructors do no work (Rule 19), and
         # a later media_total edit then reads as "a fresh roll went in".
@@ -522,20 +534,28 @@ class MockPrinterDriver(PrinterDriver):
         cfg = self._cfg()
         ending = self._pending.pop(job_id, self._END_OK)
 
+        # Waiting on the abort rather than sleeping, so a shutdown mid-print
+        # behaves here the way it does against a real printer.
+        def elapse(seconds: float) -> bool:
+            return self._abort.wait(seconds)
+
         # A job that would outlast the caller's patience times out here rather
         # than quietly finishing, so the timeout path is reachable in dev.
         if cfg.job_duration_s > timeout_s:
-            time.sleep(timeout_s)
+            if elapse(timeout_s):
+                return JobOutcome(JOB_ABORTED, "Stopped waiting on this job")
             return JobOutcome(JOB_TIMEOUT, f"Job {job_id} still queued after {timeout_s:.0f}s")
 
         if ending == self._END_OK:
-            time.sleep(cfg.job_duration_s)
+            if elapse(cfg.job_duration_s):
+                return JobOutcome(JOB_ABORTED, "Stopped waiting on this job")
             self._media_remaining = max(0, self._media_remaining - 1)
             return JobOutcome(JOB_COMPLETED)
 
         # Both faults surface partway through, which is the point of them: they
         # land after the guest has already been told the print is on its way.
-        time.sleep(cfg.job_duration_s / 2)
+        if elapse(cfg.job_duration_s / 2):
+            return JobOutcome(JOB_ABORTED, "Stopped waiting on this job")
         if ending == self._END_OUT_OF_MEDIA:
             return JobOutcome(JOB_FAILED, "Media tray empty.")
         return JobOutcome(JOB_FAILED, "Paper jam.")
@@ -603,6 +623,12 @@ class PrintService:
         # Last media band we told the log about — None until the first reading.
         # See _apply_media_policy for why this is edge-triggered.
         self._media_band: Optional[str] = None
+        # Handed to every driver so a shutdown can cut a wait short.
+        self._abort = threading.Event()
+        # Bumped by cancel_all. A job that leaves the CUPS queue looks identical
+        # whether it printed or was cancelled, so the only way to tell is to
+        # know we did the cancelling.
+        self._cancel_epoch = 0
         # No driver built here — Rule 19 forbids work in a constructor. Every public
         # entry point (print/get_status/cancel_all) calls _reload_driver() anyway.
 
@@ -623,8 +649,12 @@ class PrintService:
 
         # The mock is handed the service, not a snapshot: its faults and timings
         # are meant to be changed from the admin panel and take effect now.
-        self._driver = MockPrinterDriver(name, self._settings) if want is MockPrinterDriver             else CupsPrinterDriver(name)
-        log.info("printer", "printer_driver_loaded", f"Using {want.__name__}", data={"printer_name": name})
+        if want is MockPrinterDriver:
+            self._driver = MockPrinterDriver(name, self._settings, self._abort)
+        else:
+            self._driver = CupsPrinterDriver(name, self._abort)
+        log.info("printer", "printer_driver_loaded", f"Using {want.__name__}",
+                 data={"printer_name": name})
 
     def print(self, filepath: str) -> PrintResult:
         """
@@ -667,7 +697,9 @@ class PrintService:
                 "filename": filename,
                 "error": result.error,
             })
-            time.sleep(self.RETRY_DELAY_S)
+            if self._abort.wait(self.RETRY_DELAY_S):
+                return PrintResult(success=False, error="Booth is shutting down",
+                                   duration_ms=elapsed_ms())
             result = self._driver.print_file(filepath, options)
 
         if not result.success:
@@ -694,10 +726,20 @@ class PrintService:
             "job_id": result.job_id,
         })
 
+        epoch = self._cancel_epoch
         outcome = self._driver.await_job(result.job_id, self.JOB_TIMEOUT_S)
 
         # Invalidate status cache — the printer has moved since we last looked.
         self._status_cache_time = 0
+
+        # A cancelled job leaves the queue exactly as a finished one does, so the
+        # driver reports it as completed. Only this service knows the difference,
+        # because only it was told to cancel. Without this, clearing the queue —
+        # which an operator does *because* a print went wrong — tells the guest
+        # their photo is ready.
+        if outcome.ok and self._cancel_epoch != epoch:
+            outcome = JobOutcome(JOB_ABORTED,
+                                 "Print queue was cleared before the job finished")
 
         if outcome.ok:
             log.info("printer", "printer_job_done", f"Print completed: {filename}", dur=elapsed_ms(), data={
@@ -776,8 +818,14 @@ class PrintService:
         return self._cached_status
 
     def cancel_all(self) -> bool:
-        """Cancel all pending print jobs."""
+        """Cancel all pending print jobs.
+
+        Every route to `cancel` must come through here, including the admin
+        panel's emergency action: the epoch bump is what stops an in-flight
+        await_job reporting the cancelled job as a finished print.
+        """
         self._reload_driver()
+        self._cancel_epoch += 1
         success = self._driver.cancel_all()
         if success:
             log.info("printer", "printer_queue_cleared", "All print jobs cancelled")
@@ -787,9 +835,15 @@ class PrintService:
         return success
 
     def shutdown(self):
-        """Clean shutdown of the print service."""
+        """Stop waiting on anything in flight.
+
+        A print sits in a thread-pool worker, where cancelling the awaiting
+        coroutine does not reach it. Without this the interpreter waits for that
+        thread on the way out — up to JOB_TIMEOUT_S, which is longer than
+        systemd will wait for the service to stop.
+        """
         log.info("printer", "printer_shutdown", "Shutting down print service...")
-        # (Could cancel pending jobs here if we were tracking them, but we just let cups handle it)
+        self._abort.set()
 
 # No module-level singleton: PrintService needs settings, and the composition root
 # (main.py's lifespan) is the one place that has them. It builds the service and

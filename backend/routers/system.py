@@ -178,11 +178,14 @@ async def led_channel(
 
 
 @router.post("/api/emergency")
-async def emergency_action(req: EmergencyRequest):
+async def emergency_action(
+    req: EmergencyRequest,
+    print_svc: PrintService = Depends(get_print_service),
+):
     from backend.diagnostics import execute_emergency
     log.warn("system", "system_emergency", f"Emergency action triggered: {req.action}", data={"action": req.action})
-    result = execute_emergency(req.action)
-    return result
+    # Off the loop: clear_queue shells out, and restart_printer waits on systemd.
+    return await anyio.to_thread.run_sync(execute_emergency, req.action, print_svc)
 
 
 def _get_lan_ip():

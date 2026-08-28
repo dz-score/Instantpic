@@ -4,9 +4,28 @@ import pytest
 from backend.print_service import (
     PrintService, CupsPrinterDriver, MockPrinterDriver,
     PrintResult, PrinterStatus, JobOutcome,
-    JOB_COMPLETED, JOB_FAILED, JOB_TIMEOUT, JOB_UNKNOWN,
+    JOB_ABORTED, JOB_COMPLETED, JOB_FAILED, JOB_TIMEOUT, JOB_UNKNOWN,
 )
 from backend.settings import PrinterMockConfig
+
+
+class InstantAbort:
+    """Abort event that never blocks. Waits are recorded rather than slept, so a
+    test can assert on a print's duration without spending it."""
+
+    def __init__(self):
+        self._set = False
+        self.waits = []
+
+    def set(self):
+        self._set = True
+
+    def is_set(self):
+        return self._set
+
+    def wait(self, timeout=None):
+        self.waits.append(timeout)
+        return self._set
 
 
 def test_mock_driver_success():
@@ -117,7 +136,7 @@ def test_print_service_file_not_found(mocker):
     settings_svc = mocker.Mock()
     settings_svc.get.return_value = mocker.Mock(
         printer_name="mock", printer_options="fit-to-page",
-        printer_media_low_threshold=25,
+        printer_media_low_threshold=25, prints_used=0, print_allowance=150,
     )
     svc = PrintService(settings_svc)
     result = svc.print("/nonexistent/file.jpg")
@@ -186,8 +205,7 @@ def test_stop_reason_none_while_running(mocker):
 
 def test_await_job_completed_when_job_leaves_queue(mocker):
     """Job present, then gone, and the queue never stopped -> completed."""
-    mocker.patch("backend.print_service.time.sleep")
-    driver = CupsPrinterDriver("DS-RX1")
+    driver = CupsPrinterDriver("DS-RX1", InstantAbort())
     mocker.patch.object(driver, "_queued_job_ids",
                         side_effect=[{"DS-RX1-42"}, {"DS-RX1-42"}, set()])
     mocker.patch.object(driver, "_stop_reason", return_value=None)
@@ -200,8 +218,7 @@ def test_await_job_completed_when_job_leaves_queue(mocker):
 
 def test_await_job_failed_when_queue_stops_with_job_still_in_it(mocker):
     """Out of media / jam / power-off: the queue stops and holds our job."""
-    mocker.patch("backend.print_service.time.sleep")
-    driver = CupsPrinterDriver("DS-RX1")
+    driver = CupsPrinterDriver("DS-RX1", InstantAbort())
     mocker.patch.object(driver, "_queued_job_ids", return_value={"DS-RX1-42"})
     mocker.patch.object(driver, "_stop_reason", return_value="Media tray empty.")
 
@@ -215,8 +232,7 @@ def test_await_job_failed_when_queue_stops_with_job_still_in_it(mocker):
 def test_await_job_ignores_a_stopped_queue_once_our_job_is_gone(mocker):
     """A queue stopped AFTER our job finished must not fail a print that
     already came out - the job leaving is checked first."""
-    mocker.patch("backend.print_service.time.sleep")
-    driver = CupsPrinterDriver("DS-RX1")
+    driver = CupsPrinterDriver("DS-RX1", InstantAbort())
     mocker.patch.object(driver, "_queued_job_ids", return_value=set())
     stop = mocker.patch.object(driver, "_stop_reason", return_value="Media tray empty.")
 
@@ -228,8 +244,7 @@ def test_await_job_ignores_a_stopped_queue_once_our_job_is_gone(mocker):
 
 def test_await_job_times_out_while_still_queued(mocker):
     """Still queued at the deadline, with a healthy queue, is a timeout."""
-    mocker.patch("backend.print_service.time.sleep")
-    driver = CupsPrinterDriver("DS-RX1")
+    driver = CupsPrinterDriver("DS-RX1", InstantAbort())
     mocker.patch.object(driver, "_queued_job_ids", return_value={"DS-RX1-42"})
     mocker.patch.object(driver, "_stop_reason", return_value=None)
 
@@ -241,8 +256,7 @@ def test_await_job_times_out_while_still_queued(mocker):
 
 def test_await_job_tolerates_one_lpstat_hiccup(mocker):
     """A single unobservable poll must not fail an otherwise good print."""
-    mocker.patch("backend.print_service.time.sleep")
-    driver = CupsPrinterDriver("DS-RX1")
+    driver = CupsPrinterDriver("DS-RX1", InstantAbort())
     mocker.patch.object(driver, "_queued_job_ids",
                         side_effect=[{"DS-RX1-42"}, None, set()])
     mocker.patch.object(driver, "_stop_reason", return_value=None)
@@ -252,8 +266,7 @@ def test_await_job_tolerates_one_lpstat_hiccup(mocker):
 
 def test_await_job_unknown_when_lpstat_keeps_failing(mocker):
     """Persistent blindness is reported, not papered over as success."""
-    mocker.patch("backend.print_service.time.sleep")
-    driver = CupsPrinterDriver("DS-RX1")
+    driver = CupsPrinterDriver("DS-RX1", InstantAbort())
     mocker.patch.object(driver, "_queued_job_ids", return_value=None)
 
     outcome = driver.await_job("DS-RX1-42", timeout_s=90)
@@ -272,9 +285,10 @@ def _service_with_driver(mocker, driver):
     settings_svc = mocker.Mock()
     settings_svc.get.return_value = mocker.Mock(
         printer_name="mock", printer_options="media=4x6",
-        printer_media_low_threshold=25,
+        printer_media_low_threshold=25, prints_used=0, print_allowance=150,
     )
     svc = PrintService(settings_svc)
+    svc._abort = InstantAbort()
     mocker.patch.object(svc, "_reload_driver", side_effect=lambda: None)
     svc._driver = driver
     return svc
@@ -375,7 +389,8 @@ def test_print_does_not_claim_a_print_it_cannot_track(mocker, tmp_path):
 
 # ── Mock driver shaped like a DS-RX1HS ───────────────────────────────────────
 
-def _mock_settings(mocker, printer_name="mock", media_low_threshold=25, **overrides):
+def _mock_settings(mocker, printer_name="mock", media_low_threshold=25,
+                   prints_used=0, print_allowance=150, **overrides):
     """The mock driver's whole behaviour comes from AppSettings.printer_mock,
     so tests configure it the same way the admin panel does."""
     cfg = PrinterMockConfig(**{"job_duration_s": 0.0, **overrides})
@@ -384,39 +399,61 @@ def _mock_settings(mocker, printer_name="mock", media_low_threshold=25, **overri
         printer_name=printer_name,
         printer_options="media=4x6",
         printer_media_low_threshold=media_low_threshold,
+        prints_used=prints_used,
+        print_allowance=print_allowance,
         printer_mock=cfg,
     )
     return svc
 
 
-def _mock_driver(mocker, **overrides):
-    return MockPrinterDriver("mock", _mock_settings(mocker, **overrides))
+def _mock_driver(mocker, abort=None, **overrides):
+    return MockPrinterDriver("mock", _mock_settings(mocker, **overrides),
+                             abort if abort is not None else InstantAbort())
+
+
+def _service(settings):
+    """PrintService whose waits do not cost real time. Swapped before the first
+    call, because _reload_driver hands the event to the driver it builds."""
+    svc = PrintService(settings)
+    svc._abort = InstantAbort()
+    return svc
 
 
 def test_mock_await_takes_the_configured_print_time(mocker):
     """The guest watches the printing animation for exactly this long, so the
-    number has to reach the sleep."""
-    sleep = mocker.patch("backend.print_service.time.sleep")
-    driver = _mock_driver(mocker, job_duration_s=13.0)
+    number has to reach the wait."""
+    abort = InstantAbort()
+    driver = _mock_driver(mocker, abort=abort, job_duration_s=13.0)
 
     job = driver.print_file("/tmp/p.jpg", "")
     assert driver.await_job(job.job_id, timeout_s=90).state == JOB_COMPLETED
-    sleep.assert_called_once_with(13.0)
+    assert abort.waits == [13.0]
 
 
 def test_mock_submit_is_instant(mocker):
-    """Submission must not sleep — that is the whole distinction the two-phase
+    """Submission must not wait — that is the whole distinction the two-phase
     contract exists to make."""
-    sleep = mocker.patch("backend.print_service.time.sleep")
-    _mock_driver(mocker, job_duration_s=13.0).print_file("/tmp/p.jpg", "")
-    sleep.assert_not_called()
+    abort = InstantAbort()
+    _mock_driver(mocker, abort=abort, job_duration_s=13.0).print_file("/tmp/p.jpg", "")
+    assert abort.waits == []
 
 
 def test_mock_times_out_when_the_print_outlasts_the_caller(mocker):
-    mocker.patch("backend.print_service.time.sleep")
     driver = _mock_driver(mocker, job_duration_s=13.0)
     job = driver.print_file("/tmp/p.jpg", "")
     assert driver.await_job(job.job_id, timeout_s=5).state == JOB_TIMEOUT
+
+
+def test_mock_await_gives_up_when_the_booth_is_shutting_down(mocker):
+    """A print sits in a thread pool where cancelling the coroutine does not
+    reach it, so the wait itself has to be interruptible."""
+    abort = InstantAbort()
+    driver = _mock_driver(mocker, abort=abort, job_duration_s=13.0)
+    job = driver.print_file("/tmp/p.jpg", "")
+
+    abort.set()
+
+    assert driver.await_job(job.job_id, timeout_s=90).state == JOB_ABORTED
 
 
 def test_mock_media_counts_down_per_print(mocker):
@@ -536,7 +573,7 @@ def test_reload_driver_keeps_the_instance_so_media_survives(mocker, tmp_path):
     f = tmp_path / "photo.jpg"
     f.write_bytes(b"x")
 
-    svc = PrintService(_mock_settings(mocker, media_total=700))
+    svc = _service(_mock_settings(mocker, media_total=700))
     svc.print(str(f))
     first = svc._driver
 
@@ -550,7 +587,7 @@ def test_reload_driver_keeps_the_instance_so_media_survives(mocker, tmp_path):
 def test_reload_driver_swaps_when_the_queue_name_changes(mocker):
     mocker.patch("backend.print_service.sys.platform", "linux")
     settings = _mock_settings(mocker)
-    svc = PrintService(settings)
+    svc = _service(settings)
 
     # cancel_all reloads unconditionally; get_status can answer from its 5s
     # cache without reselecting, which is fine in production and useless here.
@@ -570,7 +607,7 @@ def test_service_recovers_from_a_first_submission_failure(mocker, tmp_path):
     f = tmp_path / "photo.jpg"
     f.write_bytes(b"x")
 
-    result = PrintService(_mock_settings(mocker, fault="submit_fails_once")).print(str(f))
+    result = _service(_mock_settings(mocker, fault="submit_fails_once")).print(str(f))
 
     assert result.success is True
 
@@ -579,7 +616,7 @@ def test_service_reports_a_mid_job_jam_as_a_failure(mocker, tmp_path):
     f = tmp_path / "photo.jpg"
     f.write_bytes(b"x")
 
-    result = PrintService(_mock_settings(mocker, fault="abort_mid_job")).print(str(f))
+    result = _service(_mock_settings(mocker, fault="abort_mid_job")).print(str(f))
 
     assert result.success is False
     assert "Paper jam." in result.error
@@ -686,21 +723,21 @@ def _poll(svc):
 
 
 def test_media_low_is_set_below_the_threshold(mocker):
-    svc = PrintService(_mock_settings(mocker, media_total=10, media_low_threshold=25))
+    svc = _service(_mock_settings(mocker, media_total=10, media_low_threshold=25))
     status = _poll(svc)
     assert status.prints_remaining == 10
     assert status.media_low is True
 
 
 def test_media_low_is_clear_above_the_threshold(mocker):
-    svc = PrintService(_mock_settings(mocker, media_total=700, media_low_threshold=25))
+    svc = _service(_mock_settings(mocker, media_total=700, media_low_threshold=25))
     assert _poll(svc).media_low is False
 
 
 def test_media_low_is_never_claimed_without_a_reading(mocker):
     """A driver with no marker reporting leaves prints_remaining None, and the
     threshold must not turn that into 'low'."""
-    svc = PrintService(_mock_settings(mocker))
+    svc = _service(_mock_settings(mocker))
     mocker.patch.object(MockPrinterDriver, "get_status", return_value=PrinterStatus(
         connected=True, ready=True, printer_name="mock", status_text="Idle",
     ))
@@ -713,7 +750,7 @@ def test_low_media_is_logged_once_per_crossing(mocker):
     """The admin panel polls every five seconds. Level-triggered, this would be
     seven hundred identical lines an hour."""
     log = mocker.patch("backend.print_service.log")
-    svc = PrintService(_mock_settings(mocker, media_total=10, media_low_threshold=25))
+    svc = _service(_mock_settings(mocker, media_total=10, media_low_threshold=25))
 
     for _ in range(5):
         _poll(svc)
@@ -724,7 +761,7 @@ def test_low_media_is_logged_once_per_crossing(mocker):
 
 def test_an_empty_roll_is_an_error_not_a_warning(mocker):
     log = mocker.patch("backend.print_service.log")
-    svc = PrintService(_mock_settings(mocker, media_total=0, media_low_threshold=25))
+    svc = _service(_mock_settings(mocker, media_total=0, media_low_threshold=25))
 
     _poll(svc)
 
@@ -734,7 +771,7 @@ def test_an_empty_roll_is_an_error_not_a_warning(mocker):
 def test_reloading_the_roll_is_reported_and_rearms_the_warning(mocker):
     log = mocker.patch("backend.print_service.log")
     settings = _mock_settings(mocker, media_total=10, media_low_threshold=25)
-    svc = PrintService(settings)
+    svc = _service(settings)
     _poll(svc)
 
     # A fresh roll goes in.
@@ -750,3 +787,39 @@ def test_reloading_the_roll_is_reported_and_rearms_the_warning(mocker):
 
     warnings = [c for c in log.warn.call_args_list if c[0][1] == "printer_media_low"]
     assert len(warnings) == 2
+
+
+def test_a_cancelled_print_is_not_reported_as_finished(mocker, tmp_path):
+    """Clearing the queue removes the job, which looks exactly like finishing.
+    Only the service knows it did the cancelling — and an operator clears the
+    queue precisely when a print has gone wrong."""
+    f = tmp_path / "photo.jpg"
+    f.write_bytes(b"x")
+
+    driver = mocker.Mock()
+    driver.print_file.return_value = PrintResult(success=True, job_id="DS-RX1-42")
+    driver.cancel_all.return_value = True
+
+    svc = _service_with_driver(mocker, driver)
+
+    def await_and_get_cancelled(job_id, timeout_s):
+        svc.cancel_all()                      # the operator, mid-print
+        return JobOutcome(JOB_COMPLETED)      # the job has left the queue
+    driver.await_job.side_effect = await_and_get_cancelled
+
+    result = svc.print(str(f))
+
+    assert result.success is False
+    assert "cleared" in result.error
+
+
+def test_an_uncancelled_print_still_reports_success(mocker, tmp_path):
+    """The epoch guard must not fire on its own."""
+    f = tmp_path / "photo.jpg"
+    f.write_bytes(b"x")
+
+    driver = mocker.Mock()
+    driver.print_file.return_value = PrintResult(success=True, job_id="DS-RX1-42")
+    driver.await_job.return_value = JobOutcome(JOB_COMPLETED)
+
+    assert _service_with_driver(mocker, driver).print(str(f)).success is True
