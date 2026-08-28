@@ -33,9 +33,7 @@ void anim_countdown(uint32_t t, const mode_params_t *p, canvas_t *c)
     const float trail_deg = final_second ? TRAIL_DEG_FINAL : TRAIL_DEG;
     const float head_val  = final_second ? HEAD_VAL_FINAL : HEAD_VAL;
 
-    /* A dim wash so the ring reads as present rather than off. Kept W-tinted:
-     * this is the half-second before a white key light comes on, and a coloured
-     * trail would fight it. */
+    /* Dim wash, W-tinted — must not fight the white key light that follows. */
     canvas_fill(c, rgbw_white(BACKGROUND));
 
     const float head_deg = (float)(t % REV_MS) / (float)REV_MS * 360.0f;

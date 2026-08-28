@@ -1,17 +1,10 @@
 /* anim.h — one render function per mode.
  *
- * Every animation is a PURE function of elapsed time. No internal state, no
- * accumulators. This is not stylistic:
- *
- *   - The 200 ms cross-fade renders the outgoing AND incoming mode within the
- *     same frame, which is only possible if a mode can be evaluated at an
- *     arbitrary t without having been "running".
- *   - It eliminates drift.
- *   - It makes every animation unit-testable on the host by evaluating it at a
- *     timestamp and asserting on the canvas.
+ * Every animation is a PURE function of elapsed time: no internal state, no
+ * accumulators. Docs/LED_NODE_ARCHITECTURE.md §1 has what depends on that.
  *
  * Finished's sparkles need randomness; they derive it deterministically from t
- * so the function stays pure.
+ * so the function stays pure. Anything else needing randomness must do the same.
  */
 #pragma once
 

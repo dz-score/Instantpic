@@ -155,9 +155,6 @@ Same color, same speed — only intensity and length change.
 
 **Parameters.** `duration_ms`.
 
-**Notes.** 60 px at one rev/s is one pixel per 16.7 ms — sub-pixel rendering is
-mandatory here or the sweep looks steppy.
-
 The ring deliberately does **not** encode which second it is; the screen displays
 the number, and duplicating it in the periphery buys nothing. This also keeps the
 firmware count-agnostic: it gets a duration and spins until told otherwise, so a
