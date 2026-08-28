@@ -742,9 +742,11 @@ class PrintService:
                                  "Print queue was cleared before the job finished")
 
         if outcome.ok:
+            used = self._count_print()
             log.info("printer", "printer_job_done", f"Print completed: {filename}", dur=elapsed_ms(), data={
                 "filename": filename,
                 "job_id": result.job_id,
+                "prints_used": used,
             })
             return PrintResult(success=True, job_id=result.job_id, duration_ms=elapsed_ms())
 
@@ -760,6 +762,17 @@ class PrintService:
             error=outcome.message or f"Print job ended as {outcome.state}",
             duration_ms=elapsed_ms(),
         )
+
+    def _count_print(self) -> int:
+        """Record one print against the event's allowance.
+
+        Counted here because this is the only place that knows a print reached
+        paper — a submission is not a print. Persisted rather than held in
+        memory: a booth restarted mid-event must not hand back the whole budget.
+        """
+        used = self._settings.get().prints_used + 1
+        self._settings.update({"prints_used": used})
+        return used
 
     def _apply_media_policy(self, status: PrinterStatus) -> None:
         """Decide whether the ribbon counts as low, and say so once per crossing.

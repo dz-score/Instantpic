@@ -331,9 +331,11 @@ The complete current state of the booth:
 - `retakeCount` (integer): Number of times the guest has retaken photos
 - `allSessionPhotos` (array): All processed photos from this session with their raw images
 - `isProcessing` (boolean): True if a background job (photo processing, frame application) is running
-- `printStatus` (string): `"idle"` | `"printing"` | `"printed"` | `"failed"`.
-  `"printed"` means the print physically finished, not that CUPS accepted the
-  job — the backend waits the job out before reporting either terminal value.
+- `printStatus` (string): `"idle"` | `"printing"` | `"printed"` | `"failed"` |
+  `"skipped"`. `"printed"` means the print physically finished, not that CUPS
+  accepted the job — the backend waits the job out before reporting a terminal
+  value. `"skipped"` means the event's print allowance is spent: no job was
+  queued, and the guest is shown the QR rather than an error (CONSTRAINTS §10).
 
 ---
 

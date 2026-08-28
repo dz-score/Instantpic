@@ -122,7 +122,7 @@ Every important file in the project, grouped by layer. Use this as a quick-refer
 | [`tabs/EventTab.jsx`](frontend/src/components/admin/tabs/EventTab.jsx) | Admin tab for editing event-specific settings: couple names, event date, welcome/thank-you messages, banner text. |
 | [`tabs/BoothTab.jsx`](frontend/src/components/admin/tabs/BoothTab.jsx) | Admin tab for booth behaviour: countdown duration, flash, retake limit, session timeout, overlay selection, names-on-photo toggle. |
 | [`tabs/CameraTab.jsx`](frontend/src/components/admin/tabs/CameraTab.jsx) | Admin tab showing live camera connection status and allowing gphoto2 settings (ISO, aperture, shutter speed) to be adjusted. |
-| [`tabs/PrinterTab.jsx`](frontend/src/components/admin/tabs/PrinterTab.jsx) | Admin tab for the printer: CUPS queue name, `lp` options, live status and prints remaining, the low-media threshold, and the alignment-card test print. Also exposes the mock printer's timings and simulated faults, but only while the mock is the driver answering. |
+| [`tabs/PrinterTab.jsx`](frontend/src/components/admin/tabs/PrinterTab.jsx) | Admin tab for the printer: CUPS queue name, `lp` options, live status, prints remaining, the low-media threshold, the event's print allowance and its reset, and the alignment-card test print. Also exposes the mock printer's timings and simulated faults, but only while the mock is the driver answering. |
 | [`tabs/SystemTab.jsx`](frontend/src/components/admin/tabs/SystemTab.jsx) | Admin tab for system operations: diagnostics (disk, printer), recent log viewer, emergency actions (restart, clear queue), and PIN change. |
 
 ### `frontend/src/hooks/`

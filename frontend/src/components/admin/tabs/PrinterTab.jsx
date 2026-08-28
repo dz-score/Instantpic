@@ -90,6 +90,9 @@ export default function PrinterTab({
   const isMock = printer?.driver === 'mock';
   const remaining = printer?.prints_remaining;
   const mock = config?.printer_mock || {};
+  const used = printer?.prints_used ?? config?.prints_used ?? 0;
+  const allowance = printer?.print_allowance ?? config?.print_allowance ?? 150;
+  const spent = used >= allowance;
 
   return (
     <div className="printer-tab">
@@ -129,6 +132,25 @@ export default function PrinterTab({
                 prints left{printer?.media_type ? ` · ${printer.media_type}` : ''}
               </span>
             </div>
+          )}
+        </div>
+
+        <div className={`printer-allowance ${spent ? 'printer-allowance--spent' : ''}`}>
+          <div className="printer-allowance__head">
+            <span className="printer-allowance__label">Prints used tonight</span>
+            <span className="printer-allowance__count">{used} / {allowance}</span>
+          </div>
+          <div className="printer-allowance__bar">
+            <div
+              className="printer-allowance__fill"
+              style={{ width: `${Math.min(100, allowance ? (used / allowance) * 100 : 0)}%` }}
+            />
+          </div>
+          {spent && (
+            <p className="printer-hint">
+              The allowance is spent. Sessions still run and guests still get their
+              photo by QR — the print step is skipped until this is raised or reset.
+            </p>
           )}
         </div>
 
@@ -205,6 +227,33 @@ export default function PrinterTab({
             )}
           />
         </label>
+
+        <div className="printer-allowance-row">
+          <label className="admin-field printer-allowance-field">
+            <span className="admin-field__label">Prints allowed this event</span>
+            <input
+              className="admin-field__input"
+              type="number"
+              min="0"
+              step="1"
+              key={`allow-${config?.print_allowance}`}
+              defaultValue={config?.print_allowance ?? 150}
+              onBlur={(e) => commitNumber(
+                e.target.value, config?.print_allowance, 'print_allowance', onSaveConfig)}
+            />
+          </label>
+          <button
+            className="printer-btn"
+            onClick={() => commit({ prints_used: 0 })}
+            disabled={used === 0}
+          >
+            Reset count
+          </button>
+        </div>
+
+        <p className="printer-hint">
+          Raising the allowance leaves the count alone; only Reset zeroes it.
+        </p>
 
         <p className="printer-hint">
           Passed to <code>lp -o</code>, one option per space. <code>scaling=100</code> fills

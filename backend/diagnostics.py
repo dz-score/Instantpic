@@ -7,16 +7,23 @@ from backend import storage
 from backend.settings import AppSettings
 from backend.print_service import PrintService
 
-def check_printer(print_svc: PrintService):
+def check_printer(print_svc: PrintService, settings: AppSettings = None):
     """Check if printer is connected/available via PrintService.
 
     Everything PrinterStatus knows goes through, including which driver
     answered and what it can say about media. Re-listing the fields here meant
     a new one had to be added twice to reach the admin panel; `status` is kept
     as an alias because the UI reads it under that name.
+
+    The allowance rides along because the panel shows both together: it is the
+    pair — ribbon left and budget left — that says whether the night will make it.
     """
     status = print_svc.get_status()
-    return {**status.to_dict(), "status": status.status_text}
+    out = {**status.to_dict(), "status": status.status_text}
+    if settings is not None:
+        out["prints_used"] = settings.prints_used
+        out["print_allowance"] = settings.print_allowance
+    return out
 
 def check_storage(settings: AppSettings):
     """Check disk usage and photo count."""
@@ -41,7 +48,7 @@ def check_storage(settings: AppSettings):
 def get_diagnostics(settings: AppSettings, print_svc: PrintService, led=None):
     """Aggregate all diagnostic checks."""
     diag = {
-        "printer": check_printer(print_svc),
+        "printer": check_printer(print_svc, settings),
         "storage": check_storage(settings)
     }
     # Optional so the aggregate keeps working for callers that predate the ring.
@@ -54,9 +61,9 @@ def get_diagnostics(settings: AppSettings, print_svc: PrintService, led=None):
 def execute_emergency(action: str, print_svc: PrintService = None):
     """Execute an emergency control action.
 
-    `print_svc` is required for clear_queue: shelling out to `cancel` from here
-    would leave an in-flight await_job reporting the cancelled job as a finished
-    print (Rule 5 — the print service owns printer access).
+    `print_svc` is required for clear_queue: cancelling behind the service's back
+    breaks PrintService.cancel_all's guarantee, and Rule 5 gives that service
+    sole access to the printer anyway.
     """
     if sys.platform == "win32":
         return {

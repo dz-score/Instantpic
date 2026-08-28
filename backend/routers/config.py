@@ -15,6 +15,10 @@ class ConfigUpdateRequest(BaseModel):
     printer_name: Optional[str] = None
     printer_options: Optional[str] = None
     printer_media_low_threshold: Optional[int] = None
+    print_allowance: Optional[int] = None
+    # Writable so the Printer tab's reset can zero it. The booth also writes it
+    # itself on every completed print (PrintService._count_print).
+    prints_used: Optional[int] = None
     max_photos: Optional[int] = None
     disk_min_free_gb: Optional[float] = None
     couple_names: Optional[str] = None

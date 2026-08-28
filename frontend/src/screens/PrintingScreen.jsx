@@ -26,7 +26,12 @@ const AUTO_RESET_SECONDS = 25;
  * Phase 2 (ERROR): printStatus === 'failed'
  *   - Says plainly that nothing came out, and points at an attendant
  *   - The photo is still safe and still downloadable, so the QR stays
- *   - Offers REPRINT, which the FSM accepts only from 'failed' 
+ *   - Offers REPRINT, which the FSM accepts only from 'failed'
+ *
+ * Phase 2 (SPENT): printStatus === 'skipped'
+ *   - The event's print allowance is used up. Nothing failed and nobody needs
+ *     fetching, so this reads as an ordinary end to the session, not an error.
+ *   - No retry: the FSM would refuse it, and offering it would be a lie.
  *
  * Background from ScreenShell (bg-wedding.png).
  */
@@ -44,6 +49,7 @@ export default function PrintingScreen({
   // Derived directly from backend state — no local success/failure of our own.
   const phase = printStatus === 'printed' ? 'DONE'
     : printStatus === 'failed' ? 'ERROR'
+    : printStatus === 'skipped' ? 'SPENT'
     : 'PRINTING';
 
   const [guard, armed] = useTapGuard();
@@ -108,13 +114,19 @@ export default function PrintingScreen({
       )}
 
       {/* ── Phase: Done / Error ── */}
-      {(phase === 'DONE' || phase === 'ERROR') && (
+      {phase !== 'PRINTING' && (
         <div className="print-done">
 
           {/* Heading */}
           {phase === 'DONE' ? (
             <>
               <h1 className="print-done__title">{t('printing.doneTitle', language)}</h1>
+            </>
+          ) : phase === 'SPENT' ? (
+            <>
+              <p className="print-done__kicker">{t('printing.spentKicker', language)}</p>
+              <h1 className="print-done__title">{t('printing.spentTitle', language)}</h1>
+              <p className="print-done__error-body">{t('printing.spentBody', language)}</p>
             </>
           ) : (
             <>

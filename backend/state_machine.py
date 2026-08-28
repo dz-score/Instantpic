@@ -21,7 +21,8 @@ class BoothState(BaseModel):
     isProcessing: bool = False
     # Printing is backend-owned workflow, not a frontend guess. The FSM kicks
     # off the print on entering PRINTING and reports the real outcome here; the
-    # UI only projects it. Values: "idle" | "printing" | "printed" | "failed".
+    # UI only projects it. Values: "idle" | "printing" | "printed" | "failed"
+    # | "skipped" (the event's print allowance is spent — no job was queued).
     printStatus: str = "idle"
 
 # How many shots each layout requires. This is a workflow rule and must live
@@ -268,8 +269,8 @@ class StateMachine:
                     ))
                     
             elif event_type == "FRAME_SKIP":
-                await self._enter_printing()
-                
+                await self._enter_printing(settings)
+
             elif event_type == "REPRINT":
                 # Failure only, and the guard doubles as the idempotency: the
                 # first REPRINT moves printStatus off "failed", so a double tap
@@ -282,7 +283,7 @@ class StateMachine:
                     return
                 log.info("state_machine", "reprint",
                          f"Retrying the print for {self._state.finalPhoto}")
-                await self._enter_printing()
+                await self._enter_printing(settings)
 
             elif event_type == "FINISH":
                 self._state = BoothState(screen="ATTRACT")
@@ -408,15 +409,33 @@ class StateMachine:
         if has_frame_options and len(overlays) > 1:
             self._state.screen = "FRAME_PICKER"
         else:
-            await self._enter_printing()
+            await self._enter_printing(settings)
 
-    async def _enter_printing(self):
+    async def _enter_printing(self, settings: Optional[AppSettings] = None):
         """Transition into PRINTING and kick off the actual print. The print is
         backend-owned workflow (Rule 1): the FSM enqueues the job and reports
         the real outcome via printStatus — the UI never guesses success from a
         timeout. Callers must set finalPhoto before invoking. Runs under the
-        handler lock; enqueue is non-blocking."""
+        handler lock; enqueue is non-blocking.
+
+        `settings` is optional for the same reason _sync_led's is: job callbacks
+        land here without one.
+        """
+        settings = settings or self._watchdog_settings
         self._state.screen = "PRINTING"
+
+        if settings and settings.prints_used >= settings.print_allowance:
+            # Out of budget. The session is not cut short and the photo is not
+            # lost — the guest still gets the QR — but no job is queued, and
+            # printStatus says which of the two happened so the screen can too.
+            self._state.printStatus = "skipped"
+            log.info("state_machine", "print_allowance_spent",
+                     f"Print skipped: {settings.prints_used} of "
+                     f"{settings.print_allowance} prints used",
+                     data={"prints_used": settings.prints_used,
+                           "print_allowance": settings.print_allowance})
+            return
+
         if not (self._job_queue and self._state.finalPhoto):
             # Nothing to print, or nowhere to send it. Say so instead of leaving
             # printStatus on "printing" with no job to ever move it off: that is

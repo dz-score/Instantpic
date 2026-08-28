@@ -823,3 +823,38 @@ def test_an_uncancelled_print_still_reports_success(mocker, tmp_path):
     driver.await_job.return_value = JobOutcome(JOB_COMPLETED)
 
     assert _service_with_driver(mocker, driver).print(str(f)).success is True
+
+
+def test_a_completed_print_is_counted_against_the_allowance(mocker, tmp_path):
+    f = tmp_path / "photo.jpg"
+    f.write_bytes(b"x")
+
+    driver = mocker.Mock()
+    driver.print_file.return_value = PrintResult(success=True, job_id="DS-RX1-42")
+    driver.await_job.return_value = JobOutcome(JOB_COMPLETED)
+
+    settings = _mock_settings(mocker, prints_used=41)
+    svc = _service_with_driver(mocker, driver)
+    svc._settings = settings
+
+    svc.print(str(f))
+
+    settings.update.assert_called_once_with({"prints_used": 42})
+
+
+def test_a_failed_print_is_not_counted(mocker, tmp_path):
+    """The budget is prints on paper, not attempts."""
+    f = tmp_path / "photo.jpg"
+    f.write_bytes(b"x")
+
+    driver = mocker.Mock()
+    driver.print_file.return_value = PrintResult(success=True, job_id="DS-RX1-42")
+    driver.await_job.return_value = JobOutcome(JOB_FAILED, "Paper jam.")
+
+    settings = _mock_settings(mocker, prints_used=41)
+    svc = _service_with_driver(mocker, driver)
+    svc._settings = settings
+
+    svc.print(str(f))
+
+    settings.update.assert_not_called()

@@ -394,6 +394,25 @@ count media down, run out, jam. Its knobs live in `AppSettings.printer_mock`.
 
 ---
 
+### Rule: The print allowance is enforced; the media warning is not
+`print_allowance` caps what one event may print and `prints_used` counts against
+it. Past the cap the FSM sets `printStatus: "skipped"` and queues nothing. The
+media threshold above only warns.
+
+> **Why:** they answer different questions. A nearly-spent ribbon is a fact about
+> the hardware and stopping on it would refuse prints the booth can still make.
+> An allowance is somebody's budget for the night, and a budget that only warns
+> is not a budget.
+
+> **What breaks:** a spent allowance must never look like a failure. Nothing is
+> wrong, no attendant is needed, and offering `REPRINT` there would be a button
+> that cannot work — the FSM refuses it, so the screen must not offer it.
+
+> `prints_used` is the one setting the booth writes to itself, on every completed
+> print. It has to survive a restart or a reboot mid-event hands the budget back.
+
+---
+
 ### Rule: Absent media reporting is not empty media
 `prints_remaining` is `None` when the driver cannot know — no marker attributes,
 no `ipptool`, a printer that does not report. `None` reaches the UI as *no number

@@ -355,3 +355,30 @@ def test_a_full_roll_is_not_reported_low(client):
 
     assert printer["prints_remaining"] == 700
     assert printer["media_low"] is False
+
+
+def test_print_allowance_defaults_to_150(client):
+    cfg = client.get("/api/config").json()
+    assert cfg["print_allowance"] == 150
+    assert cfg["prints_used"] == 0
+
+
+def test_allowance_is_operator_settable_and_resettable(client):
+    client.post("/api/config", json={"print_allowance": 300, "prints_used": 12})
+    assert client.get("/api/config").json()["print_allowance"] == 300
+
+    # Raising the allowance must not touch the count; only Reset does.
+    client.post("/api/config", json={"print_allowance": 400})
+    assert client.get("/api/config").json()["prints_used"] == 12
+
+    client.post("/api/config", json={"prints_used": 0})
+    assert client.get("/api/config").json()["prints_used"] == 0
+
+
+def test_allowance_reaches_the_admin_panel(client):
+    client.post("/api/config", json={"print_allowance": 42, "prints_used": 7})
+
+    printer = client.get("/api/diagnostics").json()["printer"]
+
+    assert printer["prints_used"] == 7
+    assert printer["print_allowance"] == 42

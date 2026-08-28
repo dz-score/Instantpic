@@ -166,3 +166,65 @@
   opacity: 0.45;
   cursor: default;
 }
+
+/* ── Print allowance ── */
+
+.printer-allowance {
+  margin-top: var(--space-sm);
+  padding: var(--space-sm);
+  border-radius: var(--radius-sm);
+  background: var(--bg-base);
+  border: 1px solid var(--surface-border);
+}
+
+.printer-allowance__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-sm);
+}
+
+.printer-allowance__label {
+  font-size: var(--text-caption);
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-hairline);
+}
+
+.printer-allowance__count {
+  font-size: var(--text-body);
+  font-weight: 600;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.printer-allowance__bar {
+  height: 6px;
+  margin-top: var(--space-xs);
+  border-radius: 3px;
+  background: var(--surface-border);
+  overflow: hidden;
+}
+
+.printer-allowance__fill {
+  height: 100%;
+  background: var(--champagne);
+  transition: width var(--duration-normal) var(--ease-out);
+}
+
+.printer-allowance--spent .printer-allowance__count,
+.printer-allowance--spent .printer-allowance__fill {
+  color: var(--status-warning);
+  background: var(--status-warning);
+}
+
+.printer-allowance-row {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-sm);
+  margin-top: var(--space-sm);
+}
+
+.printer-allowance-field {
+  flex: 1;
+}
