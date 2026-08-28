@@ -53,8 +53,7 @@ class LedConfig(BaseModel):
     transport: Literal["http"] = "http"
     # PING cadence. The node's watchdog trips at 10 s of silence
     # (MODE_LINK_TIMEOUT_MS), so this is a 5x margin. Only fires when the wire
-    # has actually been idle — the watchdog counts any inbound line, so a busy
-    # session needs no heartbeat at all.
+    # has actually been idle — see LedController._run.
     heartbeat_ms: int = 2000
     http: LedHttpConfig = LedHttpConfig()
 

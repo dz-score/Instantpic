@@ -443,9 +443,11 @@ than *warning*. Warnings stay — "do not read job states here", "keep the dpi
 tag" — because they are what stops the next edit breaking something. Arguments
 move to the document that owns them.
 
-Required when a change touches both code and `Docs/`: grep your own distinctive
-phrases across both before committing. A phrase that appears in two files means
-one of them should be a link. This is not optional diligence — writing code and
+Required when a change touches both code and `Docs/`:
+
+    python3 backend/tools/check_duplication.py --since main
+
+A passage that appears in two files means one of them should be a link. This is not optional diligence — writing code and
 its documentation in one sitting is exactly when the same justification gets
 written twice, because the author has it in mind in both places and no prompt to
 ask where it already lives.
