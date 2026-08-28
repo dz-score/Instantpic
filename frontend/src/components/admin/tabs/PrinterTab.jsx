@@ -14,9 +14,8 @@ import './PrinterTab.css';
  * A refusal from the test print is rendered as an ordinary message, not an
  * error — see useApi.testPrint.
  *
- * Rule 7 escape hatch, same as SystemTab and LedTab: printer health is polled
- * over REST because it is a live CUPS query with no event source. Only while
- * this panel is mounted, and cleared on unmount.
+ * Printer health is polled over REST — the Rule 7 escape hatch SystemTab
+ * documents.
  */
 
 const MOCK_FAULTS = [
