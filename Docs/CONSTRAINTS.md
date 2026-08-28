@@ -119,9 +119,9 @@ The frame buffer (`_latest_frame`) is a **single slot** that the worker thread o
 ---
 
 ### Rule: Build python-gphoto2 from source — never install the wheel
-`backend/requirements.txt` carries a **`--no-binary gphoto2`** line. Keep it. The python-gphoto2 **wheel** bundles its own **libgphoto2 2.5.34**, and that build stalls M50 live view: a ~3.0s dead preview grab every ~6s, forever. The preview worker holds the camera lock across each grab, so a stalled grab **blocks the shutter** and the guest's photo fires ~3s after the countdown hits zero. The system libgphoto2 (2.5.30, apt) has neither problem.
+`backend/requirements.txt` carries a **`--no-binary gphoto2`** line. Keep it. The wheel bundles libgphoto2 2.5.34, which stalls M50 live view badly enough to delay the shutter; the system library (2.5.30, apt) does not.
 
-> **Why:** measured on this rig — same code, same camera, same 60s, only the library swapped. Bundled 2.5.34: 1693 frames, 28.2 fps, **10 stalls**. System 2.5.30: 3598 frames, 60.0 fps, **0 stalls**. App-shaped (`--contention --gap-s 6`): 2.5.34 blocked **3/14** shutters (mean lock wait 642 ms); 2.5.30 blocked **0/15** (mean 3 ms). The boot wedge is a 2.5.34 artifact too.
+> **Why:** measured on this rig, both libraries, same everything else. The numbers and the full characterization are in [CAMERA_NOTES.md](CAMERA_NOTES.md).
 
 > **What breaks:** `pip install gphoto2` by hand, or dropping the `--no-binary` line, silently installs the wheel and every symptom returns — invisibly, until someone measures millisecond timings on real hardware. Verify with `python3 -c "import gphoto2 as gp; print(gp.gp_library_version(gp.GP_VERSION_VERBOSE)[0])"` — it must **not** print 2.5.34. Requires `libgphoto2-dev` + `pkg-config` (see DEPLOYMENT_GUIDE).
 

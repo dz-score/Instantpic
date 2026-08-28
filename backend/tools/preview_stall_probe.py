@@ -11,9 +11,8 @@ Run on the Pi, with the booth STOPPED (only one process can hold the camera).
      Polls capture_preview continuously and reports any stall. On a correct
      install there are ZERO: the camera sustains 60s+ of live view at 60fps.
 
-     A run that shows ~3.0s stalls arriving every ~6s means exactly one thing:
-     the venv is on the python-gphoto2 WHEEL, whose bundled libgphoto2 (2.5.34)
-     has that bug. The system libgphoto2 does not. Fix:
+     Stalls at ~3.0s every ~6s means the venv is on the python-gphoto2 WHEEL
+     (see CAMERA_NOTES.md). Fix:
 
         pip install --force-reinstall --no-binary gphoto2 gphoto2
 
@@ -24,17 +23,12 @@ Run on the Pi, with the booth STOPPED (only one process can hold the camera).
 
         python3 backend/tools/preview_stall_probe.py --retry-probe --shots 50
 
-     capture_image fires, then returns [-1] ~0.8s later. CAUSE: the body reports
-     focusmode='One Shot' (AF-S), so every shutter release attempts an autofocus
-     lock, and it CANNOT lock on a moving subject. Proven by changing the scene
-     mid-run: static empty room = 43 captures, 0 failures; hand moving in frame =
-     7 captures, 3 failures. It is motion, not light. gphoto cannot change this
-     (single-choice widget; MF is a camera-menu setting on the body).
+     capture_image fires, then returns [-1] ~0.8s later. The cause (AF-S cannot
+     lock on a moving subject) and the evidence are in CAMERA_NOTES.md.
 
-     The app survives it — retry-once recovers every failure, no photo is ever
-     lost — but it costs the guest ~7.8s instead of ~1.9s, because a capture
-     exception sets connected=False and forces a full re-init before the retry.
-     This mode escalates per failure to find out whether that re-init is needed:
+     The app survives it, but the failure costs the guest a full re-init before
+     the retry. This mode escalates per failure to find out whether that re-init
+     is actually needed:
 
         stage 1  BARE    : wait --bare-delay-s, retry. No re-init.
         stage 2  RE-INIT : only if stage 1 failed — the app's behavior today.

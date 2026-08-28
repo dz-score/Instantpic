@@ -26,17 +26,9 @@ sudo apt install -y libgphoto2-dev pkg-config
 > **Note**: The Pi will need a USB printer that supports CUPS.
 
 > ### ⚠️ python-gphoto2 must be built from source, not installed as a wheel
-> The wheel bundles its own **libgphoto2 2.5.34**, and that build stalls M50 live
-> view — a ~3.0s dead preview grab every ~6s, permanently. The preview worker holds
-> the camera lock across each grab, so a stalled grab blocks the shutter and the
-> guest's photo fires ~3s after the countdown hits zero.
->
-> Measured on this rig — same code, same camera, same 60s, only the library swapped:
->
-> | libgphoto2 | frames in 60s | rate | stalls | shutters blocked (6s spacing) |
-> |---|---|---|---|---|
-> | 2.5.34 (bundled in the wheel) | 1693 | 28.2 fps | **10** | **3/14**, mean lock wait 642 ms |
-> | 2.5.30 (system, apt) | 3598 | 60.0 fps | **0** | **0/15**, mean lock wait 3 ms |
+> The wheel bundles its own **libgphoto2 2.5.34**, which stalls M50 live view
+> badly enough to delay the shutter behind the countdown. The measurements are in
+> [CAMERA_NOTES.md](CAMERA_NOTES.md); what matters here is the install.
 >
 > `backend/requirements.txt` carries a `--no-binary gphoto2` line that forces the
 > source build. **Do not remove it**, and do not `pip install gphoto2` by hand — pip
