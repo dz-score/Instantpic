@@ -39,10 +39,8 @@ whatever the DJ brought. Retries land exactly during the countdown-to-shutter
 window. Serial is wired, powers the ESP32, survives replug, and gives a console
 for on-site debugging.
 
-> That reasoning still stands; the decision was reversed anyway, to build and
-> harden one transport instead of two. The risk is accepted deliberately, on the
-> bet that a dedicated AP on a hand-picked channel with the node as its only
-> client keeps the tail latency small enough to not reach the shutter.
+> That reasoning still stands; the decision was reversed anyway, and the risk
+> accepted deliberately.
 >
 > The trigger conditions for reversing it back, and everything the switch would
 > involve, are in [LED_UART_SWITCH.md](LED_UART_SWITCH.md). The protocol is

@@ -270,9 +270,8 @@ over a quiet peripheral is the worse failure.
 | Ring disabled in config | Not lit, and nothing was sent |
 
 The first two are ambiguous by construction and cannot be resolved from the
-reply. `GET /state` would settle it, at the cost of another round trip on a link
-that has just demonstrated it is slow. See
-[LED_PROTOCOL.md](LED_PROTOCOL.md#errors).
+reply; see [LED_PROTOCOL.md](LED_PROTOCOL.md#errors) for why we do not resolve
+them.
 
 The safety net is the node's own: 30 s in Capture without a release drops it to
 Idle, and 10 s without any inbound line drops it to Link Lost. A host that dies
@@ -381,15 +380,10 @@ it to the caller.
 
 ### Which transport ships
 
-**HTTP over WiFi is the production transport.** One transport to build, harden
-and test rather than two; the ESP32's USB stays free for flashing, and the Pi is
-spared a udev rule, baud config and device-node churn.
-
-This reverses [LED_SPEC.md](LED_SPEC.md)'s original call. That reasoning has not
-been refuted — a wedding venue really is a hostile 2.4 GHz environment, and
-retries really do land in the countdown-to-shutter window. The risk is being
-accepted deliberately, on the bet that a dedicated AP on a hand-picked channel
-with the node as its only client keeps the tail small enough.
+**HTTP over WiFi is the production transport**, reversing
+[LED_SPEC.md](LED_SPEC.md)'s original call for USB serial. The decision, the
+risk being accepted and the conditions for reversing it back are in
+[LED_UART_SWITCH.md](LED_UART_SWITCH.md).
 
 UART remains a **future version**, not an event-day fallback: `transport_uart.c`
 is written but has never been compiled or run, and switching means reflashing
@@ -451,14 +445,11 @@ Only the architectural consequences belong here:
 being a pure sink ([LED_SPEC.md](LED_SPEC.md)): the Pi owns sequencing, and a
 node second-guessing it could only ever disagree with the booth's actual state.
 
-**One command in flight.** `transport_common.c` holds a single reply queue of
-depth 1, so command/reply correlation is positional rather than keyed. The
-constraint is invisible over HTTP and fatal over UART.
+**One command in flight** ([LED_PROTOCOL.md](LED_PROTOCOL.md)). Invisible over
+HTTP and fatal over UART, which is why it is called out here and not only there.
 
-**`PING` is not debug sugar.** The link watchdog measures time since *any*
-received line, so without a heartbeat a booth sitting in Idle for an hour would
-trip into Link Lost while nothing is wrong. It is also the recovery path out of
-Boot and Link Lost.
+**`PING` is not debug sugar.** It is what keeps a booth sitting in Idle out of
+Link Lost, and the recovery path back out of Boot and Link Lost.
 
 **One vocabulary, one parser, both transports.** Two would drift, and the drift
 would surface as a behavior difference on the day the transport changes.
