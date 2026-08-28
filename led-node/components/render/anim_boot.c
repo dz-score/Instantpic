@@ -1,9 +1,8 @@
-/* Boot / pre-link.
+/* Boot / pre-link. Spec: Docs/LED_SPEC.md §8.
  *
- * Covers the ~30 s where the node is alive and the Pi is not, and doubles as
- * the wiring self-test: four clean laps verify all pixels, all four dies, the
- * data line and the level shifter in two seconds, with no tooling. That is the
- * check worth having during venue setup.
+ * The four laps are a wiring self-test — all pixels, all four dies, the data
+ * line and the level shifter, in two seconds with no tooling. Do not shorten
+ * it to "look better"; that check is the reason this pattern is what it is.
  */
 #include "anim.h"
 

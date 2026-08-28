@@ -1,19 +1,12 @@
-/* Idle — "The Ambient Beacon".
+/* Idle — "The Ambient Beacon". Spec: Docs/LED_SPEC.md §1.
  *
- * Runs most of the night, so it sets the thermal baseline (~0.4 A) and it has
- * to survive four hours of being looked at. The tuning rule that matters:
- * nothing here has a period under ~5 s. Fast motion reads as urgent, and urgent
- * for four hours is exhausting to be near.
- *
- * W-dominant with colour as a tint. Saturated RGB at idle is what makes
- * installations look cheap.
+ * Sets the thermal baseline (~0.4 A) since it runs most of the night.
  *
  * Depth is set by RATIO, not by an absolute swing. Canvas values are linear
  * light and output.c encodes with 1/2.2, so perceived brightness goes roughly
- * as the cube root: the original 0.25..0.40 was a 1.6x linear ratio and read as
- * barely moving on the real strip. 0.12..0.48 is 4x, which is about 1.6x
- * perceived — unmistakably a breath. The mean is 0.30 rather than 0.325, so the
- * thermal baseline above is if anything slightly lower than before.
+ * as the cube root: 0.25..0.40 is a 1.6x linear ratio and read as barely moving
+ * on the real strip. 0.12..0.48 is 4x, about 1.6x perceived — unmistakably a
+ * breath. The mean is 0.30 rather than 0.325, so the thermal figure above holds.
  */
 #include <math.h>
 

@@ -1,12 +1,11 @@
-/* Playful — "The Interactive Guide".
+/* Playful — "The Interactive Guide". Spec: Docs/LED_SPEC.md §2.
  *
- * Acknowledges that the guest advanced a step in the UI flow. The firmware
- * never learns the screen list: the Pi sends a colour, this owns the
- * transition. Screens can be added, removed or retuned without a reflash.
+ * The firmware never learns the screen list — the Pi sends a colour and this
+ * owns the transition. Keep it that way or screens cannot be retuned without a
+ * reflash.
  *
- * Two parts: a head sweeps once around leaving the new hue behind it, then it
- * settles into a hold quiet enough to sit behind screen-reading. The sweep
- * always runs the same direction — consistent direction reads as progress.
+ * The sweep always runs the same direction; consistent direction reads as
+ * progress.
  */
 #include <math.h>
 

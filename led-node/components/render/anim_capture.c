@@ -1,23 +1,15 @@
-/* Capture — "The Studio Over-Drive".
+/* Capture — "The Studio Over-Drive". Spec: Docs/LED_SPEC.md §4.
  *
- * This is the key light. Every other animation is decoration; this one is
- * photographic equipment. Three things here are load-bearing:
+ * This is photographic equipment, not decoration. Three invariants:
  *
- *  1. FULL BRIGHTNESS ONLY. Global brightness is bypassed for this mode
- *     (see output_show's apply_brightness). SK6812 dimming is PWM in the high
- *     hundreds of Hz; at 1/200 s or faster the shutter samples a fraction of a
- *     cycle and you get banding plus shot-to-shot exposure drift. If less light
- *     is needed, move the strip or stop down.
+ *  1. FULL BRIGHTNESS ONLY. Global brightness is deliberately bypassed for this
+ *     mode in output_show's apply_brightness. Do not re-enable it — dimming is
+ *     PWM and the shutter will sample a fraction of a cycle.
+ *  2. W CHANNEL, NOT MIXED RGB WHITE. RGB here is a small fixed temperature
+ *     trim set once at install, nothing more.
+ *  3. ZERO ANIMATION once ramped.
  *
- *  2. W CHANNEL, NOT MIXED RGB WHITE. Mixed white is a three-spike spectrum: it
- *     renders skin blotchy and makes fabric colour unrecoverable in post. RGB
- *     is reserved for a small fixed temperature trim, set once at install.
- *
- *  3. ZERO ANIMATION once ramped. Any motion means uneven lighting across a
- *     burst.
- *
- * The 100 ms ramp is imperceptible on camera and much kinder to the PSU and
- * inrush than snapping from an idle animation to near-max current.
+ * The 100 ms ramp is for the PSU, not the eye — keep it.
  */
 #include "anim.h"
 
