@@ -124,8 +124,7 @@ export default function SystemTab({ getDiagnostics, emergencyAction, changePin, 
   const printer = diagnostics?.printer;
   const storage = diagnostics?.storage;
   const led = diagnostics?.led;
-  // The tail is what matters, not the average: a mean hides exactly the retry
-  // storm that would put a dark frame in a photo (Docs/LED_UART_SWITCH.md).
+  // p95, not the mean — see LedController.health().
   const ledCaptureP95 = led?.latency_ms?.CAPTURE?.p95;
 
   // restart_camera has no backend implementation (the camera reconnects

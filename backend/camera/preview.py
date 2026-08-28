@@ -165,10 +165,9 @@ class PreviewService:
                         continue
 
                     # Do NOT add a per-frame wait_for_event flush here: it costs
-                    # 12-30ms of every ~66ms frame and prevents nothing. Events are
-                    # drained around the capture instead (CaptureRunner._attempt),
-                    # which is what clears GP_EVENT_FILE_ADDED — the one event that
-                    # poisons the next preview session if left.
+                    # 12-30ms of every ~66ms frame and prevents nothing. Events
+                    # are drained around the capture instead
+                    # (CaptureRunner._attempt -> device.flush_events).
                     cap_start = time.perf_counter()
                     frame = self._device.read_preview_frame_locked()
                     cap_time = time.perf_counter() - cap_start

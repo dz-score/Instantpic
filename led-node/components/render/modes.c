@@ -259,7 +259,7 @@ static void render_frame(int64_t t)
     canvas_clear(&s_front);
     ANIM[s.mode](elapsed, &s.params, &s_front);
 
-    /* Cross-fade. Capture is excluded: it owns its own 100 ms ramp, and fading
+    /* Cross-fade. Capture is excluded — it owns its ramp, and fading
      * it against a decorative mode would put motion in the key light. */
     if (elapsed < MODE_CROSSFADE_MS && s.mode != MODE_CAPTURE && s.prev != s.mode) {
         canvas_clear(&s_back);

@@ -1,8 +1,7 @@
 /* Boot / pre-link. Spec: Docs/LED_SPEC.md §8.
  *
- * The four laps are a wiring self-test — all pixels, all four dies, the data
- * line and the level shifter, in two seconds with no tooling. Do not shorten
- * it to "look better"; that check is the reason this pattern is what it is.
+ * The four laps are the wiring self-test. Do not shorten them to "look
+ * better" — that check is the reason this pattern is what it is.
  */
 #include "anim.h"
 
