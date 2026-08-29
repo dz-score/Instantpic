@@ -1,11 +1,15 @@
 """
 printer_markers_probe — find out what the printer actually says about its media.
 
-    python3 backend/tools/printer_markers_probe.py DS-RX1
+    backend/venv/bin/python backend/tools/printer_markers_probe.py DS-RX1
 
 Dumps the queue's raw CUPS marker attributes beside what
-CupsPrinterDriver._read_media() makes of them. Run it on the Pi with the printer
-on, powered and idle, then compare RAW against PARSED.
+CupsPrinterDriver._read_media() makes of them, then you compare the two.
+
+Run it on the Pi with the printer on and idle, ideally just after a successful
+print: the Gutenprint backend only talks to the printer while a job is running,
+so the marker values CUPS holds are a snapshot from the last job, not a live
+read. Use the project's venv — the PARSED half imports the booth's own parser.
 
 The parser was written without a DS-RX1HS on the bench, so it is a hypothesis;
 Docs/PRINTER_NOTES.md records exactly what it assumes and what to do with each
@@ -50,7 +54,7 @@ def main():
             run(["lpstat", "-l", "-p", queue])[1])
 
     uri = f"ipp://localhost/printers/{quote(queue)}"
-    ok, ipp = run(["ipptool", "-t", uri,
+    ok, ipp = run(["ipptool", "-tv", uri,
                    "/usr/share/cups/ipptool/get-printer-attributes.test"])
     section(f"ALL IPP ATTRIBUTES — {uri}", ipp)
 
@@ -74,6 +78,17 @@ def main():
             f"  prints_remaining = {remaining!r}",
             "",
             f"  full status: {status.to_dict()}",
+        ]))
+    except ImportError as e:
+        section("PARSED — skipped", "
+".join([
+            f"  {e}",
+            "",
+            "  The RAW dump above is complete, and is the half that matters.",
+            "  For PARSED too, re-run under the project's venv:",
+            "",
+            "      backend/venv/bin/python backend/tools/printer_markers_probe.py "
+            + queue,
         ]))
     except Exception as e:
         section("PARSED — failed", f"{type(e).__name__}: {e}")

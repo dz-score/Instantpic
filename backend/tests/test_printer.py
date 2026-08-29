@@ -1066,3 +1066,18 @@ def test_operator_recovery_is_honest_about_a_healthy_queue(mocker):
     driver.recover.return_value = None
 
     assert "already running" in _service_with_driver(mocker, driver).recover()
+
+
+def test_ipptool_is_asked_to_print_the_attributes(mocker):
+    """Without -v, ipptool prints a PASS/FAIL summary and no attributes, so
+    every marker read comes back empty and media reports as unknown forever."""
+    run = mocker.patch("backend.print_service.subprocess.run",
+                       return_value=subprocess.CompletedProcess(
+                           args=[], returncode=0, stdout=IPPTOOL_OUTPUT, stderr=""))
+
+    CupsPrinterDriver("DS-RX1")._ipp_attributes()
+
+    argv = run.call_args[0][0]
+    assert argv[0] == "ipptool"
+    flags = argv[1]
+    assert flags.startswith("-") and "v" in flags, flags

@@ -188,7 +188,10 @@ class CupsPrinterDriver(PrinterDriver):
         uri = f"ipp://localhost/printers/{quote(self.printer_name)}"
         try:
             r = subprocess.run(
-                ["ipptool", "-t", uri, self.IPPTOOL_TEST],
+                # -v, not just -t: without it ipptool prints a PASS/FAIL
+                # summary and no attributes at all, so every marker read comes
+                # back empty and media silently reports as unknown.
+                ["ipptool", "-tv", uri, self.IPPTOOL_TEST],
                 capture_output=True, text=True, timeout=5,
             )
         except FileNotFoundError:
