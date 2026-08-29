@@ -21,7 +21,8 @@ class BoothState(BaseModel):
     isProcessing: bool = False
     # Printing is backend-owned workflow, not a frontend guess. The FSM kicks
     # off the print on entering PRINTING and reports the real outcome here; the
-    # UI only projects it. Values: "idle" | "printing" | "printed" | "failed".
+    # UI only projects it. Values: "idle" | "printing" | "printed" | "failed"
+    # | "skipped" (the event's print allowance is spent — no job was queued).
     printStatus: str = "idle"
 
 # How many shots each layout requires. This is a workflow rule and must live
@@ -87,7 +88,7 @@ VALID_TRANSITIONS = {
     "REVEAL": ["RETAKE", "PRINT_FROM_REVEAL"],
     "PICK_FAVORITE": ["FAVORITE_SELECT"],
     "FRAME_PICKER": ["FRAME_SELECT", "FRAME_SKIP"],
-    "PRINTING": ["FINISH", "ANOTHER"]
+    "PRINTING": ["FINISH", "ANOTHER", "REPRINT"]
 }
 
 # Events that are valid from ANY state
@@ -107,7 +108,7 @@ class StateMachine:
     # sees touches); this one deliberately loses that race — see _manage_watchdog.
     SESSION_WATCHDOG_GRACE_S = 60
 
-    def __init__(self, sse, job_queue, camera=None, led=None):
+    def __init__(self, sse, job_queue, camera=None, led=None, counters=None):
         self._state = BoothState()
         self._lock = None
         self._sse = sse
@@ -115,6 +116,10 @@ class StateMachine:
         self._camera = camera
         # Inert when no ring is configured, so there is no null check below.
         self._led = led or _NoLed()
+        # Absent means the allowance cannot be enforced, so it is not: a booth
+        # that refuses to print because a tally is missing is worse than one
+        # that overshoots a budget.
+        self._counters = counters
         # True while a capture is between FIRE_SHOT and its terminal callback;
         # guards against double-firing the shutter.
         self._shot_in_flight = False
@@ -268,8 +273,22 @@ class StateMachine:
                     ))
                     
             elif event_type == "FRAME_SKIP":
-                await self._enter_printing()
-                
+                await self._enter_printing(settings)
+
+            elif event_type == "REPRINT":
+                # Failure only, and the guard doubles as the idempotency: the
+                # first REPRINT moves printStatus off "failed", so a double tap
+                # is refused here rather than queueing a duplicate. Why it is
+                # restricted at all: Docs/API_PROTOCOL.md.
+                if self._state.printStatus != "failed":
+                    log.warn("state_machine", "reprint_rejected",
+                             f"REPRINT ignored — printStatus is "
+                             f"{self._state.printStatus!r}, not 'failed'")
+                    return
+                log.info("state_machine", "reprint",
+                         f"Retrying the print for {self._state.finalPhoto}")
+                await self._enter_printing(settings)
+
             elif event_type == "FINISH":
                 self._state = BoothState(screen="ATTRACT")
                 
@@ -327,10 +346,7 @@ class StateMachine:
         every touch, which the backend cannot observe, so it stays where it is.
         This is the floor underneath it — for when that timer can never fire at
         all because the kiosk tab crashed, froze, or lost the network. Ending a
-        session is workflow, and workflow is backend-owned (Rule 1); leaving it
-        solely to the browser meant a tab that died at REVEAL or PICK_FAVORITE
-        stranded the booth in that screen indefinitely, so the next guest walked
-        up to the previous guest's photos.
+        session is workflow, and workflow is backend-owned (Rule 1).
 
         Two windows, because the two failures differ in kind:
           - COUNTDOWN keeps capture_stall_timeout: a tight, capture-specific
@@ -397,22 +413,51 @@ class StateMachine:
         if has_frame_options and len(overlays) > 1:
             self._state.screen = "FRAME_PICKER"
         else:
-            await self._enter_printing()
+            await self._enter_printing(settings)
 
-    async def _enter_printing(self):
+    async def _enter_printing(self, settings: Optional[AppSettings] = None):
         """Transition into PRINTING and kick off the actual print. The print is
         backend-owned workflow (Rule 1): the FSM enqueues the job and reports
         the real outcome via printStatus — the UI never guesses success from a
         timeout. Callers must set finalPhoto before invoking. Runs under the
-        handler lock; enqueue is non-blocking."""
+        handler lock; enqueue is non-blocking.
+
+        `settings` is optional for the same reason _sync_led's is: job callbacks
+        land here without one.
+        """
+        settings = settings or self._watchdog_settings
         self._state.screen = "PRINTING"
+
+        used = self._counters.get("prints_used") if self._counters else 0
+        if settings and used >= settings.print_allowance:
+            # Out of budget. The session is not cut short and the photo is not
+            # lost — the guest still gets the QR — but no job is queued, and
+            # printStatus says which of the two happened so the screen can too.
+            self._state.printStatus = "skipped"
+            log.info("state_machine", "print_allowance_spent",
+                     f"Print skipped: {used} of "
+                     f"{settings.print_allowance} prints used",
+                     data={"prints_used": used,
+                           "print_allowance": settings.print_allowance})
+            return
+
+        if not (self._job_queue and self._state.finalPhoto):
+            # Nothing to print, or nowhere to send it. Say so instead of leaving
+            # printStatus on "printing" with no job to ever move it off: that is
+            # a guest watching the printing animation until the session watchdog
+            # times them out, with nothing in the log to explain it.
+            self._state.printStatus = "failed"
+            log.error("state_machine", "print_not_enqueued",
+                      "Entered PRINTING with nothing to print",
+                      data={"finalPhoto": self._state.finalPhoto,
+                            "has_queue": self._job_queue is not None})
+            return
         self._state.printStatus = "printing"
-        if self._job_queue and self._state.finalPhoto:
-            await self._job_queue.enqueue(jobs.print_photo_job(
-                self._state.finalPhoto,
-                on_success=self.job_print_done,
-                on_failure=self.job_print_failed,
-            ))
+        await self._job_queue.enqueue(jobs.print_photo_job(
+            self._state.finalPhoto,
+            on_success=self.job_print_done,
+            on_failure=self.job_print_failed,
+        ))
 
     # Capture callbacks — the camera worker delivers the terminal outcome
     # straight to the FSM (via enqueue_capture's marshalled coroutines). The

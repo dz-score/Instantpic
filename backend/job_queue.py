@@ -12,9 +12,9 @@ class JobQueue:
 
     Two lanes, not one, because the two workloads have opposite profiles.
     Processing sits on the guest's critical path — the REVEAL spinner is
-    waiting on it — and takes seconds. A print shells out to CUPS and blocks
-    for up to ~63s in the worst case (30s timeout + RETRY_DELAY_S + a 30s
-    retry). Sharing a single serial lane meant a guest who tapped "Another"
+    waiting on it — and takes seconds. A print blocks for as long as the paper
+    takes, because PrintService waits the job out: ~12s for a 4x6 dye-sub and
+    up to ~96s worst case. Sharing a single serial lane meant a guest who tapped "Another"
     could queue their processing job behind the *previous* guest's retrying
     print and sit watching the spinner for a minute over someone else's paper
     jam. Splitting them decouples the guest-visible path from the slow external
@@ -115,9 +115,10 @@ class JobQueue:
                             await on_success(filename, previews)
 
                     elif job_type == "PRINT_PHOTO":
-                        # Printing blocks (mock sleeps; CUPS shells out for up to
-                        # ~60s incl. retry), so run it in the thread pool and
-                        # report the real success/failure back to the submitter.
+                        # Printing blocks for the whole physical print — the
+                        # service waits the job out so "printed" means printed —
+                        # so run it in the thread pool and report the real
+                        # success/failure back to the submitter.
                         filename = job_data.get("filename")
                         filepath = os.path.join(storage.PHOTOS_DIR, filename)
 

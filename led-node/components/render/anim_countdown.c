@@ -1,19 +1,13 @@
-/* Countdown — "The Ticking Clock".
+/* Countdown — "The Ticking Clock". Spec: Docs/LED_SPEC.md §3.
  *
- * One revolution per second. At 60 px that is a sweeping second hand, one pixel
- * per 16.7 ms — which is why the head is drawn with an anti-aliased primitive
- * rather than snapped to a pixel.
+ * 60 px at one rev/s is one pixel per 16.7 ms, so the head must be drawn with
+ * an anti-aliased primitive rather than snapped to a pixel or the sweep looks
+ * steppy.
  *
- * The ring deliberately does NOT encode which second it is; the screen displays
- * the number, and duplicating it in the periphery buys nothing. That also keeps
- * this count-agnostic: it gets a duration and spins, so a 5-second countdown is
- * a parameter rather than a code change.
- *
- * The final-second lift is not information either. The guest is looking at the
- * lens, and peripheral vision is poor at reading numbers and excellent at
- * noticing "that got brighter" — it is a nudge to smile now rather than half a
- * second late. It comes from comparing elapsed to duration, so this still never
- * learns the count.
+ * This must stay count-agnostic: it is given a duration and spins. The
+ * final-second lift comes from comparing elapsed to duration, which is the only
+ * reason it needs no knowledge of the count. Keep it that way — a countdown
+ * length then stays a parameter rather than a reflash.
  */
 #include <stdbool.h>
 
@@ -39,9 +33,7 @@ void anim_countdown(uint32_t t, const mode_params_t *p, canvas_t *c)
     const float trail_deg = final_second ? TRAIL_DEG_FINAL : TRAIL_DEG;
     const float head_val  = final_second ? HEAD_VAL_FINAL : HEAD_VAL;
 
-    /* A dim wash so the ring reads as present rather than off. Kept W-tinted:
-     * this is the half-second before a white key light comes on, and a coloured
-     * trail would fight it. */
+    /* Dim wash, W-tinted — must not fight the white key light that follows. */
     canvas_fill(c, rgbw_white(BACKGROUND));
 
     const float head_deg = (float)(t % REV_MS) / (float)REV_MS * 360.0f;

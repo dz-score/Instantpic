@@ -56,8 +56,11 @@ def isolate_config(tmp_path, monkeypatch):
     the lifespan builds per app, so the only thing to redirect is the path it reads.
     """
     config_file = tmp_path / "config.json"
-    # Empty config: exercises the fresh-install / missing-values path by default.
-    config_file.write_text("{}")
+    # Everything else is left unset, so the fresh-install / missing-values path
+    # is still what runs. The printer is pinned because its default is a real
+    # CUPS queue: unpinned, the suite would shell out to `lp` on the booth
+    # itself, and only pass on Windows because that forces the mock.
+    config_file.write_text('{"printer_name": "mock"}')
 
     import backend.settings as config
     monkeypatch.setattr(config, "CONFIG_PATH", str(config_file))

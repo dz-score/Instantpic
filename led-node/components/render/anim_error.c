@@ -1,15 +1,10 @@
-/* Error — "The Maintenance Heartbeat".
+/* Error — "The Maintenance Heartbeat". Spec: Docs/LED_SPEC.md §7.
  *
- * Tells the operator something is wrong without alarming a room full of guests:
- * deep red, low brightness, deliberately calm.
+ * The code is the number of double-pulse groups before the longer pause; that
+ * is the whole diagnostic, so keep the grouping legible.
  *
- * The code is expressed as the number of double-pulse groups before a longer
- * pause, which gives on-site diagnosis without a laptop — worth a lot at 6pm at
- * a venue.
- *
- * Must stay visually distinct from Link Lost. These are opposite diagnoses: this
- * one is the host reporting a fault, that one is the node noticing the host went
- * silent.
+ * Must stay visually distinct from Link Lost — opposite diagnoses, and at a
+ * venue this is the only debugging output there is.
  */
 #include <math.h>
 

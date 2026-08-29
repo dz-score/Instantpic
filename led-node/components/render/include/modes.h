@@ -41,15 +41,10 @@ typedef struct {
  * and a fade *out* of full white is handled by the incoming mode's fade in. */
 #define MODE_CROSSFADE_MS 200
 
-/* Watchdog. Measured from any inbound line, not from the last mode change:
- * Idle runs for hours without a transition, and a change-based watchdog would
- * trip into Link Lost at a perfectly healthy booth.
- *
- * Entry and recovery are symmetric, and both are the heartbeat's job: silence
- * past this timeout enters Link Lost, and the next PING leaves it. An earlier
- * version only had the entry half, so a recovered host got PONGs while the ring
- * stayed dark-patterned -- the watchdog protected against a false alarm on the
- * way in and then stranded the node on the way out. */
+/* Watchdog, measured from any inbound line rather than the last mode change
+ * (Docs/LED_PROTOCOL.md). Entry and recovery are symmetric and both are the
+ * heartbeat's job: silence past this timeout enters Link Lost, the next PING
+ * leaves it. Keep both halves. */
 #define MODE_LINK_TIMEOUT_MS 10000
 
 /* Hold-forever modes both wait on external events that can fail silently. */

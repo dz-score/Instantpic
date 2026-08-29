@@ -6,17 +6,11 @@ command line; the transport below carries lines and never sees booth state.
 
 ### One command in flight, structurally
 
-The firmware's `transport_common.c` holds a single reply queue of depth 1, so
-command/reply correlation is **positional**, not keyed. HTTP hides this —
-`esp_http_server` serializes handlers on one task, so overlapping requests still
-get the right answers — but the constraint is real, and a byte-stream transport
-cannot hide it.
-
-So serialization is a property of the shape, not a rule to remember: a single
-owner task drains a queue and is the only thing that ever touches the transport.
-Callers await a future. This is the same argument the firmware makes for having
-one owner of mode state and no mutex, and it is why swapping in UART later is a
-port rather than a redesign (Docs/LED_UART_SWITCH.md).
+The protocol allows one command in flight (Docs/LED_PROTOCOL.md). Rather than
+leave that as a rule to remember, it is a property of the shape: a single owner
+task drains a queue and is the only thing that ever touches the transport, and
+callers await a future. Keep it that way — it is also what makes a UART swap a
+port rather than a redesign.
 
 ### Degradation
 
@@ -237,11 +231,10 @@ class LedController:
     async def _run(self) -> None:
         """Drain the queue; ping when the wire has been idle.
 
-        The heartbeat is folded into the idle timeout rather than run on its own
-        timer. The node's watchdog measures time since *any* inbound line, so a
-        session that is already sending commands needs no heartbeat at all — and
-        a separate timer could queue a PING ahead of CAPTURE during the
-        countdown window, which is the one place latency is visible.
+        The heartbeat is folded into the idle timeout rather than run on its
+        own timer: a busy session needs no heartbeat at all (Docs/LED_PROTOCOL.md),
+        and a separate timer could queue a PING ahead of CAPTURE in the countdown
+        window, which is the one place latency is visible.
         """
         while not self._shutdown:
             # Before the wait, not inside _heartbeat(): that only fires when the

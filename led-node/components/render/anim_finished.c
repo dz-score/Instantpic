@@ -1,15 +1,12 @@
-/* Finished — "The Hollywood Sparkle".
+/* Finished — "The Hollywood Sparkle". Spec: Docs/LED_SPEC.md §6.
  *
- * The emotional punctuation on the interaction. Sparkles are on the W channel
- * because there they read as *light*; on mixed RGB they read as *pixels*.
- *
- * Density decays across the mode's life so it resolves rather than just
- * stopping, and the mode manager returns to Idle when the duration expires.
+ * Sparkles are on the W channel; on mixed RGB they read as pixels.
  *
  * Randomness without breaking purity: time is divided into fixed slots, each
  * slot's sparkle is derived by hashing the slot index, and every slot still
  * alive at time t is re-derived and evaluated. Same t always yields the same
- * frame, so this can still be cross-faded and unit-tested.
+ * frame, so this stays cross-fadeable and unit-testable. Anything stateful here
+ * breaks both.
  */
 #include <math.h>
 

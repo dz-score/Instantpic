@@ -21,8 +21,8 @@ def test_led_config_defaults_are_served(client):
     assert led["http"]["host"] == ""
 
 def test_partial_led_update_does_not_reset_the_rest_of_the_block(client):
-    """The one nested block, and SettingsService.update() replaces top-level keys
-    outright. Without the merge, setting the host alone would switch the ring off."""
+    """SettingsService.update() replaces top-level keys outright. Without the
+    merge, setting the host alone would switch the ring off."""
     client.post("/api/config", json={"led": {"enabled": True, "http": {"host": "10.0.0.9"}}})
 
     r = client.post("/api/config", json={"led": {"http": {"host": "10.0.0.42"}}})
@@ -31,6 +31,19 @@ def test_partial_led_update_does_not_reset_the_rest_of_the_block(client):
     assert led["http"]["host"] == "10.0.0.42"
     assert led["enabled"] is True                     # not reset to the default
     assert led["http"]["capture_timeout_ms"] == 250   # sibling under http survives
+
+def test_partial_printer_mock_update_keeps_the_rest_of_the_block(client):
+    """Same merge, second block: an operator changing one mock fault must not
+    silently take the simulated print time back to its default."""
+    client.post("/api/config", json={"printer_mock": {"job_duration_s": 4.0, "media_total": 20}})
+
+    r = client.post("/api/config", json={"printer_mock": {"fault": "abort_mid_job"}})
+    assert r.status_code == 200
+    mock = r.json()["printer_mock"]
+    assert mock["fault"] == "abort_mid_job"
+    assert mock["job_duration_s"] == 4.0
+    assert mock["media_total"] == 20
+
 
 def test_led_update_leaves_unrelated_settings_alone(client):
     client.post("/api/config", json={"countdown_duration": 7})
@@ -258,3 +271,142 @@ def test_lifespan_startup_and_shutdown(temp_workspace, temp_config):
         assert app.state.state_machine is not None
         # bind_loop() ran: the SSE service holds the app's event loop.
         assert app.state.sse._loop is not None
+
+
+def test_printer_options_are_reachable_from_the_admin_panel(client):
+    """They were in AppSettings but missing from ConfigUpdateRequest, so the only
+    way to change them was hand-editing config.json plus a restart — no good when
+    the person who needs to try another option string is standing at the printer."""
+    r = client.post("/api/config", json={"printer_options": "media=w288h432 scaling=100"})
+    assert r.status_code == 200
+    assert r.json()["printer_options"] == "media=w288h432 scaling=100"
+
+
+def test_diagnostics_carry_the_driver_and_media(client):
+    """The operator has to be able to tell a real printer from a simulated one —
+    on Windows the mock is chosen whatever the queue name says."""
+    printer = client.get("/api/diagnostics").json()["printer"]
+    assert printer["driver"] == "mock"
+    assert printer["prints_remaining"] is not None
+    assert printer["status"] == printer["status_text"]   # alias the UI reads
+
+
+def test_test_print_reports_the_real_outcome(client):
+    client.post("/api/config", json={"printer_mock": {"job_duration_s": 0}})
+
+    body = client.post("/api/printer/test").json()
+
+    assert body["ok"] is True
+    assert "printtest" in body["filename"]
+
+
+def test_test_print_surfaces_a_jam(client):
+    """The mock jams after acceptance. The operator must be told that, not told
+    the card printed."""
+    client.post("/api/config", json={
+        "printer_mock": {"job_duration_s": 0, "fault": "abort_mid_job"},
+    })
+
+    body = client.post("/api/printer/test").json()
+
+    assert body["ok"] is False
+    assert "Paper jam." in body["detail"]
+
+
+def test_test_print_is_refused_mid_session(client):
+    """It queues onto the same serial print lane a guest's photo uses, so nobody
+    can push a diagnostic in front of a print someone is waiting on. Same rule
+    the LED tests follow."""
+    client.post("/api/events", json={"type": "START_SESSION", "payload": {}})
+
+    r = client.post("/api/printer/test")
+
+    assert r.status_code == 409
+    assert "busy" in r.json()["detail"].lower()
+
+
+def test_media_low_threshold_is_operator_settable(client):
+    r = client.post("/api/config", json={"printer_media_low_threshold": 40})
+    assert r.status_code == 200
+    assert r.json()["printer_media_low_threshold"] == 40
+
+
+def test_low_media_reaches_the_admin_panel(client):
+    """The threshold is applied by the backend, not re-derived in the UI, so the
+    log and the panel can never disagree about what counts as low."""
+    client.post("/api/config", json={
+        "printer_media_low_threshold": 25,
+        "printer_mock": {"media_total": 10},
+    })
+
+    printer = client.get("/api/diagnostics").json()["printer"]
+
+    assert printer["prints_remaining"] == 10
+    assert printer["media_low"] is True
+
+
+def test_a_full_roll_is_not_reported_low(client):
+    client.post("/api/config", json={
+        "printer_media_low_threshold": 25,
+        "printer_mock": {"media_total": 700},
+    })
+
+    printer = client.get("/api/diagnostics").json()["printer"]
+
+    assert printer["prints_remaining"] == 700
+    assert printer["media_low"] is False
+
+
+def test_print_allowance_defaults_to_150(client):
+    assert client.get("/api/config").json()["print_allowance"] == 150
+
+
+def test_the_tally_is_not_part_of_the_config(client):
+    """It lives in backend/counters.py. In config.json it dirtied a tracked file
+    on every print and was one `git commit -a` from shipping as a setting."""
+    assert "prints_used" not in client.get("/api/config").json()
+
+
+def test_allowance_is_operator_settable(client):
+    client.post("/api/config", json={"print_allowance": 300})
+    assert client.get("/api/config").json()["print_allowance"] == 300
+
+
+def test_allowance_and_tally_reach_the_admin_panel(client):
+    client.post("/api/config", json={"print_allowance": 42})
+    client.app.state.counters.set("prints_used", 7)
+
+    printer = client.get("/api/diagnostics").json()["printer"]
+
+    assert printer["prints_used"] == 7
+    assert printer["print_allowance"] == 42
+
+
+def test_resetting_the_count_leaves_the_allowance_alone(client):
+    """Raising the allowance must not wipe the tally, and resetting the tally
+    must not change the allowance — they are different decisions."""
+    client.post("/api/config", json={"print_allowance": 300})
+    client.app.state.counters.set("prints_used", 12)
+
+    client.post("/api/config", json={"print_allowance": 400})
+    assert client.app.state.counters.get("prints_used") == 12
+
+    r = client.post("/api/printer/reset-count")
+
+    assert r.json() == {"ok": True, "was": 12, "prints_used": 0}
+    assert client.app.state.counters.get("prints_used") == 0
+    assert client.get("/api/config").json()["print_allowance"] == 400
+
+
+def test_recover_printer_action_goes_through_the_print_service(client, mocker):
+    """It used to run `systemctl restart cups`, which does not re-enable a
+    disabled queue — the only reason anyone presses it."""
+    recover = mocker.patch.object(
+        client.app.state.print_svc, "recover", return_value="re-enabled it")
+    mocker.patch("backend.diagnostics.sys.platform", "linux")
+
+    r = client.post("/api/emergency", json={"action": "restart_printer"})
+
+    assert r.status_code == 200
+    assert r.json()["detail"] == "re-enabled it"
+    recover.assert_called_once()

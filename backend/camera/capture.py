@@ -122,10 +122,6 @@ class CaptureRunner:
         self._gate.begin_capture()
         self._emit_job_state(job_id, "started")
 
-        # Preview-release settle: a few ms of idle after live view stopped and
-        # before we touch the capture path, so the camera has released the
-        # live-view USB/PTP state (gphoto: "preview may not be fully stopped
-        # when capture is triggered").
         time.sleep(self.PREVIEW_RELEASE_SETTLE_S)
 
         if not self._device.connected:

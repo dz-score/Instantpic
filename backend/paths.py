@@ -22,3 +22,6 @@ PHOTOS_DIR = os.path.join(BASE_DIR, "backend", "photos")
 OVERLAYS_DIR = os.path.join(BASE_DIR, "backend", "overlays")
 FONT_PATH = os.path.join(BASE_DIR, "backend", "PlayfairDisplay-Regular.ttf")
 CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
+# Runtime tallies, not configuration — kept out of the tracked config file
+# and out of git. See backend/counters.py.
+COUNTERS_PATH = os.path.join(BASE_DIR, "backend", "state", "counters.json")

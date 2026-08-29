@@ -53,10 +53,33 @@ class LedConfig(BaseModel):
     transport: Literal["http"] = "http"
     # PING cadence. The node's watchdog trips at 10 s of silence
     # (MODE_LINK_TIMEOUT_MS), so this is a 5x margin. Only fires when the wire
-    # has actually been idle — the watchdog counts any inbound line, so a busy
-    # session needs no heartbeat at all.
+    # has actually been idle — see LedController._run.
     heartbeat_ms: int = 2000
     http: LedHttpConfig = LedHttpConfig()
+
+
+class PrinterMockConfig(BaseModel):
+    """Shapes MockPrinterDriver so a dev box can rehearse a real dye-sub.
+
+    The defaults model a DNP DS-RX1HS on a 4x6 roll and are what every print
+    path is developed against before hardware exists, so correct them from the
+    real printer once it is on the bench (CONSTRAINTS.md §10).
+    """
+    # One 4x6 print, end to end. The printing animation dwells for exactly this
+    # long, so a wrong value looks right in development and wrong at the event.
+    job_duration_s: float = 13.0
+    # Prints on a full roll. Changing this is "load a new roll" — the driver
+    # reseeds its counter when the value moves.
+    media_total: int = 700
+    # A failure to rehearse. Everything except "none" is a fault this printer
+    # actually has; set one, run a session, watch what the guest sees.
+    #   submit_fails_once - lp rejects the first submission, accepts the retry
+    #   offline           - nothing is accepted at all, status reports it
+    #   out_of_media      - accepted, then the ribbon runs out mid-job
+    #   abort_mid_job     - accepted, then a jam partway through
+    fault: Literal[
+        "none", "submit_fails_once", "offline", "out_of_media", "abort_mid_job"
+    ] = "none"
 
 
 class AppSettings(BaseModel):
@@ -91,8 +114,24 @@ class AppSettings(BaseModel):
     # browser: the camera reports straight to the FSM via callbacks.)
     capture_stall_timeout: float = 75.0
     show_names_on_photo: bool = True
-    printer_name: str = "mock"
-    printer_options: str = "fit-to-page media=4x6"
+    # The booth's own queue. "mock" still selects the simulated printer, and
+    # Windows selects it regardless of what this says.
+    printer_name: str = "DS-RX1"
+    # Passed to `lp -o` verbatim, one option per whitespace-separated token.
+    # Deliberately not `fit-to-page` (CONSTRAINTS.md §6). The media name is
+    # unconfirmed against the real PPD, hence editable from the Printer tab
+    # (PRINTER_NOTES.md, hardware run step 2).
+    printer_options: str = "media=w288h432 scaling=100"
+    # Prints left below which the booth starts saying so. A judgement about the
+    # event rather than the hardware, hence config. Warned about, never
+    # enforced — a nearly-done roll must not stop the booth printing.
+    printer_media_low_threshold: int = 25
+    # The event's print budget. Unlike the media threshold above, this one is
+    # enforced (CONSTRAINTS.md §10). What has been spent against it is a tally,
+    # not a setting, and lives in backend/counters.py.
+    print_allowance: int = 150
+    # Only consulted when the mock driver is the one in use.
+    printer_mock: PrinterMockConfig = PrinterMockConfig()
     # Cap on FILES in the photos dir, not on sessions or on keepsakes. One
     # 3-shot session that prints leaves 7: three raws (capture_*.jpg), three
     # screen previews (preview_capture_*.jpg) and one composite (photo_*.jpg).
@@ -151,9 +190,13 @@ def read_settings(path: str) -> AppSettings:
         return AppSettings()
 
     try:
-        with open(path, "r") as f:
+        # UTF-8 explicitly, on both sides. The pair matters: writing non-ASCII
+        # and reading under the system locale breaks on a Pi with LANG=C, and a
+        # config full of names and messages is where non-ASCII lives.
+        with open(path, "r", encoding="utf-8") as f:
             return AppSettings(**json.load(f))
-    except (json.JSONDecodeError, ValidationError, OSError, TypeError) as e:
+    except (json.JSONDecodeError, ValidationError, OSError, TypeError,
+            UnicodeDecodeError) as e:
         backup = _quarantine_bad_config(path)
         log.error(
             "config",
@@ -174,8 +217,11 @@ def write_settings(path: str, settings: AppSettings):
     """
     tmp = f"{path}.tmp"
     try:
-        with open(tmp, "w") as f:
-            json.dump(settings.model_dump(), f, indent=2)
+        with open(tmp, "w", encoding="utf-8") as f:
+            # ensure_ascii=False so an operator opening this file sees "Michael &
+            # Sarah · June 14" rather than a \u00b7 escape. Only safe alongside
+            # the explicit encoding above and in read_settings.
+            json.dump(settings.model_dump(), f, indent=2, ensure_ascii=False)
             f.flush()
             os.fsync(f.fileno())
         os.replace(tmp, path)

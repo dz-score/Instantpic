@@ -172,9 +172,12 @@ export default function App() {
     api.sendEvent('FRAME_SKIP');
   }, [api]);
 
-  const handleFinish = useCallback(() => {
-    logger.info('session', 'session_end', 'Session finished normally');
-    endSession('completed');
+  // `outcome` is only supplied by PrintingScreen's auto-reset, which is the one
+  // caller that knows how the session actually ended. The screens using this as
+  // a plain onClick hand us a click event instead — hence the type check rather
+  // than a default argument.
+  const handleFinish = useCallback((outcome) => {
+    endSession(typeof outcome === 'string' ? outcome : 'completed');
     api.sendEvent('FINISH');
   }, [api]);
 
@@ -183,6 +186,13 @@ export default function App() {
     endSession('another');
     startSession();
     api.sendEvent('ANOTHER');
+  }, [api]);
+
+  // Not a new session: the same photo, sent again. Deliberately does not touch
+  // the session bookkeeping that handleAnother does.
+  const handleReprint = useCallback(() => {
+    logger.info('session', 'print_retry', 'Guest retried a failed print');
+    api.sendEvent('REPRINT');
   }, [api]);
 
   const handleAdminSave = useCallback(async (updates) => {
@@ -281,6 +291,7 @@ export default function App() {
           config={config}
           onFinish={handleFinish}
           onAnother={handleAnother}
+          onReprint={handleReprint}
           language={language}
         />
       )}
@@ -323,6 +334,8 @@ export default function App() {
           getDiagnostics={api.getDiagnostics}
           testLed={api.testLed}
           testLedChannel={api.testLedChannel}
+          testPrint={api.testPrint}
+          resetPrintCount={api.resetPrintCount}
           emergencyAction={api.emergencyAction}
           changePin={api.changePin}
           getRecentLogs={api.getRecentLogs}

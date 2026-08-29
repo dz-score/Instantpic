@@ -120,8 +120,7 @@ class LedHttpTransport:
         """No-op. Each HTTP request is self-framed, so there is nothing to drain.
 
         Present because UART needs it and the seam must not grow a method on the
-        day it is swapped. Over a byte stream a single desync — a stale half-line,
-        a reply arriving after its timeout — shifts the positional correlation
-        and poisons every reply after it.
+        day it is swapped — over a byte stream a desync poisons every reply after
+        it (Docs/LED_UART_SWITCH.md).
         """
         return None

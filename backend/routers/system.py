@@ -1,11 +1,19 @@
+import asyncio
 import socket
+
+import anyio.to_thread
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from backend import jobs
 from backend.settings import AppSettings
-from backend.deps import get_led, get_print_service, get_settings, get_state_machine
+from backend.deps import (
+    get_counters, get_job_queue, get_led, get_print_service, get_settings,
+    get_state_machine,
+)
 from backend.logger import log
+from backend.photo_processor import generate_alignment_card
 from backend.print_service import PrintService
 
 router = APIRouter(tags=["system"])
@@ -23,9 +31,86 @@ async def health_check():
 
 @router.get("/api/printer/status")
 async def printer_status(print_svc: PrintService = Depends(get_print_service)):
-    """Get current printer status (connected, ready, errors)."""
-    status = print_svc.get_status()
+    """Get current printer status (connected, ready, media, errors).
+
+    Keep this off the event loop: a cache miss can spend 10s in subprocesses
+    (ARCHITECTURE.md §10).
+    """
+    status = await anyio.to_thread.run_sync(print_svc.get_status)
     return status.to_dict()
+
+
+# The queue can be behind a guest's print, and the print itself is ~12s on a
+# dye-sub. Give the whole thing more room than one job's own ceiling before the
+# route stops waiting — the job is not cancelled either way, only unwatched.
+PRINT_TEST_TIMEOUT_S = PrintService.JOB_TIMEOUT_S + 30
+
+
+@router.post("/api/printer/test")
+async def test_print(
+    settings: AppSettings = Depends(get_settings),
+    queue=Depends(get_job_queue),
+    sm=Depends(get_state_machine),
+):
+    """Print a 4x6 alignment card and report what actually happened.
+
+    Refused outside ATTRACT, like the LED tests: this puts a job on the same
+    serial print lane a guest's photo uses, and nobody should be able to push a
+    diagnostic in front of a print someone is standing there waiting for.
+
+    Goes through the queue rather than calling PrintService directly: a guest's
+    print can still be finishing after the booth is back at ATTRACT, and the
+    lane is the only thing serialising the two.
+    """
+    screen = (await sm.get_state()).screen
+    if screen != "ATTRACT":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Booth is busy ({screen}) — run a test print from the idle screen",
+        )
+
+    filename = await asyncio.to_thread(
+        generate_alignment_card, settings.printer_name, settings.printer_options
+    )
+
+    loop = asyncio.get_running_loop()
+    done = loop.create_future()
+
+    async def on_success(_filename):
+        if not done.done():
+            done.set_result({"ok": True, "filename": filename})
+
+    async def on_failure(error):
+        if not done.done():
+            done.set_result({"ok": False, "filename": filename, "detail": error})
+
+    await queue.enqueue(jobs.print_photo_job(filename, on_success, on_failure))
+
+    try:
+        result = await asyncio.wait_for(done, timeout=PRINT_TEST_TIMEOUT_S)
+    except asyncio.TimeoutError:
+        # The job is still the queue's problem; we have simply stopped watching.
+        result = {"ok": False, "filename": filename,
+                  "detail": "Still printing after "
+                            f"{PRINT_TEST_TIMEOUT_S:.0f}s — check the printer"}
+
+    log.info("system", "printer_test", f"Test print: {result}", data=result)
+    return result
+
+
+@router.post("/api/printer/reset-count")
+async def reset_print_count(counters=Depends(get_counters)):
+    """Zero the prints-used tally.
+
+    Its own endpoint rather than a field on /api/config: the allowance is a
+    setting, what has been spent against it is not, and putting a tally in the
+    config payload is what got it committed to git in the first place.
+    """
+    was = counters.get("prints_used")
+    counters.set("prints_used", 0)
+    log.warn("system", "print_count_reset",
+             f"Print count reset from {was} to 0", data={"was": was})
+    return {"ok": True, "was": was, "prints_used": 0}
 
 
 @router.get("/api/diagnostics")
@@ -33,9 +118,13 @@ async def get_diagnostics(
     settings: AppSettings = Depends(get_settings),
     print_svc: PrintService = Depends(get_print_service),
     led=Depends(get_led),
+    counters=Depends(get_counters),
 ):
     from backend.diagnostics import get_diagnostics
-    return get_diagnostics(settings, print_svc, led)
+    # Same reasoning as /api/printer/status, and this one also does a
+    # disk_usage() and a glob over the photos directory.
+    return await anyio.to_thread.run_sync(
+        get_diagnostics, settings, print_svc, led, counters)
 
 
 @router.post("/api/led/test")
@@ -107,11 +196,14 @@ async def led_channel(
 
 
 @router.post("/api/emergency")
-async def emergency_action(req: EmergencyRequest):
+async def emergency_action(
+    req: EmergencyRequest,
+    print_svc: PrintService = Depends(get_print_service),
+):
     from backend.diagnostics import execute_emergency
     log.warn("system", "system_emergency", f"Emergency action triggered: {req.action}", data={"action": req.action})
-    result = execute_emergency(req.action)
-    return result
+    # Off the loop: clear_queue shells out, and restart_printer waits on systemd.
+    return await anyio.to_thread.run_sync(execute_emergency, req.action, print_svc)
 
 
 def _get_lan_ip():

@@ -26,17 +26,9 @@ sudo apt install -y libgphoto2-dev pkg-config
 > **Note**: The Pi will need a USB printer that supports CUPS.
 
 > ### ⚠️ python-gphoto2 must be built from source, not installed as a wheel
-> The wheel bundles its own **libgphoto2 2.5.34**, and that build stalls M50 live
-> view — a ~3.0s dead preview grab every ~6s, permanently. The preview worker holds
-> the camera lock across each grab, so a stalled grab blocks the shutter and the
-> guest's photo fires ~3s after the countdown hits zero.
->
-> Measured on this rig — same code, same camera, same 60s, only the library swapped:
->
-> | libgphoto2 | frames in 60s | rate | stalls | shutters blocked (6s spacing) |
-> |---|---|---|---|---|
-> | 2.5.34 (bundled in the wheel) | 1693 | 28.2 fps | **10** | **3/14**, mean lock wait 642 ms |
-> | 2.5.30 (system, apt) | 3598 | 60.0 fps | **0** | **0/15**, mean lock wait 3 ms |
+> The wheel bundles its own **libgphoto2 2.5.34**, which stalls M50 live view
+> badly enough to delay the shutter behind the countdown. The measurements are in
+> [CAMERA_NOTES.md](CAMERA_NOTES.md); what matters here is the install.
 >
 > `backend/requirements.txt` carries a `--no-binary gphoto2` line that forces the
 > source build. **Do not remove it**, and do not `pip install gphoto2` by hand — pip
@@ -84,14 +76,46 @@ npm run build   # creates ./dist folder
 The built assets are automatically served by the backend at `/`.
 
 ## 6️⃣ Configure CUPS Printing
+
+### Any CUPS printer
 1. Open the CUPS web UI on the Pi (http://localhost:631).
 2. Add your printer → **Add Printer** → select the USB device.
-3. Choose the appropriate driver (most modern printers work with the generic **IPP Everywhere** driver).
-4. Set the default printer (required by the backend `printer.py`).
+3. Choose the appropriate driver (most modern inkjets work with the generic **IPP Everywhere** driver).
+4. Put the **queue name** into the admin panel's **Printer** tab. The booth
+   selects its driver from that name; it does not need to be the system default.
+
+### DNP DS-RX1HS (the booth's dye-sub)
 ```bash
-# Optional – set default printer from CLI
-lpoptions -d <printer_name>
+sudo apt install -y printer-driver-gutenprint cups-ipp-utils
+sudo systemctl restart cups
+sudo usermod -aG lp,lpadmin "$USER"     # USB access without root; log out and back in
 ```
+Then add it from the CUPS web UI with the printer **on and connected over USB**.
+
+- It appears as **DS-RX1**, not RX1HS.
+- The driver must be **Gutenprint**, using the `gutenprint53+usb` backend.
+  Generic USB will not do.
+- `cups-ipp-utils` supplies `ipptool`, which is how the booth reads prints
+  remaining. Without it everything still works; the media readout is just blank.
+
+[PRINTER_NOTES.md](PRINTER_NOTES.md) explains why each of those is the answer.
+
+Then set the error policy — **do not skip this**:
+```bash
+lpadmin -p DS-RX1 -o printer-error-policy=abort-job
+```
+Without it, the first cover-open or jam disables the queue for the rest of the
+event and nothing prints again until someone runs `cupsenable`. The booth warns
+at boot if it is not set ([PRINTER_NOTES.md](PRINTER_NOTES.md)).
+
+Then, in the admin panel's **Printer** tab:
+1. Set the queue name.
+2. Press **Print Alignment Card** and check it against a ruler.
+3. Tune **Print options** if the geometry is wrong, and print again.
+
+⚠️ Do not skip step 2 — a squeezed print is not obvious until you measure one.
+**[PRINTER_NOTES.md](PRINTER_NOTES.md) has the full hardware-run checklist** —
+work through it before the event, not at it.
 
 ## 7️⃣ Systemd Service – Run backend automatically
 Create `/etc/systemd/system/photo-booth.service`:
@@ -232,7 +256,9 @@ the heartbeat alone — a `PING` is enough. So:
 - [ ] Repository cloned
 - [ ] Python venv created & dependencies installed
 - [ ] Frontend built (`npm run build`)
-- [ ] CUPS printer added & default set
+- [ ] CUPS printer added, queue name entered in the Printer tab
+- [ ] `printer-error-policy=abort-job` set on the queue
+- [ ] Alignment card printed and measured (see PRINTER_NOTES.md)
 - [ ] `photo-booth.service` enabled & running
 - [ ] Chromium kiosk autostart configured
 - [ ] (Optional) VNC/Xvfb for headless operation

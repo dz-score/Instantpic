@@ -39,10 +39,8 @@ whatever the DJ brought. Retries land exactly during the countdown-to-shutter
 window. Serial is wired, powers the ESP32, survives replug, and gives a console
 for on-site debugging.
 
-> That reasoning still stands; the decision was reversed anyway, to build and
-> harden one transport instead of two. The risk is accepted deliberately, on the
-> bet that a dedicated AP on a hand-picked channel with the node as its only
-> client keeps the tail latency small enough to not reach the shutter.
+> That reasoning still stands; the decision was reversed anyway, and the risk
+> accepted deliberately.
 >
 > The trigger conditions for reversing it back, and everything the switch would
 > involve, are in [LED_UART_SWITCH.md](LED_UART_SWITCH.md). The protocol is
@@ -156,9 +154,6 @@ behind it.
 Same color, same speed — only intensity and length change.
 
 **Parameters.** `duration_ms`.
-
-**Notes.** 60 px at one rev/s is one pixel per 16.7 ms — sub-pixel rendering is
-mandatory here or the sweep looks steppy.
 
 The ring deliberately does **not** encode which second it is; the screen displays
 the number, and duplicating it in the periphery buys nothing. This also keeps the

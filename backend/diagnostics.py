@@ -7,16 +7,24 @@ from backend import storage
 from backend.settings import AppSettings
 from backend.print_service import PrintService
 
-def check_printer(print_svc: PrintService):
-    """Check if printer is connected/available via PrintService."""
+def check_printer(print_svc: PrintService, settings: AppSettings = None,
+                  counters=None):
+    """Check if printer is connected/available via PrintService.
+
+    Everything PrinterStatus knows goes through, including which driver
+    answered and what it can say about media. Re-listing the fields here meant
+    a new one had to be added twice to reach the admin panel; `status` is kept
+    as an alias because the UI reads it under that name.
+
+    The allowance rides along because the panel shows both together: it is the
+    pair — ribbon left and budget left — that says whether the night will make it.
+    """
     status = print_svc.get_status()
-    return {
-        "connected": status.connected,
-        "status": status.status_text,
-        "printer_name": status.printer_name,
-        "ready": status.ready,
-        "error": status.error,
-    }
+    out = {**status.to_dict(), "status": status.status_text}
+    if settings is not None:
+        out["prints_used"] = counters.get("prints_used") if counters else 0
+        out["print_allowance"] = settings.print_allowance
+    return out
 
 def check_storage(settings: AppSettings):
     """Check disk usage and photo count."""
@@ -38,10 +46,11 @@ def check_storage(settings: AppSettings):
         "max_photos": settings.max_photos
     }
 
-def get_diagnostics(settings: AppSettings, print_svc: PrintService, led=None):
+def get_diagnostics(settings: AppSettings, print_svc: PrintService, led=None,
+                    counters=None):
     """Aggregate all diagnostic checks."""
     diag = {
-        "printer": check_printer(print_svc),
+        "printer": check_printer(print_svc, settings, counters),
         "storage": check_storage(settings)
     }
     # Optional so the aggregate keeps working for callers that predate the ring.
@@ -51,8 +60,13 @@ def get_diagnostics(settings: AppSettings, print_svc: PrintService, led=None):
         diag["led"] = led.health()
     return diag
 
-def execute_emergency(action: str):
-    """Execute an emergency control action."""
+def execute_emergency(action: str, print_svc: PrintService = None):
+    """Execute an emergency control action.
+
+    `print_svc` is required for clear_queue: cancelling behind the service's back
+    breaks PrintService.cancel_all's guarantee, and Rule 5 gives that service
+    sole access to the printer anyway.
+    """
     if sys.platform == "win32":
         return {
             "status": "mock",
@@ -79,14 +93,22 @@ def execute_emergency(action: str):
                     "detail": "Camera reconnects automatically; no manual restart is implemented"}
         
         elif action == "restart_printer":
-            subprocess.run(["sudo", "systemctl", "restart", "cups"],
-                         capture_output=True, timeout=10)
-            return {"status": "success", "detail": "CUPS service restarted"}
+            # Was `systemctl restart cups`, which does not re-enable a disabled
+            # queue — the one thing an operator presses this for. Restarting the
+            # daemon never fixed the fault it was reached for; recovering the
+            # queue does (Docs/PRINTER_NOTES.md).
+            if print_svc is None:
+                return {"status": "error",
+                        "detail": "Print service unavailable; queue not recovered"}
+            return {"status": "success", "detail": print_svc.recover()}
         
         elif action == "clear_queue":
-            subprocess.run(["cancel", "-a"],
-                         capture_output=True, timeout=5)
-            return {"status": "success", "detail": "Print queue cleared"}
+            if print_svc is None:
+                return {"status": "error",
+                        "detail": "Print service unavailable; queue not cleared"}
+            ok = print_svc.cancel_all()
+            return {"status": "success" if ok else "error",
+                    "detail": "Print queue cleared" if ok else "Could not clear the print queue"}
         
         else:
             return {"status": "error", "detail": f"Unknown action: {action}"}

@@ -3,7 +3,10 @@ import pytest
 from PIL import Image
 from backend import paths
 from backend.settings import AppSettings, OverlayConfig
-from backend.photo_processor import PREVIEW_MAX_EDGE, generate_previews, process_photo_layout
+from backend.photo_processor import (
+    CANVAS_H, CANVAS_W, PREVIEW_MAX_EDGE, PRINT_DPI,
+    generate_alignment_card, generate_previews, process_photo_layout,
+)
 
 # The overlay catalogue is passed in now rather than read from a global.
 OVERLAYS = AppSettings().overlays
@@ -172,3 +175,34 @@ def test_unsatisfiable_layout_raises(temp_workspace, temp_config, mock_base64_im
             images_base64=[mock_base64_image] * count, layout_type=layout,
             text="Names", overlay_id="none", overlays=OVERLAYS,
         )
+
+
+def test_composite_carries_a_300_dpi_tag(temp_workspace, temp_config, mock_base64_image):
+    """An untagged bitmap leaves CUPS free to pick its own scale, which is how a
+    6x4 canvas ends up letterboxed or squeezed on a dye-sub. Tagged at 300,
+    1800x1200 IS 6x4 inches."""
+    filename = process_photo_layout(
+        images_base64=[mock_base64_image],
+        layout_type="single",
+        text="",
+        overlay_id="none",
+        overlays=OVERLAYS,
+    )
+    img = Image.open(os.path.join(temp_workspace["photos_dir"], filename))
+    assert img.size == (CANVAS_W, CANVAS_H)
+    assert img.info.get("dpi") == (PRINT_DPI, PRINT_DPI)
+
+
+def test_alignment_card_is_a_tagged_print_page(temp_workspace, temp_config):
+    """The card only means anything if it is exactly the geometry it claims to
+    measure."""
+    filename = generate_alignment_card("DS-RX1", "media=w288h432 scaling=100")
+
+    # photo_ so circular storage sweeps it up like anything else; printtest so
+    # an operator can tell test cards from guests' photos in the folder.
+    assert filename.startswith("photo_")
+    assert "printtest" in filename
+
+    img = Image.open(os.path.join(temp_workspace["photos_dir"], filename))
+    assert img.size == (CANVAS_W, CANVAS_H)
+    assert img.info.get("dpi") == (PRINT_DPI, PRINT_DPI)

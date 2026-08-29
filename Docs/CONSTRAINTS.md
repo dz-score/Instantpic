@@ -119,9 +119,9 @@ The frame buffer (`_latest_frame`) is a **single slot** that the worker thread o
 ---
 
 ### Rule: Build python-gphoto2 from source — never install the wheel
-`backend/requirements.txt` carries a **`--no-binary gphoto2`** line. Keep it. The python-gphoto2 **wheel** bundles its own **libgphoto2 2.5.34**, and that build stalls M50 live view: a ~3.0s dead preview grab every ~6s, forever. The preview worker holds the camera lock across each grab, so a stalled grab **blocks the shutter** and the guest's photo fires ~3s after the countdown hits zero. The system libgphoto2 (2.5.30, apt) has neither problem.
+`backend/requirements.txt` carries a **`--no-binary gphoto2`** line. Keep it. The wheel bundles libgphoto2 2.5.34, which stalls M50 live view badly enough to delay the shutter; the system library (2.5.30, apt) does not.
 
-> **Why:** measured on this rig — same code, same camera, same 60s, only the library swapped. Bundled 2.5.34: 1693 frames, 28.2 fps, **10 stalls**. System 2.5.30: 3598 frames, 60.0 fps, **0 stalls**. App-shaped (`--contention --gap-s 6`): 2.5.34 blocked **3/14** shutters (mean lock wait 642 ms); 2.5.30 blocked **0/15** (mean 3 ms). The boot wedge is a 2.5.34 artifact too.
+> **Why:** measured on this rig, both libraries, same everything else. The numbers and the full characterization are in [CAMERA_NOTES.md](CAMERA_NOTES.md).
 
 > **What breaks:** `pip install gphoto2` by hand, or dropping the `--no-binary` line, silently installs the wheel and every symptom returns — invisibly, until someone measures millisecond timings on real hardware. Verify with `python3 -c "import gphoto2 as gp; print(gp.gp_library_version(gp.GP_VERSION_VERBOSE)[0])"` — it must **not** print 2.5.34. Requires `libgphoto2-dev` + `pkg-config` (see DEPLOYMENT_GUIDE).
 
@@ -221,10 +221,22 @@ All `logger.info/warn/error()` calls in the frontend use `utils/logger.js`, whic
 
 ## 6. Photo Processing Constraints
 
-### Rule: Canvas is always 1800×1200 px (6×4 inch at 300 DPI)
-This is the fixed output resolution. It must not be changed without also updating overlay PNGs, layout coordinates, and printer options.
+### Rule: Canvas is always 1800×1200 px, and the JPEG says so
+`CANVAS_W`/`CANVAS_H`/`PRINT_DPI` in `photo_processor.py` are the fixed output
+geometry. Every saved print page is written with `dpi=(300, 300)`. Neither may
+change without also updating overlay PNGs, layout coordinates, and printer
+options.
 
-> **Why:** Dye-sublimation printers for 4×6 inch prints expect exactly this aspect ratio. All overlay frames are authored at 1800×1200.
+> **Why:** Dye-sublimation printers for 4×6 inch prints expect exactly this
+> aspect ratio, and all overlay frames are authored at 1800×1200. The DPI tag is
+> not cosmetic: an untagged bitmap leaves CUPS free to invent a physical size for
+> it, which is how a 6×4 canvas ends up letterboxed or squeezed. Tagged at 300,
+> 1800×1200 *is* 6×4 inches and maps 1:1 onto the page. Gutenprint has a known
+> squeeze on the DS-RX1HS in exactly this area.
+
+> **What breaks:** dropping the `dpi=` argument, or defaulting `printer_options`
+> back to `fit-to-page`, hands the scaling decision back to CUPS — and it will be
+> wrong invisibly, on paper, at the event.
 
 ---
 
@@ -323,19 +335,98 @@ The frontend `logger.js` flushes to `POST /api/logs` every 10 seconds or after 2
 
 ## 10. Print Service Rules
 
-### Rule: The printer is selected by CUPS queue name in config, not by driver class
-`printer_name: "mock"` → `MockPrinterDriver`. Any other string → `CupsPrinterDriver` with that name. No code changes are needed to swap printers.
+### Rule: "printed" means paper, not acceptance
+`print_svc.print()` submits the job and then **waits it out**. It returns success
+only when the job reached a terminal state that means a print physically
+finished, and `printStatus` carries that outcome to the guest unchanged.
 
-> **Why:** Different events may use different printers (Epson, DNP, HiTi). The CUPS abstraction means the booth works with any printer that has a CUPS driver, without modifying application code.
+> **Why:** a dye-sub queue accepts a job in ~100 ms and takes ~12 s to print it,
+> and the failures that matter all land in that gap (PRINTER_NOTES.md). Reporting
+> the submission told the guest "Done!" and handed them nothing.
+
+> **What breaks:** returning after `print_file()` restores exactly that bug. If
+> a future driver cannot observe its jobs, it must say so (`job_id = None` is
+> reported as an untracked submission, not dressed up as a completion) rather
+> than let the FSM claim a print it never saw.
 
 ---
 
-### Rule: Print calls are synchronous (blocking) within the print service
-`print_svc.print()` blocks the calling thread until the `lp` subprocess exits. It is called from the FastAPI async route via a normal `await`-free call.
+### Rule: There is no retry after a job is accepted
+Retry belongs to submission and nowhere else. If `lp` rejects the file, nothing
+reached the printer and a second attempt is free. Once CUPS holds the job, a
+failure is reported and the booth stops.
 
-> **Why:** Print jobs are fire-and-forget from the operator's perspective. The HTTP response only needs to confirm that the job was accepted by CUPS, which happens within the `lp` call duration (~50–200 ms).
+> **Why:** a jam that gets cleared and silently reprinted hands the guest two
+> photos and spends two sheets of media. The operator seeing the failure is the
+> better outcome, and `REPRINT` gives the retry back to a person at the printer.
 
-> **Note:** If print times become a bottleneck, wrap `print_svc.print()` in `run_in_executor`.
+> **What breaks:** looping `print()` on a failed outcome will double-print every
+> jam the moment someone opens and closes the lid.
+
+---
+
+### Rule: The printer is selected by CUPS queue name in config, not by driver class
+`printer_name: "mock"` → `MockPrinterDriver`. Any other string →
+`CupsPrinterDriver` with that name. On Windows the mock is selected regardless,
+because there is no CUPS to talk to. No code changes are needed to swap printers.
+
+> **Why:** Different events may use different printers (Epson, DNP, HiTi). The
+> CUPS abstraction means the booth works with any printer that has a CUPS
+> driver, without modifying application code.
+
+> **What breaks:** a status card that looks healthy without saying it is
+> simulated is the same lie this section exists to remove — which is why
+> `PrinterStatus.driver` exists and the admin panel shows it.
+
+---
+
+### Rule: The mock printer is production code, not a stub
+`MockPrinterDriver` is the only printer a Windows dev box can reach, so it has to
+be wrong in the same ways a dye-sub is wrong: accept instantly, take ~13 s,
+count media down, run out, jam. Its knobs live in `AppSettings.printer_mock`.
+
+> **Why:** every print path this project has — the printing animation's dwell, a
+> failure reaching the guest, an operator watching a roll run down — is developed
+> and verified against those numbers before any hardware exists.
+
+> **What breaks:** "simplifying" it back to `sleep(2); return success` makes all
+> of that untestable again, silently.
+
+---
+
+### Rule: The print allowance is enforced; the media warning is not
+`print_allowance` caps what one event may print and `prints_used` counts against
+it. Past the cap the FSM sets `printStatus: "skipped"` and queues nothing. The
+media threshold above only warns.
+
+> **Why:** they answer different questions. A nearly-spent ribbon is a fact about
+> the hardware and stopping on it would refuse prints the booth can still make.
+> An allowance is somebody's budget for the night, and a budget that only warns
+> is not a budget.
+
+> **What breaks:** a spent allowance must never look like a failure. Nothing is
+> wrong, no attendant is needed, and offering `REPRINT` there would be a button
+> that cannot work — the FSM refuses it, so the screen must not offer it.
+
+> What has been spent against the allowance is a **tally, not a setting**: it
+> lives in `backend/counters.py`, persisted outside `config.json`. It has to
+> survive a restart — a reboot mid-event must not hand the budget back — but it
+> is not an operator decision, and keeping it in the tracked config file meant
+> every print dirtied the working tree.
+
+---
+
+### Rule: Absent media reporting is not empty media
+`prints_remaining` is `None` when the driver cannot know — no marker attributes,
+no `ipptool`, a printer that does not report. `None` reaches the UI as *no number
+shown*, never as zero.
+
+> **Why:** a confident "0 prints left" on a full roll would send an operator
+> hunting for a spare mid-event.
+
+> **⚠️ The CUPS-side parser is UNVERIFIED** against a real DS-RX1HS — see
+> [PRINTER_NOTES.md](PRINTER_NOTES.md). It fails closed by design until the
+> hardware run confirms it.
 
 ---
 

@@ -50,6 +50,7 @@ FRAME_PICKER
   ├─ FRAME_SKIP → PRINTING (with default frame)
   └─ (or TIMEOUT → ATTRACT)
 PRINTING
+  ├─ REPRINT → PRINTING (retry, only while printStatus is "failed")
   ├─ ANOTHER → CHOOSE_STYLE (run again)
   ├─ FINISH → ATTRACT (return to idle)
   └─ (or TIMEOUT → ATTRACT)
@@ -216,6 +217,34 @@ Guest skips frame selection and proceeds directly to printing with the default f
 
 ---
 
+### REPRINT
+**Valid from:** `PRINTING`, and **only while `printStatus` is `"failed"`**  
+**Payload:** `{}` (no data required)
+
+Sends the same `finalPhoto` to the printer again after a print did not come out.
+The booth returns to `printStatus: "printing"` and reports the second outcome the
+same way it reported the first.
+
+The `printStatus` condition is the point of this event, not an implementation
+detail. A print that succeeded and a print that jammed look the same to a guest
+standing at the booth, but retrying the first spends a second sheet of media on
+a copy nobody agreed to — the booth prints once per session. Retrying the second
+is the guest getting the photo they were already promised.
+
+That condition also makes the event idempotent: the first `REPRINT` moves
+`printStatus` to `"printing"`, so a double tap or a retried POST is refused
+rather than queueing a duplicate behind the first. Rejections are logged
+(`reprint_rejected`) and, like every invalid event, change nothing.
+
+```json
+{
+  "type": "REPRINT",
+  "payload": {}
+}
+```
+
+---
+
 ### ANOTHER
 **Valid from:** `PRINTING` only  
 **Payload:** `{}` (no data required)
@@ -302,7 +331,11 @@ The complete current state of the booth:
 - `retakeCount` (integer): Number of times the guest has retaken photos
 - `allSessionPhotos` (array): All processed photos from this session with their raw images
 - `isProcessing` (boolean): True if a background job (photo processing, frame application) is running
-- `printStatus` (string): `"idle"` | `"printing"` | `"printed"` | `"failed"`
+- `printStatus` (string): `"idle"` | `"printing"` | `"printed"` | `"failed"` |
+  `"skipped"`. `"printed"` means the print physically finished, not that CUPS
+  accepted the job — the backend waits the job out before reporting a terminal
+  value. `"skipped"` means the event's print allowance is spent: no job was
+  queued, and the guest is shown the QR rather than an error (CONSTRAINTS §10).
 
 ---
 
@@ -667,12 +700,15 @@ After `session_timeout` seconds (configurable, default 300), the backend should 
 This can be implemented as a server-side timer or by the UI sending a TIMEOUT command. The backend transitions to ATTRACT regardless.
 
 ### Loss of Printer
-If the printer disconnects while `printStatus: "printing"`, the backend:
-- Detects the error in the print worker
-- Calls `job_print_failed(error)`
+If the printer disconnects, jams or runs out while `printStatus: "printing"`, the
+backend:
+- Sees the queue stop with the job still in it (or the job outlive `JOB_TIMEOUT_S`)
+- Calls `job_print_failed(error)` with the reason CUPS gave
 - Emits state_update: `printStatus: "failed"`
 
-The UI can then offer retry/skip/troubleshoot options. The booth does **not** automatically retry printing — the guest (or operator) must explicitly choose next steps.
+The booth does **not** automatically retry printing (CONSTRAINTS.md §10). The
+guest is shown that the print did not come out, keeps the QR download, and is
+offered `REPRINT`, which a human who can see the printer decides to press.
 
 ### Photo Processing Failure
 If a photo processing job fails:

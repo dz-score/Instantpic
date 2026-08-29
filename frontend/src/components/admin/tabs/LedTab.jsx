@@ -11,14 +11,11 @@ import './LedTab.css';
  * miswired, or has one channel out. PHASE cannot do this — it never lights W
  * and desaturates below sat 1.0, so it always mixes dies.
  *
- * The backend refuses every command here outside ATTRACT: they queue onto the
- * same single-owner queue the shutter waits on, and full white for two minutes
- * must not be startable underneath a guest. That refusal comes back as an
- * ordinary message rather than an error.
+ * The backend refuses every command here outside ATTRACT (see the routes in
+ * backend/routers/system.py). That refusal comes back as an ordinary message
+ * rather than an error.
  *
- * Rule 7 escape hatch, same as SystemTab: health is polled over REST because
- * there is no event source for it — it is a live read of the controller's own
- * counters. Only while this panel is mounted, and cleared on unmount.
+ * Health is polled over REST — the Rule 7 escape hatch SystemTab documents.
  */
 
 const CHANNELS = [
@@ -111,8 +108,7 @@ export default function LedTab({ getDiagnostics, testLed, testLedChannel, ledCon
                 : (health.last_error || 'No reply from the node')}
             </span>
           </div>
-          {/* The tail, not the average: a mean hides the retry storm that would
-              put a dark frame in a photo (Docs/LED_UART_SWITCH.md). */}
+          {/* p95, not the mean — Docs/LED_UART_SWITCH.md. */}
           {capture && (
             <div className="led-status__latency">
               <span className="led-status__latency-value">{capture.p95} ms</span>

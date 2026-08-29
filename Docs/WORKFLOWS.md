@@ -443,13 +443,15 @@ Operator taps "Close" or presses outside
       backoff loop. The button stays visible so the operator sees that
       answer in the result toast instead of a fake success.
 
-  "Restart Printer"
+  "Recover Printer"
     → POST /api/emergency {action: "restart_printer"}
-    → backend: systemctl restart cups
+    → backend: print_svc.recover() — cancel the backlog, then cupsenable.
+      Restarting cupsd, which this used to do, leaves a disabled queue
+      disabled (Docs/PRINTER_NOTES.md).
 
   "Clear Print Queue"
     → POST /api/emergency {action: "clear_queue"}
-    → backend: cancel -a (cancels all CUPS jobs)
+    → backend: print_svc.cancel_all()
 ```
 
 ---
@@ -691,37 +693,45 @@ Printing is backend-owned workflow. The FSM starts it on entering PRINTING and
 reports the outcome via `printStatus`; the UI never triggers the print or
 guesses the result.
 
+`printStatus` reports **paper, not acceptance**
+([CONSTRAINTS](CONSTRAINTS.md) §10).
+
 ```
 FSM enters PRINTING (_enter_printing):
-  1. state.screen = "PRINTING", printStatus = "printing"
-  2. job_queue.enqueue({type: "PRINT_PHOTO", filename: "photo_abc.jpg"})
-       → SSE state_update → PrintingScreen shows "printing"
+  1. state.screen = "PRINTING"
+  2. nothing to print (no finalPhoto / no queue)? → printStatus = "failed",
+       log print_not_enqueued, stop. Never leave a spinner with no job behind it.
+  3. printStatus = "printing"
+  4. job_queue.enqueue({type: "PRINT_PHOTO", filename: "photo_abc.jpg"})
+       → SSE state_update → PrintingScreen shows the printing animation
 
-  job_queue worker (PRINT_PHOTO):
-  3. filepath = PHOTOS_DIR / filename
-  4. print_svc.print(filepath)  (run in thread pool — it blocks)
+  job_queue PRINT lane (its own worker — a ~12s print must not sit in front
+  of the next guest's photo processing):
+  5. filepath = PHOTOS_DIR / filename
+  6. await loop.run_in_executor(None, print_svc.print, filepath)
 
   PrintService.print():
-  5. settings_svc.get() → printer_name  (holds the service, so a printer
+  7. _reload_driver() from settings_svc  (holds the service, so a printer
        swapped in the admin panel takes effect on the next job, no restart)
-  6. Select driver:
-       printer_name == "mock" → MockPrinterDriver (returns immediate success)
-       else → CupsPrinterDriver
-  7. Validates file exists (returns failure PrintResult if not)
+  8. Validates the file exists
+  9. PHASE 1 — driver.print_file() submits. `lp` returns a job id in ~100ms.
+       Failure here retries once (CONSTRAINTS §10).
+  10. PHASE 2 — driver.await_job(job_id, 90s) blocks until the job is terminal.
+       The guest watches the printing animation for exactly this long.
+       No retry past this point (CONSTRAINTS §10).
 
-  CupsPrinterDriver.print_file():
-  8. subprocess.run(["lp", "-d", printer_name, *options_flags, filepath])
-  9. Captures stdout for job_id (e.g. "request id is Canon-123")
-  10. Returns PrintResult {success: true, job_id: "Canon-123", duration_ms: ...}
-
-  On failure:
-  11. Retry once with backoff, then returns PrintResult {success: false, error}
-      → job_print_failed() → printStatus = "failed"
-      → SSE state_update → PrintingScreen shows error + QR fallback
+  On failure (submit failed twice, or the job aborted/timed out):
+  11. job_print_failed(error) → printStatus = "failed"
+      → SSE state_update → PrintingScreen says the print did not come out,
+        keeps the QR (the photo is still safe), and offers REPRINT
 
   On success:
   12. job_print_done() → printStatus = "printed"
-      → SSE state_update → PrintingScreen shows success + QR code
+      → SSE state_update → PrintingScreen shows the print is ready + QR code
+
+  REPRINT (only while printStatus == "failed"):
+  13. back to step 3 with the same finalPhoto. What that condition is for, and
+      why it also makes a double tap harmless: API_PROTOCOL.md.
 ```
 
 ---

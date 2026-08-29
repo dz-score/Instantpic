@@ -1,13 +1,9 @@
-/* Link Lost — the node noticing the host went silent.
+/* Link Lost — the node noticing the host went silent. Spec: Docs/LED_SPEC.md §9.
  *
- * Distinct from Error in both colour and character: amber rather than red, a
- * smooth symmetric pulse rather than a heartbeat, no motion and no direction.
- * At the venue this visual is the only debugging output there is, so the two
- * must never be confused.
+ * Must stay distinct from Error in both colour and character: at a venue these
+ * two are the only debugging output there is, and they are opposite diagnoses.
  *
- * The safety rule that gets here from Capture lives in modes.c: a dead host must
- * never strand the strip at full white, the highest-current and highest-heat
- * state in the system, held indefinitely with nobody watching.
+ * The safety rule that gets here from Capture lives in modes.c, not here.
  */
 #include <math.h>
 

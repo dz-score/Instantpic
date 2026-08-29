@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useCallback } from 'react';
 import ScreenShell from '../components/ScreenShell';
 import { t } from '../utils/i18n';
 import useTapGuard from '../hooks/useTapGuard';
-import { Camera } from 'lucide-react';
+import { Camera, Printer } from 'lucide-react';
 import './PrintingScreen.css';
 
 const AUTO_RESET_SECONDS = 25;
@@ -18,10 +18,20 @@ const AUTO_RESET_SECONDS = 25;
  * Phase 1 (PRINTING):  printStatus === 'printing'
  *   - Animated printer icon + warm patience message
  *
- * Phase 2 (DONE/ERROR): printStatus === 'printed' | 'failed'
- *   - Thank you message (from config)
+ * Phase 2 (DONE): printStatus === 'printed'
+ *   - A real completion: the backend waits the job out, so the paper is out
  *   - Photo preview + QR code to download
  *   - Blush "Take Another" button + auto-reset countdown
+ *
+ * Phase 2 (ERROR): printStatus === 'failed'
+ *   - Says plainly that nothing came out, and points at an attendant
+ *   - The photo is still safe and still downloadable, so the QR stays
+ *   - Offers REPRINT, which the FSM accepts only from 'failed'
+ *
+ * Phase 2 (SPENT): printStatus === 'skipped'
+ *   - The event's print allowance is used up. Nothing failed and nobody needs
+ *     fetching, so this reads as an ordinary end to the session, not an error.
+ *   - No retry: the FSM would refuse it, and offering it would be a lie.
  *
  * Background from ScreenShell (bg-wedding.png).
  */
@@ -33,11 +43,13 @@ export default function PrintingScreen({
   config,
   onFinish,
   onAnother,
+  onReprint,
   language,
 }) {
   // Derived directly from backend state — no local success/failure of our own.
   const phase = printStatus === 'printed' ? 'DONE'
     : printStatus === 'failed' ? 'ERROR'
+    : printStatus === 'skipped' ? 'SPENT'
     : 'PRINTING';
 
   const [guard, armed] = useTapGuard();
@@ -50,9 +62,16 @@ export default function PrintingScreen({
   const qrSrc = getQrUrl(downloadUrl);
 
   // Auto-return home after a fixed delay (no longer shown as a live countdown).
+  // The phase goes with it: this timer is what ends most sessions, so without it
+  // every failed print is filed as a session that finished normally, and the
+  // logs say the night went fine.
   useEffect(() => {
     if (phase === 'PRINTING') return;
-    resetTimerRef.current = setTimeout(() => onFinishRef.current(), AUTO_RESET_SECONDS * 1000);
+    const outcome = phase === 'DONE' ? 'completed'
+      : phase === 'SPENT' ? 'print_skipped'
+      : 'print_failed';
+    resetTimerRef.current = setTimeout(
+      () => onFinishRef.current(outcome), AUTO_RESET_SECONDS * 1000);
     return () => clearTimeout(resetTimerRef.current);
   }, [phase]);
 
@@ -60,6 +79,14 @@ export default function PrintingScreen({
     clearTimeout(resetTimerRef.current);
     onAnother();
   }, [onAnother]);
+
+  // Retrying puts printStatus back to 'printing', so the phase effect above
+  // clears the auto-reset on its own — the guest does not get sent home
+  // halfway through the print they just asked for.
+  const handleReprint = useCallback(() => {
+    clearTimeout(resetTimerRef.current);
+    onReprint();
+  }, [onReprint]);
 
   return (
     <ScreenShell className="print-screen">
@@ -94,7 +121,7 @@ export default function PrintingScreen({
       )}
 
       {/* ── Phase: Done / Error ── */}
-      {(phase === 'DONE' || phase === 'ERROR') && (
+      {phase !== 'PRINTING' && (
         <div className="print-done">
 
           {/* Heading */}
@@ -102,10 +129,19 @@ export default function PrintingScreen({
             <>
               <h1 className="print-done__title">{t('printing.doneTitle', language)}</h1>
             </>
+          ) : phase === 'SPENT' ? (
+            <>
+              <p className="print-done__kicker">{t('printing.spentKicker', language)}</p>
+              <h1 className="print-done__title">{t('printing.spentTitle', language)}</h1>
+              <p className="print-done__error-body">{t('printing.spentBody', language)}</p>
+            </>
           ) : (
             <>
-              <p className="print-done__kicker">{t('printing.almostThereKicker', language)}</p>
-              <h1 className="print-done__title">{t('printing.savePhotoTitle', language)}</h1>
+              <p className="print-done__kicker print-done__kicker--error">
+                {t('printing.failedKicker', language)}
+              </p>
+              <h1 className="print-done__title">{t('printing.failedTitle', language)}</h1>
+              <p className="print-done__error-body">{t('printing.failedBody', language)}</p>
             </>
           )}
 
@@ -150,6 +186,12 @@ export default function PrintingScreen({
 
           {/* Actions */}
           <div className="print-done__actions">
+            {phase === 'ERROR' && (
+              <button className="print-done__btn-retry" onClick={guard(handleReprint)} disabled={!armed}>
+                <span className="print-done__btn-icon btn-icon"><Printer strokeWidth={1.5} size={30} /></span>
+                <span className="print-done__btn-main">{t('printing.retryPrint', language)}</span>
+              </button>
+            )}
             <button className="print-done__btn-another" onClick={guard(handleAnother)} disabled={!armed}>
               <span className="print-done__btn-icon btn-icon"><Camera strokeWidth={1.5} size={34} /></span>
               <span className="print-done__btn-main">{t('printing.takeAnother', language)}</span>

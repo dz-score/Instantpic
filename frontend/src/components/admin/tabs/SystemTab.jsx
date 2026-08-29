@@ -124,8 +124,7 @@ export default function SystemTab({ getDiagnostics, emergencyAction, changePin, 
   const printer = diagnostics?.printer;
   const storage = diagnostics?.storage;
   const led = diagnostics?.led;
-  // The tail is what matters, not the average: a mean hides exactly the retry
-  // storm that would put a dark frame in a photo (Docs/LED_UART_SWITCH.md).
+  // p95, not the mean — see LedController.health().
   const ledCaptureP95 = led?.latency_ms?.CAPTURE?.p95;
 
   // restart_camera has no backend implementation (the camera reconnects
@@ -136,7 +135,7 @@ export default function SystemTab({ getDiagnostics, emergencyAction, changePin, 
   const EMERGENCY_ACTIONS = [
     { id: 'restart_booth', label: 'Restart Booth', desc: 'Restarts Chromium and the backend server' },
     { id: 'restart_camera', label: 'Restart Camera', desc: 'Reconnection is automatic — tapping reports the backend status' },
-    { id: 'restart_printer', label: 'Restart Printer', desc: 'Restarts the CUPS print service' },
+    { id: 'restart_printer', label: 'Recover Printer', desc: 'Re-enables a stopped print queue and clears what was stuck in it' },
     { id: 'clear_queue', label: 'Clear Print Queue', desc: 'Cancels all pending print jobs' },
   ];
 
@@ -152,18 +151,28 @@ export default function SystemTab({ getDiagnostics, emergencyAction, changePin, 
         <h3 className="sys-section__title">Live Diagnostics</h3>
 
         <div className="sys-diag-grid">
-          {/* Printer */}
+          {/* Printer — the summary. Queue name, options and the test print
+              live in the Printer tab, same split as the LED card below. */}
           <div className="sys-diag-card">
             <div className="sys-diag-card__header">
-              <span className={`sys-dot ${printer?.connected ? 'sys-dot--green' : 'sys-dot--red'}`} />
+              <span className={`sys-dot ${
+                !printer ? '' : !printer.connected ? 'sys-dot--red'
+                  : (!printer.ready || printer.media_low) ? 'sys-dot--yellow'
+                  : 'sys-dot--green'
+              }`} />
               <span className="sys-diag-card__label">Printer</span>
             </div>
             <span className="sys-diag-card__value">
-              {printer ? (printer.connected ? 'Connected' : 'Not Connected') : 'Checking…'}
+              {!printer ? 'Checking…'
+                : !printer.connected ? 'Not Connected'
+                : printer.prints_remaining != null ? `${printer.prints_remaining} prints left`
+                : (printer.status || 'Connected')}
             </span>
-            {printer?.printer_name && (
-              <span className="sys-diag-card__sub">{printer.printer_name}</span>
-            )}
+            <span className="sys-diag-card__sub">
+              {printer?.driver === 'mock'
+                ? 'Simulated — see the Printer tab'
+                : (printer?.error || printer?.printer_name || '')}
+            </span>
           </div>
 
           {/* Storage */}
