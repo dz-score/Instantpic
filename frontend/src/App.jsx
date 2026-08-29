@@ -172,9 +172,12 @@ export default function App() {
     api.sendEvent('FRAME_SKIP');
   }, [api]);
 
-  const handleFinish = useCallback(() => {
-    logger.info('session', 'session_end', 'Session finished normally');
-    endSession('completed');
+  // `outcome` is only supplied by PrintingScreen's auto-reset, which is the one
+  // caller that knows how the session actually ended. The screens using this as
+  // a plain onClick hand us a click event instead — hence the type check rather
+  // than a default argument.
+  const handleFinish = useCallback((outcome) => {
+    endSession(typeof outcome === 'string' ? outcome : 'completed');
     api.sendEvent('FINISH');
   }, [api]);
 

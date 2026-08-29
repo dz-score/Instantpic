@@ -62,9 +62,16 @@ export default function PrintingScreen({
   const qrSrc = getQrUrl(downloadUrl);
 
   // Auto-return home after a fixed delay (no longer shown as a live countdown).
+  // The phase goes with it: this timer is what ends most sessions, so without it
+  // every failed print is filed as a session that finished normally, and the
+  // logs say the night went fine.
   useEffect(() => {
     if (phase === 'PRINTING') return;
-    resetTimerRef.current = setTimeout(() => onFinishRef.current(), AUTO_RESET_SECONDS * 1000);
+    const outcome = phase === 'DONE' ? 'completed'
+      : phase === 'SPENT' ? 'print_skipped'
+      : 'print_failed';
+    resetTimerRef.current = setTimeout(
+      () => onFinishRef.current(outcome), AUTO_RESET_SECONDS * 1000);
     return () => clearTimeout(resetTimerRef.current);
   }, [phase]);
 
