@@ -191,9 +191,13 @@ def read_settings(path: str) -> AppSettings:
         return AppSettings()
 
     try:
-        with open(path, "r") as f:
+        # UTF-8 explicitly, on both sides. The pair matters: writing non-ASCII
+        # and reading under the system locale breaks on a Pi with LANG=C, and a
+        # config full of names and messages is where non-ASCII lives.
+        with open(path, "r", encoding="utf-8") as f:
             return AppSettings(**json.load(f))
-    except (json.JSONDecodeError, ValidationError, OSError, TypeError) as e:
+    except (json.JSONDecodeError, ValidationError, OSError, TypeError,
+            UnicodeDecodeError) as e:
         backup = _quarantine_bad_config(path)
         log.error(
             "config",
@@ -214,8 +218,11 @@ def write_settings(path: str, settings: AppSettings):
     """
     tmp = f"{path}.tmp"
     try:
-        with open(tmp, "w") as f:
-            json.dump(settings.model_dump(), f, indent=2)
+        with open(tmp, "w", encoding="utf-8") as f:
+            # ensure_ascii=False so an operator opening this file sees "Michael &
+            # Sarah · June 14" rather than a \u00b7 escape. Only safe alongside
+            # the explicit encoding above and in read_settings.
+            json.dump(settings.model_dump(), f, indent=2, ensure_ascii=False)
             f.flush()
             os.fsync(f.fileno())
         os.replace(tmp, path)

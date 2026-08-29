@@ -1,21 +1,45 @@
 {
+  "camera_backend": "gphoto2",
   "admin_pin": "123456",
   "welcome_message": "Create a Beautiful Memory",
   "thank_you_message": "Thank you for celebrating with us!",
   "countdown_duration": 5,
+  "countdown_speed": 1.0,
+  "shot_interval_ms": 1500,
   "flash_enabled": true,
   "max_photos_per_session": 2,
   "session_timeout": 120,
+  "capture_stall_timeout": 75.0,
   "show_names_on_photo": true,
   "printer_name": "DS-RX1",
+  "printer_options": "media=w288h432 scaling=100",
+  "printer_media_low_threshold": 25,
+  "print_allowance": 150,
+  "prints_used": 0,
+  "printer_mock": {
+    "job_duration_s": 13.0,
+    "media_total": 700,
+    "fault": "none"
+  },
   "max_photos": 1000,
   "disk_min_free_gb": 2.0,
+  "storage_protect_recent_s": 1800,
   "couple_names": "Michael & Sarah",
   "event_date": "June 14, 2030",
   "default_text": "Michael & Sarah · June 14, 2030",
   "port": 8000,
   "selected_overlay": "none",
   "wifi_network_name": "MAR2026",
+  "led": {
+    "enabled": false,
+    "transport": "http",
+    "heartbeat_ms": 2000,
+    "http": {
+      "host": "",
+      "timeout_ms": 400,
+      "capture_timeout_ms": 250
+    }
+  },
   "overlays": [
     {
       "id": "none",
@@ -32,7 +56,5 @@
       "name": "Elegant Gold Frame",
       "filename": "frame_gold_elegant.png"
     }
-  ],
-  "countdown_speed": 1.0,
-  "shot_interval_ms": 1500
+  ]
 }

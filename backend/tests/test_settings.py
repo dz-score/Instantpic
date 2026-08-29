@@ -162,3 +162,33 @@ def test_two_services_are_independent(temp_config, tmp_path):
 
     assert a.get().countdown_duration == 3
     assert b.get().countdown_duration == 8
+
+
+def test_non_ascii_survives_a_round_trip_unescaped(tmp_path):
+    r"""An operator hand-editing config.json should see the characters they typed,
+    not \u escapes — and the file must read back as what was written."""
+    from backend.settings import AppSettings, read_settings, write_settings
+
+    path = str(tmp_path / "config.json")
+    write_settings(path, AppSettings(couple_names="Zoé & Mikaël",
+                                     default_text="Zoé & Mikaël · 14 juin"))
+
+    raw = open(path, encoding="utf-8").read()
+    assert "Zoé & Mikaël · 14 juin" in raw
+    assert "\\u00b7" not in raw
+
+    assert read_settings(path).default_text == "Zoé & Mikaël · 14 juin"
+
+
+def test_a_config_that_is_not_utf8_is_quarantined_not_fatal(tmp_path):
+    """Reading MUST NOT raise — a booth that will not boot is worse than one on
+    defaults (and a latin-1 file is what a hand-edit on the wrong editor makes)."""
+    from backend.settings import read_settings
+
+    path = tmp_path / "config.json"
+    path.write_bytes('{"couple_names": "Zo\xe9"}'.encode("latin-1"))
+
+    settings = read_settings(str(path))
+
+    assert settings.couple_names == AppSettings().couple_names
+    assert not path.exists()          # quarantined out of the way
