@@ -115,6 +115,15 @@ class PrinterDriver(ABC):
         """Query the printer's current status."""
         ...
 
+    def preflight(self) -> list:
+        """Problems worth knowing about once, at startup, as readable strings.
+
+        For settings that are correct-or-not rather than working-or-not: nothing
+        here fails a print today, and every one of them ruins an event later.
+        Empty by default — a driver with nothing to check inherits silence.
+        """
+        return []
+
     @abstractmethod
     def cancel_all(self) -> bool:
         """Cancel all pending jobs. Returns True on success."""
@@ -446,6 +455,38 @@ class CupsPrinterDriver(PrinterDriver):
         except Exception:
             return False
 
+    # CUPS aborts the job and keeps the queue running. The default,
+    # stop-printer, disables the queue on the first error and never re-enables
+    # it — see Docs/PRINTER_NOTES.md, which is the failure this check exists for.
+    WANTED_ERROR_POLICY = "abort-job"
+    _ERROR_POLICY = re.compile(r"printer-error-policy=(\S+)")
+
+    def error_policy(self) -> Optional[str]:
+        """The queue's ErrorPolicy, or None if it could not be read."""
+        try:
+            r = subprocess.run(
+                ["lpoptions", "-p", self.printer_name],
+                capture_output=True, text=True, timeout=5,
+            )
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+            return None
+        if r.returncode != 0:
+            return None
+        m = self._ERROR_POLICY.search(r.stdout)
+        return m.group(1) if m else None
+
+    def preflight(self) -> list:
+        policy = self.error_policy()
+        if policy is None:
+            return [f"Could not read the error policy for queue "
+                    f"{self.printer_name!r} — is the queue installed?"]
+        if policy != self.WANTED_ERROR_POLICY:
+            return [f"Queue {self.printer_name!r} has error policy {policy!r}. "
+                    f"One printer error will disable it for the rest of the "
+                    f"event. Fix with: lpadmin -p {self.printer_name} "
+                    f"-o printer-error-policy={self.WANTED_ERROR_POLICY}"]
+        return []
+
 
 # ── Mock driver ───────────────────────────────────────────────────────────────
 
@@ -773,6 +814,26 @@ class PrintService:
         used = self._settings.get().prints_used + 1
         self._settings.update({"prints_used": used})
         return used
+
+    def preflight(self) -> list:
+        """Run the driver's startup checks and log whatever they find.
+
+        Called once by the composition root. Never raises and never blocks the
+        boot: a misconfigured queue must not stop a booth that can still shoot.
+        """
+        self._reload_driver()
+        try:
+            problems = self._driver.preflight()
+        except Exception as e:
+            log.error("printer", "printer_preflight_error",
+                      f"Printer preflight failed to run: {e}")
+            return []
+        for problem in problems:
+            log.warn("printer", "printer_preflight", problem)
+        if not problems:
+            log.info("printer", "printer_preflight_ok",
+                     "Printer configuration checks passed")
+        return problems
 
     def _apply_media_policy(self, status: PrinterStatus) -> None:
         """Decide whether the ribbon counts as low, and say so once per crossing.

@@ -79,6 +79,11 @@ async def lifespan(app: FastAPI):
     # this, calls are queued nowhere and drop silently.
     await led_svc.start()
 
+    # Startup-only configuration checks. After the services are on app.state so
+    # the admin panel can already answer, and non-fatal — a queue with the wrong
+    # error policy still prints; it just will not survive its first fault.
+    print_svc.preflight()
+
     # Eagerly init camera
     if camera_svc:
         camera_svc.init()

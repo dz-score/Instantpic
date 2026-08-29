@@ -4,11 +4,10 @@ What we know about driving a **DNP DS-RX1HS** dye-sublimation printer from this
 booth, and — just as important — what we have only *assumed*. Same role for the
 printer that [CAMERA_NOTES.md](CAMERA_NOTES.md) plays for the M50.
 
-> **Status: the printer was ordered 2026-08-27 and the software was written
-> ahead of it.** Everything below marked ⚠️ is reasoning from documentation, not
-> from a printer anyone has plugged in. The hardware run at the bottom is what
-> turns those into facts. Delete the ⚠️ markers as they are confirmed, and
-> correct what turns out to be wrong.
+> **Status: printer on the bench since 2026-08-29.** The software was written
+> ahead of it, so sections still marked ⚠️ are reasoning from documentation that
+> nothing has yet checked against the hardware. Unmarked sections have been.
+> Drop the ⚠️ as each is confirmed, and correct what turns out to be wrong.
 
 ---
 
@@ -61,6 +60,53 @@ so the ring only falls to Error if the *backend* hung, not merely a slow print.
 
 ---
 
+## The queue latches disabled — set the error policy (2026-08-29)
+
+**Measured on the booth.** The cover was opened during a print. What followed:
+
+| | |
+|---|---|
+| 14:46, 14:53 | two jobs print normally |
+| 15:00:13 | job 3 submitted |
+| **15:00:15** | **CUPS disables the queue — "Cover Open"** |
+| 15:00:32 → 15:07:22 | jobs 4-7 accepted into a dead queue, none print |
+
+Closing the cover did not help. Power-cycling the printer did not help. Five
+jobs sat in the queue and every session reported a fault that had stopped
+happening minutes earlier — `lpstat -p` repeats the reason the queue was
+stopped, it does not re-read the printer.
+
+**Cause: CUPS defaults to `ErrorPolicy stop-printer`.** Any backend error
+disables the queue until a human runs `cupsenable`. Correct for an office
+printer somebody walks over to; ruinous for an unattended booth, where one
+cover-open at 8pm means nobody gets a print for the rest of the night.
+
+**The queue must be set to `abort-job`:**
+
+```bash
+lpadmin -p DS-RX1 -o printer-error-policy=abort-job
+```
+
+`abort-job` drops the failed job and leaves the queue running, so the next guest
+prints. Not `retry-current-job`: that reprints the previous guest's photo when
+the fault clears, to a guest who has left.
+
+The booth checks this at every boot (`printer_preflight` in the log) because a
+setting applied by hand is a setting that is eventually not applied — a rebuilt
+SD card, a re-added queue, a different printer.
+
+**Recovery, if a queue is already stuck.** Clear the backlog *before*
+re-enabling, or every stacked job prints at once:
+
+```bash
+lpstat -p DS-RX1 -l      # "disabled since ..." and why
+lpstat -o DS-RX1         # what is stacked up
+cancel -a DS-RX1         # drop the backlog FIRST
+cupsenable DS-RX1        # then re-enable
+```
+
+---
+
 ## ⚠️ Media reporting — the parser is a hypothesis
 
 `CupsPrinterDriver._read_media()` was written from the CUPS marker convention
@@ -101,20 +147,20 @@ parser made of them. Run it on hardware day, then:
 
 ---
 
-## ⚠️ Geometry — the squeeze this is defending against
+## Geometry — the squeeze this was defending against
 
 Gutenprint has a **known "printout gets squeezed" bug on this model**. Two
-things are in place against it, both of which need confirming on paper:
+things are in place against it, and **both were confirmed correct on paper
+(2026-08-29)** — the alignment card printed to size on the first attempt:
 
 1. **The composite carries a real `dpi=(300, 300)` tag**, and
    2. **`printer_options` defaults to `media=w288h432 scaling=100`** rather than
    `fit-to-page`. Both take the scaling decision away from CUPS —
    [CONSTRAINTS](CONSTRAINTS.md) §6 is the rule and the reasoning.
 
-The part that is specific to this printer, and unconfirmed: `w288h432` is 4×6 in
-in CUPS media names, but the Gutenprint DS-RX1 PPD may want its own `PageSize`
-choice instead. That is bench question one, and why the field is editable from
-the Printer tab rather than hardcoded.
+`w288h432` — 4×6 in in CUPS media names — is what the Gutenprint DS-RX1 PPD
+wants; it needed no adjustment. The field stays editable from the Printer tab
+anyway, for a different printer or a different media size.
 
 The **test print** exists for this. It prints an alignment card, not a photo,
 because "did paper come out" is not the setup question. Read it like this:
@@ -130,8 +176,8 @@ because "did paper come out" is not the setup question. Read it like this:
 
 ## ⚠️ What CUPS should be told about this printer
 
-- The RX1HS **enumerates as a DS-RX1** — the HS is a firmware and media
-  revision, not a separate model as far as the driver is concerned.
+- The RX1HS **enumerates as a DS-RX1** (confirmed 2026-08-29) — the HS is a
+  firmware and media revision, not a separate model to the driver.
 - It needs the **`gutenprint53+usb` CUPS backend**, which exists specifically for
   the DS-RX1/RX1HS USB protocol rather than the generic USB backend.
 - Media is a roll: **700 prints at 4×6**, or 350 at 6×8.
@@ -155,7 +201,9 @@ are fixable on the spot. Everything else should already work.
 
 **1. Get a queue.** Install `printer-driver-gutenprint`, restart CUPS, add the
 printer over USB. Confirm it appears as **DS-RX1** with a Gutenprint driver, and
-that the booth user can reach the USB device without root.
+that the booth user can reach the USB device without root. Then set
+`printer-error-policy=abort-job` — the booth logs `printer_preflight` at boot if
+you forget, and the section above is what happens when nobody does.
 
 **2. Prove the geometry.** Admin panel → Printer → **Print Alignment Card**.
 Against a ruler:

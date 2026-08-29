@@ -114,7 +114,9 @@ class AppSettings(BaseModel):
     # browser: the camera reports straight to the FSM via callbacks.)
     capture_stall_timeout: float = 75.0
     show_names_on_photo: bool = True
-    printer_name: str = "mock"
+    # The booth's own queue. "mock" still selects the simulated printer, and
+    # Windows selects it regardless of what this says.
+    printer_name: str = "DS-RX1"
     # Passed to `lp -o` verbatim, one option per whitespace-separated token.
     # Deliberately not `fit-to-page` (CONSTRAINTS.md §6). The media name is
     # unconfirmed against the real PPD, hence editable from the Printer tab

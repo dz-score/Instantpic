@@ -100,6 +100,14 @@ Then add it from the CUPS web UI with the printer **on and connected over USB**.
 
 [PRINTER_NOTES.md](PRINTER_NOTES.md) explains why each of those is the answer.
 
+Then set the error policy — **do not skip this**:
+```bash
+lpadmin -p DS-RX1 -o printer-error-policy=abort-job
+```
+Without it, the first cover-open or jam disables the queue for the rest of the
+event and nothing prints again until someone runs `cupsenable`. The booth warns
+at boot if it is not set ([PRINTER_NOTES.md](PRINTER_NOTES.md)).
+
 Then, in the admin panel's **Printer** tab:
 1. Set the queue name.
 2. Press **Print Alignment Card** and check it against a ruler.
@@ -249,6 +257,7 @@ the heartbeat alone — a `PING` is enough. So:
 - [ ] Python venv created & dependencies installed
 - [ ] Frontend built (`npm run build`)
 - [ ] CUPS printer added, queue name entered in the Printer tab
+- [ ] `printer-error-policy=abort-job` set on the queue
 - [ ] Alignment card printed and measured (see PRINTER_NOTES.md)
 - [ ] `photo-booth.service` enabled & running
 - [ ] Chromium kiosk autostart configured

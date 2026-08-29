@@ -858,3 +858,78 @@ def test_a_failed_print_is_not_counted(mocker, tmp_path):
     svc.print(str(f))
 
     settings.update.assert_not_called()
+
+
+# ── Startup configuration checks ─────────────────────────────────────────────
+
+LPOPTIONS_STOP = ("copies=1 device-uri=gutenprint53+usb://DNP/DS40 "
+                  "printer-error-policy=stop-printer printer-is-shared=false")
+LPOPTIONS_ABORT = ("copies=1 device-uri=gutenprint53+usb://DNP/DS40 "
+                   "printer-error-policy=abort-job printer-is-shared=false")
+
+
+def _lpoptions(mocker, stdout, returncode=0):
+    mocker.patch("backend.print_service.subprocess.run",
+                 return_value=subprocess.CompletedProcess(
+                     args=[], returncode=returncode, stdout=stdout, stderr=""))
+
+
+def test_error_policy_is_read_from_lpoptions(mocker):
+    _lpoptions(mocker, LPOPTIONS_STOP)
+    assert CupsPrinterDriver("DS-RX1").error_policy() == "stop-printer"
+
+
+def test_stop_printer_is_reported_as_a_problem(mocker):
+    """The whole reason this check exists: stop-printer disables the queue on
+    the first fault and never re-enables it."""
+    _lpoptions(mocker, LPOPTIONS_STOP)
+
+    problems = CupsPrinterDriver("DS-RX1").preflight()
+
+    assert len(problems) == 1
+    assert "stop-printer" in problems[0]
+    assert "lpadmin -p DS-RX1 -o printer-error-policy=abort-job" in problems[0]
+
+
+def test_abort_job_passes_preflight(mocker):
+    _lpoptions(mocker, LPOPTIONS_ABORT)
+    assert CupsPrinterDriver("DS-RX1").preflight() == []
+
+
+def test_an_unreadable_queue_is_reported(mocker):
+    """A queue that cannot be interrogated is usually one that is not installed,
+    which is worth saying at boot rather than at the first guest."""
+    _lpoptions(mocker, "", returncode=1)
+
+    problems = CupsPrinterDriver("DS-RX1").preflight()
+
+    assert len(problems) == 1
+    assert "Could not read" in problems[0]
+
+
+def test_missing_lpoptions_does_not_crash_preflight(mocker):
+    mocker.patch("backend.print_service.subprocess.run",
+                 side_effect=FileNotFoundError())
+    assert len(CupsPrinterDriver("DS-RX1").preflight()) == 1
+
+
+def test_the_mock_has_nothing_to_preflight():
+    assert MockPrinterDriver("mock").preflight() == []
+
+
+def test_service_preflight_logs_each_problem(mocker):
+    log = mocker.patch("backend.print_service.log")
+    svc = _service_with_driver(mocker, mocker.Mock(
+        preflight=mocker.Mock(return_value=["queue is wrong"])))
+
+    assert svc.preflight() == ["queue is wrong"]
+    assert [c for c in log.warn.call_args_list if c[0][1] == "printer_preflight"]
+
+
+def test_service_preflight_survives_a_throwing_driver(mocker):
+    """A boot must not die because a configuration check did."""
+    mocker.patch("backend.print_service.log")
+    svc = _service_with_driver(mocker, mocker.Mock(
+        preflight=mocker.Mock(side_effect=RuntimeError("boom"))))
+
+    assert svc.preflight() == []
