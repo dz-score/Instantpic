@@ -188,9 +188,8 @@ class CupsPrinterDriver(PrinterDriver):
         uri = f"ipp://localhost/printers/{quote(self.printer_name)}"
         try:
             r = subprocess.run(
-                # -v, not just -t: without it ipptool prints a PASS/FAIL
-                # summary and no attributes at all, so every marker read comes
-                # back empty and media silently reports as unknown.
+                # -tv, never bare -t: without -v no attributes come back at
+                # all and every marker read is empty (PRINTER_NOTES.md).
                 ["ipptool", "-tv", uri, self.IPPTOOL_TEST],
                 capture_output=True, text=True, timeout=5,
             )
@@ -213,11 +212,9 @@ class CupsPrinterDriver(PrinterDriver):
     def _read_media(self) -> tuple:
         """(media_type, prints_remaining) from CUPS marker attributes.
 
-        UNVERIFIED against real hardware. Docs/PRINTER_NOTES.md records what is
-        assumed; backend/tools/printer_markers_probe.py settles it.
-
         The count comes from `marker-message`, not `marker-levels` — levels is a
-        0-100 percentage by CUPS convention. Unparseable yields None, never 0.
+        percentage, and a full roll reports 98. Unparseable yields None, never 0.
+        Confirmed against a DS-RX1HS; the format is in Docs/PRINTER_NOTES.md.
         """
         markers = self._ipp_attributes()
         if not markers:

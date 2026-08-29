@@ -624,23 +624,25 @@ def test_service_reports_a_mid_job_jam_as_a_failure(mocker, tmp_path):
 
 # ── Reading consumables out of CUPS ──────────────────────────────────────────
 
-# What ipptool prints for a queue that reports media. UNVERIFIED against a real
-# DS-RX1HS — see backend/tools/printer_markers_probe.py, which exists to replace
-# this with the truth. If the probe disagrees, this fixture is what changes.
+# Verbatim from a DS-RX1HS on 6x4 media, 2026-08-29 (CUPS+Gutenprint 5.3.4).
+# Trimmed to the lines that matter; the real response is ~9.8 KB. Keep it real:
+# an invented fixture here is how a parser passes its tests and returns None on
+# the booth.
 IPPTOOL_OUTPUT = """\
 "/usr/share/cups/ipptool/get-printer-attributes.test":
-    Get-Printer-Attributes:
-        attributes-charset (charset) = utf-8
+    Get printer attributes using get-printer-attributes                  [PASS]
+        RECEIVED: 9808 bytes in response
+        status-code = successful-ok (successful-ok)
         printer-state (enum) = idle
-        marker-change-time (integer) = 1756290000
-        marker-colors (1setOf nameWithoutLanguage) = #00FFFF#FF00FF#FFFF00
-        marker-high-levels (1setOf integer) = 100
-        marker-levels (1setOf integer) = 87
-        marker-low-levels (1setOf integer) = 10
-        marker-message (textWithoutLanguage) = 612 native prints remaining on 4x6 ribbon
-        marker-names (1setOf nameWithoutLanguage) = Ribbon
-        marker-types (1setOf keyword) = ribbon
-    [PASS]
+        device-uri (uri) = gutenprint53+usb://dnp-dsrx1/CB2D63217299
+        marker-change-time (integer) = 1788014278
+        marker-colors (nameWithoutLanguage) = #00FFFF#FF00FF#FFFF00
+        marker-levels (integer) = 98
+        marker-message (textWithoutLanguage) = 692 native prints remaining on 6x4 (PC) media
+        marker-low-levels (integer) = 10
+        marker-high-levels (integer) = 100
+        marker-names (nameWithoutLanguage) = 6x4 (PC)
+        marker-types (keyword) = ribbonWax
 """
 
 
@@ -651,9 +653,9 @@ def test_ipp_attributes_keeps_only_the_marker_lines(mocker):
 
     markers = CupsPrinterDriver("DS-RX1")._ipp_attributes()
 
-    assert markers["marker-names"] == "Ribbon"
-    assert markers["marker-levels"] == "87"
-    assert "612 native prints remaining" in markers["marker-message"]
+    assert markers["marker-names"] == "6x4 (PC)"
+    assert markers["marker-levels"] == "98"
+    assert "692 native prints remaining" in markers["marker-message"]
     assert "printer-state" not in markers
 
 
@@ -672,20 +674,20 @@ def test_ipp_attributes_latches_a_missing_ipptool(mocker):
 
 
 def test_read_media_takes_the_count_from_the_message(mocker):
-    """marker-levels is a 0-100 percentage by CUPS convention; the dyesub
-    backend puts the native prints-remaining in marker-message. Taking 87 here
-    would be reporting a percentage as a print count."""
+    """Confirmed on hardware: a nearly-full 700-print roll reports levels=98 and
+    a message of 692. marker-levels is a percentage — reading the count from it
+    would have shown "98 prints left" on a full roll."""
     driver = CupsPrinterDriver("DS-RX1")
     mocker.patch.object(driver, "_ipp_attributes", return_value={
-        "marker-levels": "87",
-        "marker-message": "612 native prints remaining on 4x6 ribbon",
-        "marker-names": "Ribbon",
+        "marker-levels": "98",
+        "marker-message": "692 native prints remaining on 6x4 (PC) media",
+        "marker-names": "6x4 (PC)",
     })
 
     media_type, remaining = driver._read_media()
 
-    assert remaining == 612
-    assert media_type == "4x6"
+    assert remaining == 692
+    assert media_type == "6x4"
 
 
 def test_read_media_falls_back_to_the_marker_name(mocker):

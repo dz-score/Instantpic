@@ -113,43 +113,45 @@ cupsenable DS-RX1        # then re-enable
 
 ---
 
-## ⚠️ Media reporting — the parser is a hypothesis
+## Media reporting — what the printer actually says (2026-08-29)
 
-`CupsPrinterDriver._read_media()` was written from the CUPS marker convention
-and Gutenprint's changelog. **Nobody has seen a DS-RX1HS answer.**
+Verbatim, on 6x4 media with a nearly-full roll:
 
-What it assumes:
+```
+marker-levels    (integer)            = 98
+marker-low-levels  (integer)          = 10
+marker-high-levels (integer)          = 100
+marker-message   (textWithoutLanguage) = 692 native prints remaining on 6x4 (PC) media
+marker-names     (nameWithoutLanguage) = 6x4 (PC)
+marker-types     (keyword)            = ribbonWax
+marker-colors    (nameWithoutLanguage) = #00FFFF#FF00FF#FFFF00
+```
 
-- The Gutenprint dyesub backend publishes standard CUPS **marker attributes**
-  (`marker-levels`, `marker-message`, `marker-names`, `marker-types`, …).
-- **The count is in `marker-message`, not `marker-levels`.** CUPS
-  `marker-levels` is a 0–100 percentage by convention (with −1/−2/−3 for
-  unknown/unavailable); the dyesub backend puts the native prints-remaining in
-  the message. Reading `87` from levels and calling it 87 prints would be
-  reporting a percentage as a count.
-- The message looks roughly like `612 native prints remaining on 4x6 ribbon`, so
-  the first integer is the count and a `NxM` token is the media size.
+**The count is in `marker-message`, not `marker-levels`.** Levels is a 0-100
+percentage — 98 on a roll with 692 prints left. Reading the count from there
+would have shown "98 prints left" on a full roll, which is why
+`_read_media()` parses the message and takes the first integer.
 
-How it fails: **closed** — unparseable yields `None`, which the UI renders as no
-number at all ([CONSTRAINTS](CONSTRAINTS.md) §10 for why that matters).
+Two things that follow from how this is produced:
 
-Markers are read through **cupsd via `ipptool`**, never by invoking the
-Gutenprint backend directly: it owns the USB device while CUPS has the printer.
-`ipptool` ships in `cups-ipp-utils` and is not always installed; its absence is
-latched after one attempt, otherwise every 5 s status poll would spawn a
-subprocess that cannot work.
+- **The values are a snapshot, not a live read.** The Gutenprint backend only
+  talks to the printer while a job runs, so what CUPS holds is from the last
+  job. A queue that has not printed since cupsd started may report nothing at
+  all, and the booth will show no number rather than a wrong one.
+- `printer-commands = ReportLevels` — CUPS can refresh the markers on demand by
+  running the backend without printing. The booth does not use it; if a stale
+  count ever becomes annoying between sessions, that is the lever.
 
-`backend/tools/printer_markers_probe.py` dumps the raw markers beside what the
-parser made of them. Run it on hardware day, then:
+To re-check after a media change, or if the count ever looks wrong:
 
-- **PARSED matches RAW** — delete the probe. The question is answered and Rule 24
-  says the scaffolding goes. Drop the ⚠️ from this section and record what the
-  printer reports.
-- **They disagree** — fix `_read_media()` against the RAW block, and rewrite the
-  assumptions above to match.
-- **No markers at all** — the backend does not report them through this queue.
-  Say so here and leave `prints_remaining` as `None`; the UI already treats
-  absent as "cannot know" rather than "empty".
+```bash
+ipptool -tv ipp://localhost/printers/DS-RX1 \
+  /usr/share/cups/ipptool/get-printer-attributes.test | grep marker-
+```
+
+**`-tv`, not `-t`.** Without `-v` ipptool prints a PASS/FAIL summary and no
+attributes at all — which for a while is exactly what the booth was doing, so
+media silently read as unknown no matter what the printer said.
 
 ---
 
@@ -226,11 +228,10 @@ that is what the field is for. Record the string that worked here.
 `printer_mock.job_duration_s` so the dev box keeps rehearsing the truth, and
 sanity-check it against `JOB_TIMEOUT_S = 90`.
 
-**4. Capture the markers.** `python3 backend/tools/printer_markers_probe.py
-DS-RX1`. Compare RAW against PARSED, correct `_read_media()`, and rewrite the
-⚠️ section above with what the printer actually says. Run it again on a nearly
-spent ribbon if you can — the interesting question is not whether the count
-parses, it is whether it parses the same way near zero.
+**4. Check the media count.** Done for 6x4 (see above) — the Printer tab should
+show prints remaining within five seconds of opening it. Worth redoing on a
+nearly spent ribbon: the count parses on a full roll, and whether the message
+keeps that shape near zero is untested.
 
 **5. Break it on purpose.** For each of these, the guest screen must say the
 print did not come out, keep the QR, and offer a retry — and the LED ring must
