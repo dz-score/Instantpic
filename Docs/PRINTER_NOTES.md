@@ -145,6 +145,14 @@ Install steps live in [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) §6.
 Do these in order the day the printer arrives. Everything before this point is
 verified only against the mock.
 
+Back up `config.json` first — steps 2 and 7 change settings, and one of them is
+the thing you will want to put back.
+
+Two of these are likely to fail on the first attempt and both are expected:
+the geometry in step 2, because the right `lp -o` string for this PPD is a
+guess, and the marker parse in step 4, because nobody has seen the output. Both
+are fixable on the spot. Everything else should already work.
+
 **1. Get a queue.** Install `printer-driver-gutenprint`, restart CUPS, add the
 printer over USB. Confirm it appears as **DS-RX1** with a Gutenprint driver, and
 that the booth user can reach the USB device without root.
@@ -185,3 +193,21 @@ leave the printing animation:
 - [ ] Prints remaining on the Printer tab counts down by one per print.
 - [ ] Set the low threshold above the current count and confirm the warning
       appears on the tab, in the System card, and **once** in the log.
+
+**7. The three things only real timing can test.** All of these are correct
+against the mock and have never met a printer that takes twelve seconds:
+
+- [ ] **Clear the queue mid-print.** Admin → System → *Clear Print Queue* while
+      a print is running. The guest must be told the print did not come out.
+      Reporting "ready" here is the exact bug `cancel_all`'s epoch exists to
+      stop, and the operator pressing that button has usually just seen a jam.
+- [ ] **Stop the service mid-print.** `sudo systemctl stop photo-booth` with a
+      print in flight. It must stop in a second or two. If it hangs for ~90 s
+      the abort event is not reaching the driver, and systemd will eventually
+      SIGKILL it instead.
+- [ ] **Spend the allowance.** Set *Prints allowed* to one above the current
+      count, run two sessions. The first prints; the second reaches the same
+      screen but says prints have run out, still shows the QR, and offers no
+      retry. Then **Reset count** and confirm printing resumes.
+- [ ] Restart the booth mid-event and confirm `prints_used` survived — a budget
+      that resets on reboot is not a budget.
