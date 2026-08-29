@@ -17,9 +17,6 @@
   padding: var(--space-xl) var(--space-2xl);
   width: 100%;
   height: 100%;
-  cursor: pointer;
-  background: none;
-  border: none;
   gap: 0;
 }
 
@@ -116,6 +113,10 @@
 
 /* ═══ CTA Button ═══ */
 .attract-cta {
+  /* Now the button element, so it needs the resets the container used to carry. */
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
   border: 2px solid transparent;
   text-shadow: var(--text-shadow-cta);
   position: relative;

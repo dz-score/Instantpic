@@ -10,9 +10,7 @@ import './AttractScreen.css';
  */
 export default function AttractScreen({ config, onStart, language, setLanguage }) {
 
-  const handleTap = useCallback((e) => {
-    // Prevent starting if clicking the language toggle
-    if (e.target.closest('.attract-lang-toggle')) return;
+  const handleTap = useCallback(() => {
     unlockAudio();
     onStart();
   }, [onStart]);
@@ -27,7 +25,7 @@ export default function AttractScreen({ config, onStart, language, setLanguage }
   return (
     <ScreenShell className="attract-screen">
       {/* ── Language Toggle (Top Right) ── */}
-      <button className="attract-lang-toggle" onClick={(e) => { e.stopPropagation(); toggleLanguage(); }} aria-label="Toggle language">
+      <button className="attract-lang-toggle" onClick={toggleLanguage} aria-label="Toggle language">
         <span className={`lang-flag ${language === 'en' ? 'active' : ''}`}>
           <svg viewBox="0 0 60 30" width="48" height="32" style={{ borderRadius: '2px', display: 'block' }}>
             <clipPath id="uk-clip"><path d="M0,0 v30 h60 v-30 z"/></clipPath>
@@ -50,8 +48,9 @@ export default function AttractScreen({ config, onStart, language, setLanguage }
         </span>
       </button>
 
-      {/* Full-screen tap target */}
-      <button className="attract-content" onClick={handleTap}>
+      {/* Not a tap target. The whole screen used to be one, which meant a
+          near-miss on the L'Étoile admin corner started a session instead. */}
+      <div className="attract-content">
 
         {/* ── Decorative top flourish ── */}
         <div className="attract-flourish" aria-hidden="true">
@@ -74,8 +73,8 @@ export default function AttractScreen({ config, onStart, language, setLanguage }
         {/* ── Subtitle ── */}
         <p className="attract-subtitle">{welcomeMsg}</p>
 
-        {/* ── CTA Button ── */}
-        <div className="attract-cta">
+        {/* ── CTA Button — the only thing here that starts a session ── */}
+        <button className="attract-cta" onClick={handleTap}>
           <span className="attract-cta__shimmer-mask" aria-hidden="true">
             <span className="attract-cta__shimmer" />
           </span>
@@ -84,9 +83,9 @@ export default function AttractScreen({ config, onStart, language, setLanguage }
             <span className="attract-cta__text-main">{t('welcome.ctaMain', language)}</span>
             <span className="attract-cta__text-sub">{t('welcome.ctaSub', language)}</span>
           </span>
-        </div>
+        </button>
 
-      </button>
+      </div>
     </ScreenShell>
   );
 }
