@@ -80,15 +80,14 @@ def main():
             f"  full status: {status.to_dict()}",
         ]))
     except ImportError as e:
-        section("PARSED — skipped", "
-".join([
+        section("PARSED — skipped", "\n".join([
             f"  {e}",
             "",
             "  The RAW dump above is complete, and is the half that matters.",
             "  For PARSED too, re-run under the project's venv:",
             "",
-            "      backend/venv/bin/python backend/tools/printer_markers_probe.py "
-            + queue,
+            "      backend/venv/bin/python "
+            "backend/tools/printer_markers_probe.py " + queue,
         ]))
     except Exception as e:
         section("PARSED — failed", f"{type(e).__name__}: {e}")
