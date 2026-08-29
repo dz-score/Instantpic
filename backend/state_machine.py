@@ -108,7 +108,7 @@ class StateMachine:
     # sees touches); this one deliberately loses that race — see _manage_watchdog.
     SESSION_WATCHDOG_GRACE_S = 60
 
-    def __init__(self, sse, job_queue, camera=None, led=None):
+    def __init__(self, sse, job_queue, camera=None, led=None, counters=None):
         self._state = BoothState()
         self._lock = None
         self._sse = sse
@@ -116,6 +116,10 @@ class StateMachine:
         self._camera = camera
         # Inert when no ring is configured, so there is no null check below.
         self._led = led or _NoLed()
+        # Absent means the allowance cannot be enforced, so it is not: a booth
+        # that refuses to print because a tally is missing is worse than one
+        # that overshoots a budget.
+        self._counters = counters
         # True while a capture is between FIRE_SHOT and its terminal callback;
         # guards against double-firing the shutter.
         self._shot_in_flight = False
@@ -424,15 +428,16 @@ class StateMachine:
         settings = settings or self._watchdog_settings
         self._state.screen = "PRINTING"
 
-        if settings and settings.prints_used >= settings.print_allowance:
+        used = self._counters.get("prints_used") if self._counters else 0
+        if settings and used >= settings.print_allowance:
             # Out of budget. The session is not cut short and the photo is not
             # lost — the guest still gets the QR — but no job is queued, and
             # printStatus says which of the two happened so the screen can too.
             self._state.printStatus = "skipped"
             log.info("state_machine", "print_allowance_spent",
-                     f"Print skipped: {settings.prints_used} of "
+                     f"Print skipped: {used} of "
                      f"{settings.print_allowance} prints used",
-                     data={"prints_used": settings.prints_used,
+                     data={"prints_used": used,
                            "print_allowance": settings.print_allowance})
             return
 

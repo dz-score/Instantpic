@@ -335,6 +335,7 @@ export default function App() {
           testLed={api.testLed}
           testLedChannel={api.testLedChannel}
           testPrint={api.testPrint}
+          resetPrintCount={api.resetPrintCount}
           emergencyAction={api.emergencyAction}
           changePin={api.changePin}
           getRecentLogs={api.getRecentLogs}

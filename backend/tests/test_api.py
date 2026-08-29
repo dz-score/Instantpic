@@ -358,30 +358,44 @@ def test_a_full_roll_is_not_reported_low(client):
 
 
 def test_print_allowance_defaults_to_150(client):
-    cfg = client.get("/api/config").json()
-    assert cfg["print_allowance"] == 150
-    assert cfg["prints_used"] == 0
+    assert client.get("/api/config").json()["print_allowance"] == 150
 
 
-def test_allowance_is_operator_settable_and_resettable(client):
-    client.post("/api/config", json={"print_allowance": 300, "prints_used": 12})
+def test_the_tally_is_not_part_of_the_config(client):
+    """It lives in backend/counters.py. In config.json it dirtied a tracked file
+    on every print and was one `git commit -a` from shipping as a setting."""
+    assert "prints_used" not in client.get("/api/config").json()
+
+
+def test_allowance_is_operator_settable(client):
+    client.post("/api/config", json={"print_allowance": 300})
     assert client.get("/api/config").json()["print_allowance"] == 300
 
-    # Raising the allowance must not touch the count; only Reset does.
-    client.post("/api/config", json={"print_allowance": 400})
-    assert client.get("/api/config").json()["prints_used"] == 12
 
-    client.post("/api/config", json={"prints_used": 0})
-    assert client.get("/api/config").json()["prints_used"] == 0
-
-
-def test_allowance_reaches_the_admin_panel(client):
-    client.post("/api/config", json={"print_allowance": 42, "prints_used": 7})
+def test_allowance_and_tally_reach_the_admin_panel(client):
+    client.post("/api/config", json={"print_allowance": 42})
+    client.app.state.counters.set("prints_used", 7)
 
     printer = client.get("/api/diagnostics").json()["printer"]
 
     assert printer["prints_used"] == 7
     assert printer["print_allowance"] == 42
+
+
+def test_resetting_the_count_leaves_the_allowance_alone(client):
+    """Raising the allowance must not wipe the tally, and resetting the tally
+    must not change the allowance — they are different decisions."""
+    client.post("/api/config", json={"print_allowance": 300})
+    client.app.state.counters.set("prints_used", 12)
+
+    client.post("/api/config", json={"print_allowance": 400})
+    assert client.app.state.counters.get("prints_used") == 12
+
+    r = client.post("/api/printer/reset-count")
+
+    assert r.json() == {"ok": True, "was": 12, "prints_used": 0}
+    assert client.app.state.counters.get("prints_used") == 0
+    assert client.get("/api/config").json()["print_allowance"] == 400
 
 
 def test_recover_printer_action_goes_through_the_print_service(client, mocker):

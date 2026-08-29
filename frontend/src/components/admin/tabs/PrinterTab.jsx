@@ -29,6 +29,7 @@ const MOCK_FAULTS = [
 export default function PrinterTab({
   getDiagnostics,
   testPrint,
+  resetPrintCount,
   config,
   onSaveConfig,
   onSaveMock,
@@ -96,7 +97,8 @@ export default function PrinterTab({
   const isMock = printer?.driver === 'mock';
   const remaining = printer?.prints_remaining;
   const mock = config?.printer_mock || {};
-  const used = printer?.prints_used ?? config?.prints_used ?? 0;
+  // Only diagnostics knows this now — it is a tally, not part of the config.
+  const used = printer?.prints_used ?? 0;
   const allowance = printer?.print_allowance ?? config?.print_allowance ?? 150;
   const spent = used >= allowance;
 
@@ -253,7 +255,14 @@ export default function PrinterTab({
           </label>
           <button
             className="printer-btn"
-            onClick={() => commit({ prints_used: 0 })}
+            onClick={async () => {
+              try {
+                await resetPrintCount();
+                await fetchStatus();
+              } catch {
+                setResult({ ok: false, detail: 'Could not reset the count' });
+              }
+            }}
             disabled={used === 0}
           >
             Reset count

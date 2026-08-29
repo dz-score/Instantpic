@@ -126,11 +126,10 @@ class AppSettings(BaseModel):
     # event rather than the hardware, hence config. Warned about, never
     # enforced — a nearly-done roll must not stop the booth printing.
     printer_media_low_threshold: int = 25
-    # The event's print budget, and what it has spent. Unlike the threshold
-    # above, this one is enforced (CONSTRAINTS.md §10). prints_used is the only
-    # setting the booth writes to itself — keep it persisted.
+    # The event's print budget. Unlike the media threshold above, this one is
+    # enforced (CONSTRAINTS.md §10). What has been spent against it is a tally,
+    # not a setting, and lives in backend/counters.py.
     print_allowance: int = 150
-    prints_used: int = 0
     # Only consulted when the mock driver is the one in use.
     printer_mock: PrinterMockConfig = PrinterMockConfig()
     # Cap on FILES in the photos dir, not on sessions or on keepsakes. One

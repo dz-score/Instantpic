@@ -7,7 +7,8 @@ from backend import storage
 from backend.settings import AppSettings
 from backend.print_service import PrintService
 
-def check_printer(print_svc: PrintService, settings: AppSettings = None):
+def check_printer(print_svc: PrintService, settings: AppSettings = None,
+                  counters=None):
     """Check if printer is connected/available via PrintService.
 
     Everything PrinterStatus knows goes through, including which driver
@@ -21,7 +22,7 @@ def check_printer(print_svc: PrintService, settings: AppSettings = None):
     status = print_svc.get_status()
     out = {**status.to_dict(), "status": status.status_text}
     if settings is not None:
-        out["prints_used"] = settings.prints_used
+        out["prints_used"] = counters.get("prints_used") if counters else 0
         out["print_allowance"] = settings.print_allowance
     return out
 
@@ -45,10 +46,11 @@ def check_storage(settings: AppSettings):
         "max_photos": settings.max_photos
     }
 
-def get_diagnostics(settings: AppSettings, print_svc: PrintService, led=None):
+def get_diagnostics(settings: AppSettings, print_svc: PrintService, led=None,
+                    counters=None):
     """Aggregate all diagnostic checks."""
     diag = {
-        "printer": check_printer(print_svc, settings),
+        "printer": check_printer(print_svc, settings, counters),
         "storage": check_storage(settings)
     }
     # Optional so the aggregate keeps working for callers that predate the ring.

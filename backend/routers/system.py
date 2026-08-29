@@ -9,7 +9,8 @@ from pydantic import BaseModel
 from backend import jobs
 from backend.settings import AppSettings
 from backend.deps import (
-    get_job_queue, get_led, get_print_service, get_settings, get_state_machine,
+    get_counters, get_job_queue, get_led, get_print_service, get_settings,
+    get_state_machine,
 )
 from backend.logger import log
 from backend.photo_processor import generate_alignment_card
@@ -97,16 +98,33 @@ async def test_print(
     return result
 
 
+@router.post("/api/printer/reset-count")
+async def reset_print_count(counters=Depends(get_counters)):
+    """Zero the prints-used tally.
+
+    Its own endpoint rather than a field on /api/config: the allowance is a
+    setting, what has been spent against it is not, and putting a tally in the
+    config payload is what got it committed to git in the first place.
+    """
+    was = counters.get("prints_used")
+    counters.set("prints_used", 0)
+    log.warn("system", "print_count_reset",
+             f"Print count reset from {was} to 0", data={"was": was})
+    return {"ok": True, "was": was, "prints_used": 0}
+
+
 @router.get("/api/diagnostics")
 async def get_diagnostics(
     settings: AppSettings = Depends(get_settings),
     print_svc: PrintService = Depends(get_print_service),
     led=Depends(get_led),
+    counters=Depends(get_counters),
 ):
     from backend.diagnostics import get_diagnostics
     # Same reasoning as /api/printer/status, and this one also does a
     # disk_usage() and a glob over the photos directory.
-    return await anyio.to_thread.run_sync(get_diagnostics, settings, print_svc, led)
+    return await anyio.to_thread.run_sync(
+        get_diagnostics, settings, print_svc, led, counters)
 
 
 @router.post("/api/led/test")

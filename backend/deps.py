@@ -42,6 +42,11 @@ def get_job_queue(request: Request):
     return request.app.state.job_queue
 
 
+def get_counters(request: Request):
+    """Runtime tallies (backend/counters.py), not configuration."""
+    return request.app.state.counters
+
+
 def get_sse(request: Request) -> SseService:
     """The SSE fan-out service."""
     return request.app.state.sse

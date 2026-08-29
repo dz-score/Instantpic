@@ -118,6 +118,12 @@ export default function useApi(isOnline) {
     return body;
   }, []);
 
+  const resetPrintCount = useCallback(async () => {
+    const r = await fetch(`${API}/api/printer/reset-count`, { method: 'POST' });
+    if (!r.ok) throw new Error('Reset failed');
+    return await r.json();
+  }, []);
+
   /* ── Emergency actions ── */
   const emergencyAction = useCallback(async (action) => {
     const r = await fetch(`${API}/api/emergency`, {
@@ -192,6 +198,7 @@ export default function useApi(isOnline) {
     testLed,
     testLedChannel,
     testPrint,
+    resetPrintCount,
     emergencyAction,
     changePin,
     getRecentLogs,

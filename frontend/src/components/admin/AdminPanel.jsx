@@ -36,6 +36,7 @@ export default function AdminPanel({
   testLed,
   testLedChannel,
   testPrint,
+  resetPrintCount,
   emergencyAction,
   changePin,
   getRecentLogs,
@@ -197,6 +198,7 @@ export default function AdminPanel({
             <PrinterTab
               getDiagnostics={getDiagnostics}
               testPrint={testPrint}
+              resetPrintCount={resetPrintCount}
               config={config}
               onSaveConfig={(patch) => onSave(patch)}
               onSaveMock={(patch) => onSave({ printer_mock: patch })}

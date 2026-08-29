@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 
 from backend.storage import ensure_directories, PHOTOS_DIR, OVERLAYS_DIR, BASE_DIR
+from backend.counters import Counters
 from backend.settings import SettingsService
 from backend.print_service import PrintService
 from backend.sse_service import SseService
@@ -42,7 +43,10 @@ async def lifespan(app: FastAPI):
     settings_svc = SettingsService()
     settings_svc.load()
 
-    print_svc = PrintService(settings_svc)
+    counters = Counters()
+    counters.load()
+
+    print_svc = PrintService(settings_svc, counters)
     job_queue = JobQueue(print_svc, settings_svc)
     camera_svc = create_camera(settings_svc.get(), sse_svc)
     # Inert when no ring is configured, so the FSM needs no null check and the
@@ -59,11 +63,12 @@ async def lifespan(app: FastAPI):
         return 1 if camera_svc.get_status().get("error") else None
 
     led_svc = create_led_controller(settings_svc.get(), fault_source=camera_fault)
-    state_machine = StateMachine(sse_svc, job_queue, camera_svc, led_svc)
+    state_machine = StateMachine(sse_svc, job_queue, camera_svc, led_svc, counters)
 
     app.state.sse = sse_svc
     app.state.settings = settings_svc
     app.state.print_svc = print_svc
+    app.state.counters = counters
     app.state.job_queue = job_queue
     app.state.camera = camera_svc
     app.state.led = led_svc

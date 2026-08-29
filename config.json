@@ -15,7 +15,6 @@
   "printer_options": "media=w288h432 scaling=100",
   "printer_media_low_threshold": 25,
   "print_allowance": 150,
-  "prints_used": 0,
   "printer_mock": {
     "job_duration_s": 13.0,
     "media_total": 700,

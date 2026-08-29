@@ -715,11 +715,14 @@ class PrintService:
     # print drops the ring to Error on its own.
     JOB_TIMEOUT_S = 90
 
-    def __init__(self, settings: SettingsService):
+    def __init__(self, settings: SettingsService, counters=None):
         # Holds the SettingsService, not an AppSettings snapshot: _reload_driver runs
         # on every job so that swapping the printer in the admin panel takes effect
         # without a restart. A boot-time snapshot would freeze the printer choice.
         self._settings = settings
+        # Optional so a test can build the service without one; PRINTS_USED just
+        # stops being counted, which no test asserts on by accident.
+        self._counters = counters
         self._driver: Optional[PrinterDriver] = None
         self._cached_status: Optional[PrinterStatus] = None
         self._status_cache_time: float = 0
@@ -886,16 +889,18 @@ class PrintService:
             duration_ms=elapsed_ms(),
         )
 
-    def _count_print(self) -> int:
+    #: Tally name for prints that reached paper.
+    PRINTS_USED = "prints_used"
+
+    def _count_print(self) -> Optional[int]:
         """Record one print against the event's allowance.
 
         Counted here because this is the only place that knows a print reached
-        paper — a submission is not a print. Persisted rather than held in
-        memory: a booth restarted mid-event must not hand back the whole budget.
+        paper — a submission is not a print.
         """
-        used = self._settings.get().prints_used + 1
-        self._settings.update({"prints_used": used})
-        return used
+        if self._counters is None:
+            return None
+        return self._counters.increment(self.PRINTS_USED)
 
     def preflight(self) -> list:
         """Run the driver's startup checks and log whatever they find.

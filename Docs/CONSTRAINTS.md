@@ -408,8 +408,11 @@ media threshold above only warns.
 > wrong, no attendant is needed, and offering `REPRINT` there would be a button
 > that cannot work — the FSM refuses it, so the screen must not offer it.
 
-> `prints_used` is the one setting the booth writes to itself, on every completed
-> print. It has to survive a restart or a reboot mid-event hands the budget back.
+> What has been spent against the allowance is a **tally, not a setting**: it
+> lives in `backend/counters.py`, persisted outside `config.json`. It has to
+> survive a restart — a reboot mid-event must not hand the budget back — but it
+> is not an operator decision, and keeping it in the tracked config file meant
+> every print dirtied the working tree.
 
 ---
 

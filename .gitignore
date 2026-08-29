@@ -34,3 +34,10 @@ scratch/*
 
 # Test coverage file
 .coverage
+
+# Scratch work for the upstream libgphoto2 bug report (not part of the booth)
+backend/tools/gphoto-bugreport/
+
+# Runtime tallies the booth writes to itself (backend/counters.py).
+# Not configuration, and not something to carry between machines.
+backend/state/

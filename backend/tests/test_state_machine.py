@@ -608,21 +608,36 @@ async def test_entering_printing_with_nothing_to_print_fails_loudly():
 
 # ── Print allowance ──────────────────────────────────────────────────────────
 
-def _budget(used, allowance):
-    return AppSettings(prints_used=used, print_allowance=allowance,
+class FakeCounters:
+    """Stands in for backend.counters.Counters — the FSM only ever reads."""
+
+    def __init__(self, **values):
+        self._values = values
+
+    def get(self, name):
+        return self._values.get(name, 0)
+
+
+def _budget(allowance):
+    return AppSettings(print_allowance=allowance,
                        overlays=[OverlayConfig(id="none", name="No Frame", filename="")])
+
+
+def _sm_with_budget(used):
+    q, cam, sse = MockQueue(), MockCamera(), FakeSse()
+    sm = StateMachine(sse, q, cam, counters=FakeCounters(prints_used=used))
+    return sm, q
 
 
 @pytest.mark.anyio
 async def test_print_is_skipped_once_the_allowance_is_spent():
     """Nobody is turned away: the session runs, the photo exists, the QR still
     works. Only the print is dropped."""
-    sm, q, cam, sse = make_sm()
+    sm, q = _sm_with_budget(used=150)
     sm._state.screen = "FRAME_PICKER"
     sm._state.finalPhoto = "p1.jpg"
-    q.last_job = None
 
-    await sm.handle_event("FRAME_SKIP", {}, _budget(150, 150))
+    await sm.handle_event("FRAME_SKIP", {}, _budget(150))
 
     state = await sm.get_state()
     assert state.screen == "PRINTING"
@@ -633,11 +648,11 @@ async def test_print_is_skipped_once_the_allowance_is_spent():
 
 @pytest.mark.anyio
 async def test_print_runs_while_the_allowance_holds():
-    sm, q, cam, sse = make_sm()
+    sm, q = _sm_with_budget(used=149)
     sm._state.screen = "FRAME_PICKER"
     sm._state.finalPhoto = "p1.jpg"
 
-    await sm.handle_event("FRAME_SKIP", {}, _budget(149, 150))
+    await sm.handle_event("FRAME_SKIP", {}, _budget(150))
 
     state = await sm.get_state()
     assert state.printStatus == "printing"
@@ -646,16 +661,15 @@ async def test_print_runs_while_the_allowance_holds():
 
 @pytest.mark.anyio
 async def test_raising_the_allowance_lets_printing_resume():
-    sm, q, cam, sse = make_sm()
+    sm, q = _sm_with_budget(used=150)
     sm._state.screen = "FRAME_PICKER"
     sm._state.finalPhoto = "p1.jpg"
-    q.last_job = None
 
-    await sm.handle_event("FRAME_SKIP", {}, _budget(150, 150))
+    await sm.handle_event("FRAME_SKIP", {}, _budget(150))
     assert (await sm.get_state()).printStatus == "skipped"
 
     sm._state.screen = "FRAME_PICKER"
-    await sm.handle_event("FRAME_SKIP", {}, _budget(150, 200))
+    await sm.handle_event("FRAME_SKIP", {}, _budget(200))
 
     assert (await sm.get_state()).printStatus == "printing"
     assert q.last_job is not None
@@ -671,7 +685,7 @@ async def test_reprint_is_refused_when_the_print_was_skipped():
     sm._state.printStatus = "skipped"
     q.last_job = None
 
-    await sm.handle_event("REPRINT", {}, _budget(150, 150))
+    await sm.handle_event("REPRINT", {}, _budget(150))
 
     assert q.last_job is None
     assert (await sm.get_state()).printStatus == "skipped"
