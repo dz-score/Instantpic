@@ -115,6 +115,21 @@ class PrinterDriver(ABC):
         """Query the printer's current status."""
         ...
 
+    def recover(self) -> Optional[str]:
+        """Make the queue able to accept work again. Returns what had to be done,
+        or None when nothing did.
+
+        Called before every submission. A printer fault can leave a queue in a
+        state it will not leave on its own, and the booth has to come back from
+        that without anyone noticing — the next guest is already standing there.
+        """
+        return None
+
+    def cancel_job(self, job_id: str) -> bool:
+        """Drop one job. Used on the jobs we have stopped waiting for, so they
+        cannot print later to a guest who has gone."""
+        return False
+
     def preflight(self) -> list:
         """Problems worth knowing about once, at startup, as readable strings.
 
@@ -455,6 +470,45 @@ class CupsPrinterDriver(PrinterDriver):
         except Exception:
             return False
 
+    def cancel_job(self, job_id: str) -> bool:
+        try:
+            r = subprocess.run(["cancel", job_id],
+                               capture_output=True, timeout=5)
+            return r.returncode == 0
+        except Exception:
+            return False
+
+    def enable_queue(self) -> bool:
+        try:
+            r = subprocess.run(["cupsenable", self.printer_name],
+                               capture_output=True, timeout=5)
+            return r.returncode == 0
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+            return False
+
+    def recover(self) -> Optional[str]:
+        """Re-enable a stopped queue, dropping whatever was stranded in it.
+
+        The backlog goes first and that order is the whole point: every job in a
+        stopped queue belongs to a guest who was told their print failed and has
+        left. Re-enabling without clearing prints all of them at once, minutes
+        or hours late, to nobody.
+        """
+        reason = self._stop_reason()
+        if not reason:
+            return None
+
+        stranded = self._queued_job_ids() or set()
+        if stranded:
+            self.cancel_all()
+        if not self.enable_queue():
+            return None
+
+        note = f"Queue was stopped ({reason}); re-enabled it"
+        if stranded:
+            note += f" after dropping {len(stranded)} stranded job(s)"
+        return note
+
     # CUPS aborts the job and keeps the queue running. The default,
     # stop-printer, disables the queue on the first error and never re-enables
     # it — see Docs/PRINTER_NOTES.md, which is the failure this check exists for.
@@ -630,6 +684,14 @@ class MockPrinterDriver(PrinterDriver):
         self._pending.clear()
         return True
 
+    def cancel_job(self, job_id: str) -> bool:
+        return self._pending.pop(job_id, None) is not None
+
+    def recover(self) -> Optional[str]:
+        """The simulated printer has no queue to strand anything in — `offline`
+        is a refusal to accept, not a latch."""
+        return None
+
 
 # ── Print service (singleton) ────────────────────────────────────────────────
 
@@ -728,6 +790,18 @@ class PrintService:
         def elapsed_ms():
             return int((time.monotonic() - started) * 1000)
 
+        # Bring the queue back before asking it for anything. Always logged —
+        # see PRINTER_NOTES.md for why the log line matters more than the fix.
+        try:
+            recovered = self._driver.recover()
+        except Exception as e:
+            recovered = None
+            log.error("printer", "printer_recover_error",
+                      f"Queue recovery failed to run: {e}")
+        if recovered:
+            log.warn("printer", "printer_queue_recovered", recovered,
+                     data={"printer": settings.printer_name})
+
         # ── Phase 1: submit ──────────────────────────────────────────────────
         # Retry belongs here and nowhere else. A submission failure means nothing
         # reached the printer, so a second attempt cannot produce a second print.
@@ -790,6 +864,14 @@ class PrintService:
                 "prints_used": used,
             })
             return PrintResult(success=True, job_id=result.job_id, duration_ms=elapsed_ms())
+
+        # Drop it, unless we stopped waiting on purpose. A job we have given up
+        # on is still queued as far as CUPS is concerned, and would print when
+        # the fault clears — to a guest who was told it failed and has left.
+        # JOB_ABORTED is excluded deliberately: on shutdown the print may be
+        # genuinely under way, and cancel_all has already dealt with the other case.
+        if outcome.state != JOB_ABORTED:
+            self._driver.cancel_job(result.job_id)
 
         log.error("printer", "printer_job_fail", f"Print failed: {filename} — {outcome.message}", dur=elapsed_ms(), data={
             "filename": filename,

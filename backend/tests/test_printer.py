@@ -933,3 +933,119 @@ def test_service_preflight_survives_a_throwing_driver(mocker):
         preflight=mocker.Mock(side_effect=RuntimeError("boom"))))
 
     assert svc.preflight() == []
+
+
+# ── Recovering a latched queue ───────────────────────────────────────────────
+
+def test_recover_does_nothing_to_a_healthy_queue(mocker):
+    driver = CupsPrinterDriver("DS-RX1")
+    mocker.patch.object(driver, "_stop_reason", return_value=None)
+    enable = mocker.patch.object(driver, "enable_queue")
+
+    assert driver.recover() is None
+    enable.assert_not_called()
+
+
+def test_recover_clears_the_backlog_before_re_enabling(mocker):
+    """Order is the point. Every job in a stopped queue belongs to a guest who
+    was told it failed and left; re-enabling first prints all of them at once."""
+    driver = CupsPrinterDriver("DS-RX1")
+    mocker.patch.object(driver, "_stop_reason", return_value="Cover Open")
+    mocker.patch.object(driver, "_queued_job_ids",
+                        return_value={"DS-RX1-3", "DS-RX1-4"})
+    calls = []
+    mocker.patch.object(driver, "cancel_all",
+                        side_effect=lambda: calls.append("cancel") or True)
+    mocker.patch.object(driver, "enable_queue",
+                        side_effect=lambda: calls.append("enable") or True)
+
+    note = driver.recover()
+
+    assert calls == ["cancel", "enable"]
+    assert "Cover Open" in note
+    assert "2 stranded" in note
+
+
+def test_recover_reports_nothing_when_re_enabling_fails(mocker):
+    driver = CupsPrinterDriver("DS-RX1")
+    mocker.patch.object(driver, "_stop_reason", return_value="Cover Open")
+    mocker.patch.object(driver, "_queued_job_ids", return_value=set())
+    mocker.patch.object(driver, "enable_queue", return_value=False)
+
+    assert driver.recover() is None
+
+
+def test_print_recovers_the_queue_before_submitting(mocker, tmp_path):
+    """The cover-open night: the queue latched, and every later session was
+    accepted into a dead queue. Recovery has to run before the submission."""
+    f = tmp_path / "photo.jpg"
+    f.write_bytes(b"x")
+    log = mocker.patch("backend.print_service.log")
+
+    order = []
+    driver = mocker.Mock()
+    driver.recover.side_effect = lambda: order.append("recover") or "re-enabled it"
+    driver.print_file.side_effect = lambda *a: order.append("submit") or PrintResult(
+        success=True, job_id="DS-RX1-8")
+    driver.await_job.return_value = JobOutcome(JOB_COMPLETED)
+
+    _service_with_driver(mocker, driver).print(str(f))
+
+    assert order == ["recover", "submit"]
+    assert [c for c in log.warn.call_args_list if c[0][1] == "printer_queue_recovered"]
+
+
+def test_a_failed_job_is_cancelled_so_it_cannot_print_later(mocker, tmp_path):
+    f = tmp_path / "photo.jpg"
+    f.write_bytes(b"x")
+
+    driver = mocker.Mock()
+    driver.recover.return_value = None
+    driver.print_file.return_value = PrintResult(success=True, job_id="DS-RX1-9")
+    driver.await_job.return_value = JobOutcome(JOB_FAILED, "Cover Open")
+
+    _service_with_driver(mocker, driver).print(str(f))
+
+    driver.cancel_job.assert_called_once_with("DS-RX1-9")
+
+
+def test_a_shutdown_does_not_cancel_a_print_that_may_be_running(mocker, tmp_path):
+    """JOB_ABORTED means we stopped watching, not that the printer stopped."""
+    f = tmp_path / "photo.jpg"
+    f.write_bytes(b"x")
+
+    driver = mocker.Mock()
+    driver.recover.return_value = None
+    driver.print_file.return_value = PrintResult(success=True, job_id="DS-RX1-9")
+    driver.await_job.return_value = JobOutcome(JOB_ABORTED, "Stopped waiting")
+
+    _service_with_driver(mocker, driver).print(str(f))
+
+    driver.cancel_job.assert_not_called()
+
+
+def test_a_completed_job_is_not_cancelled(mocker, tmp_path):
+    f = tmp_path / "photo.jpg"
+    f.write_bytes(b"x")
+
+    driver = mocker.Mock()
+    driver.recover.return_value = None
+    driver.print_file.return_value = PrintResult(success=True, job_id="DS-RX1-9")
+    driver.await_job.return_value = JobOutcome(JOB_COMPLETED)
+
+    _service_with_driver(mocker, driver).print(str(f))
+
+    driver.cancel_job.assert_not_called()
+
+
+def test_a_throwing_recover_does_not_stop_the_print(mocker, tmp_path):
+    f = tmp_path / "photo.jpg"
+    f.write_bytes(b"x")
+    mocker.patch("backend.print_service.log")
+
+    driver = mocker.Mock()
+    driver.recover.side_effect = RuntimeError("cupsenable exploded")
+    driver.print_file.return_value = PrintResult(success=True, job_id="DS-RX1-9")
+    driver.await_job.return_value = JobOutcome(JOB_COMPLETED)
+
+    assert _service_with_driver(mocker, driver).print(str(f)).success is True

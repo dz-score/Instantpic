@@ -95,6 +95,12 @@ The booth checks this at every boot (`printer_preflight` in the log) because a
 setting applied by hand is a setting that is eventually not applied — a rebuilt
 SD card, a re-added queue, a different printer.
 
+It also **recovers on its own**, before every print: a stopped queue is
+re-enabled and whatever was stranded in it is dropped first, logged as
+`printer_queue_recovered`. That is belt and braces to the policy above, and the
+log line is the signal that matters — a booth silently recovering the same fault
+all evening is a printer that needs a human.
+
 **Recovery, if a queue is already stuck.** Clear the backlog *before*
 re-enabling, or every stacked job prints at once:
 
