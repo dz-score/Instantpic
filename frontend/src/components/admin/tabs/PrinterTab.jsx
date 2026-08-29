@@ -87,6 +87,12 @@ export default function PrinterTab({
     if (value !== '' && Number.isFinite(n) && n !== current) save({ [key]: n });
   }, [onSaveMock]);
 
+  // A stopped queue reports connected-but-not-ready: the printer is there and
+  // CUPS knows it, but it will refuse everything until re-enabled. That reads
+  // nothing like "not connected" to an operator, so it must not look like it.
+  const stopped = printer?.connected && !printer?.ready
+    && /disabled|stopped/i.test(printer?.status || '');
+
   const isMock = printer?.driver === 'mock';
   const remaining = printer?.prints_remaining;
   const mock = config?.printer_mock || {};
@@ -115,10 +121,13 @@ export default function PrinterTab({
             <span className="printer-status__value">
               {!printer ? 'Checking…'
                 : !printer.connected ? 'Not connected'
+                : stopped ? 'Queue stopped'
                 : printer.status}
             </span>
             <span className="printer-status__sub">
-              {printer?.error || printer?.printer_name || ''}
+              {stopped
+                ? 'Nothing will print until it is recovered — System → Recover Printer'
+                : (printer?.error || printer?.printer_name || '')}
             </span>
           </div>
 

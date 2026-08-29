@@ -443,13 +443,15 @@ Operator taps "Close" or presses outside
       backoff loop. The button stays visible so the operator sees that
       answer in the result toast instead of a fake success.
 
-  "Restart Printer"
+  "Recover Printer"
     → POST /api/emergency {action: "restart_printer"}
-    → backend: systemctl restart cups
+    → backend: print_svc.recover() — cancel the backlog, then cupsenable.
+      Restarting cupsd, which this used to do, leaves a disabled queue
+      disabled (Docs/PRINTER_NOTES.md).
 
   "Clear Print Queue"
     → POST /api/emergency {action: "clear_queue"}
-    → backend: cancel -a (cancels all CUPS jobs)
+    → backend: print_svc.cancel_all()
 ```
 
 ---

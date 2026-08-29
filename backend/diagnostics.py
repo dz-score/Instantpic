@@ -91,9 +91,14 @@ def execute_emergency(action: str, print_svc: PrintService = None):
                     "detail": "Camera reconnects automatically; no manual restart is implemented"}
         
         elif action == "restart_printer":
-            subprocess.run(["sudo", "systemctl", "restart", "cups"],
-                         capture_output=True, timeout=10)
-            return {"status": "success", "detail": "CUPS service restarted"}
+            # Was `systemctl restart cups`, which does not re-enable a disabled
+            # queue — the one thing an operator presses this for. Restarting the
+            # daemon never fixed the fault it was reached for; recovering the
+            # queue does (Docs/PRINTER_NOTES.md).
+            if print_svc is None:
+                return {"status": "error",
+                        "detail": "Print service unavailable; queue not recovered"}
+            return {"status": "success", "detail": print_svc.recover()}
         
         elif action == "clear_queue":
             if print_svc is None:

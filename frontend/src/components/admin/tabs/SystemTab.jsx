@@ -135,7 +135,7 @@ export default function SystemTab({ getDiagnostics, emergencyAction, changePin, 
   const EMERGENCY_ACTIONS = [
     { id: 'restart_booth', label: 'Restart Booth', desc: 'Restarts Chromium and the backend server' },
     { id: 'restart_camera', label: 'Restart Camera', desc: 'Reconnection is automatic — tapping reports the backend status' },
-    { id: 'restart_printer', label: 'Restart Printer', desc: 'Restarts the CUPS print service' },
+    { id: 'restart_printer', label: 'Recover Printer', desc: 'Re-enables a stopped print queue and clears what was stuck in it' },
     { id: 'clear_queue', label: 'Clear Print Queue', desc: 'Cancels all pending print jobs' },
   ];
 

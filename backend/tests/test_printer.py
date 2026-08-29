@@ -1049,3 +1049,20 @@ def test_a_throwing_recover_does_not_stop_the_print(mocker, tmp_path):
     driver.await_job.return_value = JobOutcome(JOB_COMPLETED)
 
     assert _service_with_driver(mocker, driver).print(str(f)).success is True
+
+
+def test_operator_recovery_reports_what_it_did(mocker):
+    mocker.patch("backend.print_service.log")
+    driver = mocker.Mock()
+    driver.recover.return_value = "Queue was stopped (Cover Open); re-enabled it"
+
+    assert "Cover Open" in _service_with_driver(mocker, driver).recover()
+
+
+def test_operator_recovery_is_honest_about_a_healthy_queue(mocker):
+    """An operator pressing a button on a working printer must not be told
+    something was fixed."""
+    driver = mocker.Mock()
+    driver.recover.return_value = None
+
+    assert "already running" in _service_with_driver(mocker, driver).recover()

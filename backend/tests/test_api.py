@@ -382,3 +382,17 @@ def test_allowance_reaches_the_admin_panel(client):
 
     assert printer["prints_used"] == 7
     assert printer["print_allowance"] == 42
+
+
+def test_recover_printer_action_goes_through_the_print_service(client, mocker):
+    """It used to run `systemctl restart cups`, which does not re-enable a
+    disabled queue — the only reason anyone presses it."""
+    recover = mocker.patch.object(
+        client.app.state.print_svc, "recover", return_value="re-enabled it")
+    mocker.patch("backend.diagnostics.sys.platform", "linux")
+
+    r = client.post("/api/emergency", json={"action": "restart_printer"})
+
+    assert r.status_code == 200
+    assert r.json()["detail"] == "re-enabled it"
+    recover.assert_called_once()

@@ -452,8 +452,8 @@ the booth boots from defaults rather than failing to start.
 |---|---|
 | `restart_booth` | `systemctl restart chromium-kiosk && photobooth` |
 | `restart_camera` | Returns `unsupported` — the camera reconnects automatically; the admin button surfaces that answer honestly |
-| `restart_printer` | `systemctl restart cups` |
-| `clear_queue` | `cancel -a` (clear all CUPS jobs) |
+| `restart_printer` | Re-enables a stopped queue, dropping what was stranded in it (PRINTER_NOTES.md) |
+| `clear_queue` | Cancels all jobs, through `PrintService` so an in-flight wait is not fooled |
 
 > On Windows: all actions return a mock success response.
 

@@ -990,6 +990,25 @@ class PrintService:
         self._status_cache_time = 0
         return success
 
+    def recover(self) -> str:
+        """Operator-driven queue recovery. Returns what it did, in their words.
+
+        The same lever the print path pulls itself, exposed because a queue can
+        strand between sessions and an operator watching a red dot needs a
+        button that does something.
+        """
+        self._reload_driver()
+        self._status_cache_time = 0
+        try:
+            note = self._driver.recover()
+        except Exception as e:
+            log.error("printer", "printer_recover_error", f"Queue recovery failed: {e}")
+            return f"Recovery failed: {e}"
+        if note:
+            log.warn("printer", "printer_queue_recovered", note)
+            return note
+        return "Queue was already running; nothing to recover"
+
     def shutdown(self):
         """Stop waiting on anything in flight.
 
