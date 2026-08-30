@@ -144,6 +144,88 @@ def test_print_service_file_not_found(mocker):
     assert "not found" in result.error.lower()
 
 
+def _svc(mocker, printer_name="DS-RX1"):
+    settings_svc = mocker.Mock()
+    settings_svc.get.return_value = mocker.Mock(
+        printer_name=printer_name, printer_options="media=w288h432 scaling=100",
+        printer_media_low_threshold=25, prints_used=0, print_allowance=150,
+    )
+    return PrintService(settings_svc)
+
+
+def test_print_refuses_to_submit_to_an_absent_printer(mocker, tmp_path):
+    """Queueing a job to a printer that is not there leaves work in the queue
+    that has to be detected in flight and cancelled. Catch it first."""
+    photo = tmp_path / "photo.jpg"
+    photo.write_bytes(b"x")
+    svc = _svc(mocker)
+    driver = mocker.Mock()
+    driver.device_present.return_value = False
+    driver.recover.return_value = None
+    mocker.patch.object(svc, "_reload_driver")
+    svc._driver = driver
+
+    result = svc.print(str(photo))
+
+    assert result.success is False
+    assert "not connected" in result.error.lower()
+    driver.print_file.assert_not_called()
+
+
+def test_print_proceeds_when_presence_is_unknown(mocker, tmp_path):
+    """None is "could not tell". Refusing to print on it would ground the booth
+    wherever lpinfo needs privileges we do not have."""
+    photo = tmp_path / "photo.jpg"
+    photo.write_bytes(b"x")
+    svc = _svc(mocker)
+    driver = mocker.Mock()
+    driver.device_present.return_value = None
+    driver.recover.return_value = None
+    driver.print_file.return_value = PrintResult(success=True, job_id="DS-RX1-1")
+    driver.await_job.return_value = JobOutcome(JOB_COMPLETED)
+    mocker.patch.object(svc, "_reload_driver")
+    svc._driver = driver
+
+    assert svc.print(str(photo)).success is True
+    driver.print_file.assert_called_once()
+
+
+def test_status_reports_not_connected_when_the_device_is_gone(mocker):
+    """The admin panel showed an unplugged printer as Idle: lpstat describes the
+    queue, which stays idle and enabled with the hardware switched off."""
+    driver = CupsPrinterDriver("DS-RX1")
+    mocker.patch("backend.print_service.subprocess.run",
+                 return_value=subprocess.CompletedProcess(
+                     args=[], returncode=0,
+                     stdout="printer DS-RX1 is idle.  enabled since Mon 31 Aug 2026",
+                     stderr=""))
+    mocker.patch.object(driver, "device_present", return_value=False)
+
+    status = driver.get_status()
+
+    assert status.connected is False
+    assert status.ready is False
+    assert status.status_text == "Not connected"
+
+
+def test_status_stays_connected_when_presence_is_unknown(mocker):
+    """Don't show the operator a disconnected printer that is sitting there
+    working just because lpinfo would not run."""
+    driver = CupsPrinterDriver("DS-RX1")
+    mocker.patch("backend.print_service.subprocess.run",
+                 return_value=subprocess.CompletedProcess(
+                     args=[], returncode=0,
+                     stdout="printer DS-RX1 is idle.  enabled since Mon 31 Aug 2026",
+                     stderr=""))
+    mocker.patch.object(driver, "device_present", return_value=None)
+    mocker.patch.object(driver, "_read_media", return_value=(None, None))
+
+    status = driver.get_status()
+
+    assert status.connected is True
+    assert status.status_text == "Idle"
+
+
 def test_print_result_to_dict():
     """PrintResult.to_dict() should return a plain dictionary."""
     r = PrintResult(success=True, job_id="TEST-1", duration_ms=500)
@@ -222,6 +304,89 @@ def test_stop_reason_none_while_running(mocker):
     driver = CupsPrinterDriver("DS-RX1")
     mocker.patch.object(driver, "_lpstat", return_value=LPSTAT_RUNNING)
     assert driver._stop_reason() is None
+
+
+# ── Device presence: lpinfo sees what lpstat cannot ──────────────────────────
+
+DEVICE_URI = "gutenprint53+usb://dnp-dsrx1/CB2D63217299"
+LPSTAT_V = f"device for DS-RX1: {DEVICE_URI}\n"
+
+# Verbatim from the booth's Pi. With the printer powered off the DNP line is
+# simply absent — `lpstat -p` is identical either way, this is not.
+LPINFO_PRESENT = (
+    "network socket\n"
+    "direct vnc:/\n"
+    "network beh\n"
+    f"direct {DEVICE_URI}\n"
+    "network ipp\n"
+)
+LPINFO_ABSENT = (
+    "network socket\n"
+    "direct vnc:/\n"
+    "network beh\n"
+    "network ipp\n"
+)
+
+
+def _lpinfo(mocker, stdout, returncode=0):
+    return mocker.patch("backend.print_service.subprocess.run",
+                        return_value=subprocess.CompletedProcess(
+                            args=[], returncode=returncode, stdout=stdout, stderr=""))
+
+
+def test_device_uri_read_from_the_queue(mocker):
+    """The URI comes from the queue's own config, not hardcoded per printer."""
+    driver = CupsPrinterDriver("DS-RX1")
+    mocker.patch.object(driver, "_lpstat", return_value=LPSTAT_V)
+    assert driver._device_uri() == DEVICE_URI
+
+
+def test_device_present_true_when_lpinfo_lists_the_uri(mocker):
+    driver = CupsPrinterDriver("DS-RX1")
+    mocker.patch.object(driver, "_lpstat", return_value=LPSTAT_V)
+    _lpinfo(mocker, LPINFO_PRESENT)
+    assert driver.device_present() is True
+
+
+def test_device_present_false_when_the_printer_is_off(mocker):
+    driver = CupsPrinterDriver("DS-RX1")
+    mocker.patch.object(driver, "_lpstat", return_value=LPSTAT_V)
+    _lpinfo(mocker, LPINFO_ABSENT)
+    assert driver.device_present() is False
+
+
+def test_device_present_probes_only_this_queues_scheme(mocker):
+    """A bare `lpinfo -v` walks the network backends too, which costs seconds of
+    discovery on a venue LAN — far too slow to sit in front of every print."""
+    driver = CupsPrinterDriver("DS-RX1")
+    mocker.patch.object(driver, "_lpstat", return_value=LPSTAT_V)
+    run = _lpinfo(mocker, LPINFO_PRESENT)
+
+    driver.device_present()
+
+    cmd = run.call_args[0][0]
+    assert "--include-schemes" in cmd
+    assert cmd[cmd.index("--include-schemes") + 1] == "gutenprint53+usb"
+
+
+def test_device_present_unknown_when_lpinfo_unavailable(mocker):
+    """None, not False. lpinfo can want privileges we lack, and a diagnostic
+    that cannot run must never be read as a missing printer."""
+    driver = CupsPrinterDriver("DS-RX1")
+    mocker.patch.object(driver, "_lpstat", return_value=LPSTAT_V)
+    mocker.patch("backend.print_service.subprocess.run", side_effect=FileNotFoundError)
+    assert driver.device_present() is None
+
+
+def test_device_present_unknown_when_the_queue_has_no_uri(mocker):
+    driver = CupsPrinterDriver("DS-RX1")
+    mocker.patch.object(driver, "_lpstat", return_value=None)
+    assert driver.device_present() is None
+
+
+def test_base_driver_reports_presence_unknown():
+    """A driver with no way to look must not block prints."""
+    assert MockPrinterDriver("mock").device_present() is None
 
 
 # ── Job alerts: the powered-off printer the queue does not report ────────────

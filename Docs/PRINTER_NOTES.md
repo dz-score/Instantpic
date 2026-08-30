@@ -68,6 +68,32 @@ reads the job's own alerts, which is why the third row above exists. Three
 consecutive observations, because a job can report not-ready for an instant at
 submission while CUPS opens the device.
 
+### Asking *before* submitting: `lpinfo -v`, not `lpstat`
+
+No `lpstat` form can answer "is the printer plugged in" — `lpstat -p` and
+`lpstat -l -p` were measured byte-identical with the DS-RX1 powered on and
+powered off. **`lpinfo -v` is different: it probes the backends instead of
+reading the queue's cached state, so the USB URI simply stops being listed.**
+
+```bash
+lpstat -v DS-RX1     # device for DS-RX1: gutenprint53+usb://dnp-dsrx1/CB2D63217299
+lpinfo -v            # that URI is listed only while the printer is powered on
+```
+
+`device_present()` matches the two and is used in two places: to refuse a
+submission that would only queue work nobody can print, and to stop the admin
+panel reporting an unplugged printer as "Idle" — which it did, because `lpstat`
+describes the queue and the queue is fine.
+
+Probe with `--include-schemes <scheme>`; a bare `lpinfo -v` also walks the
+network backends and costs seconds of discovery on a venue LAN.
+
+**It returns `None` for "could not tell", and neither caller treats that as a
+missing printer.** `lpinfo` may want privileges the booth does not have, and a
+diagnostic that cannot run must never ground a printer that is sitting there
+working. The in-flight alert check above remains the backstop regardless: the
+printer can be switched off in the seconds after any pre-check passes.
+
 Order matters and is tested: the job-left check runs **first**, so a queue
 stopped just after our print finished does not fail a print that came out.
 

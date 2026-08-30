@@ -139,6 +139,14 @@ class PrinterDriver(ABC):
         """
         return []
 
+    def device_present(self) -> Optional[bool]:
+        """Whether the queue's device is on the bus, or None when we cannot tell.
+
+        None by default: a driver with no way to look must not be read as
+        reporting a missing printer, or it would block every print.
+        """
+        return None
+
     @abstractmethod
     def cancel_all(self) -> bool:
         """Cancel all pending jobs. Returns True on success."""
@@ -259,6 +267,61 @@ class CupsPrinterDriver(PrinterDriver):
         except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
             return None
         return r.stdout if r.returncode == 0 else None
+
+    def _device_absent_for_status(self) -> bool:
+        """Definitely-absent, for the status panel. Only a hard False counts:
+        "could not tell" must read as connected, so a missing lpinfo does not
+        show the operator a disconnected printer that is sitting there working.
+        """
+        return self.device_present() is False
+
+    def _device_uri(self) -> Optional[str]:
+        """The device URI this queue is configured to print to.
+
+        `lpstat -v DS-RX1` -> "device for DS-RX1: gutenprint53+usb://dnp-dsrx1/CB2D63217299"
+        """
+        out = self._lpstat(["-v", self.printer_name])
+        if not out:
+            return None
+        for line in out.splitlines():
+            _, sep, uri = line.partition(": ")
+            if sep and uri.strip():
+                return uri.strip()
+        return None
+
+    def device_present(self) -> Optional[bool]:
+        """Is this queue's device actually on the bus right now?
+
+        `lpstat -p` cannot answer: with the printer switched off it still
+        reports "idle. enabled" (see PRINTER_NOTES.md). `lpinfo -v` can, because
+        it probes the backends rather than reading the queue's cached state —
+        the USB URI simply stops being listed when the printer is off.
+
+        Tri-state on purpose. None means "could not tell", and a caller must
+        never refuse to print on that: lpinfo can want privileges we lack, and a
+        diagnostic that cannot run is not evidence of a missing printer.
+        """
+        uri = self._device_uri()
+        if not uri:
+            return None
+
+        # Probe only this queue's own scheme. A bare `lpinfo -v` also walks the
+        # network backends (snmp, dnssd), which costs seconds of discovery on a
+        # venue LAN — far too slow to sit in front of every print.
+        scheme = uri.split(":", 1)[0]
+        try:
+            r = subprocess.run(
+                ["lpinfo", "-v", "--include-schemes", scheme],
+                capture_output=True, text=True, timeout=5,
+            )
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+            return None
+        if r.returncode != 0:
+            return None
+
+        # Lines are "<class> <uri>", e.g. "direct gutenprint53+usb://dnp-dsrx1/CB2D63217299".
+        listed = {ln.split()[-1] for ln in r.stdout.splitlines() if ln.strip()}
+        return uri in listed
 
     def _queued_job_ids(self) -> Optional[set]:
         """Ids of jobs CUPS still considers not-completed. The job id is the
@@ -485,6 +548,19 @@ class CupsPrinterDriver(PrinterDriver):
             else:
                 status_text = output[:80]
                 ready = True
+
+            # lpstat describes the QUEUE, which stays "idle. enabled" with the
+            # printer switched off — so on its own this panel reported an
+            # unplugged DS-RX1 as Idle and ready. Ask whether the device is
+            # actually on the bus before claiming either.
+            if self._device_absent_for_status():
+                return PrinterStatus(
+                    connected=False,
+                    ready=False,
+                    printer_name=self.printer_name,
+                    status_text="Not connected",
+                    error="Printer is not connected — check it is powered on and plugged in",
+                )
 
             media_type, prints_remaining = self._read_media()
 
@@ -867,6 +943,22 @@ class PrintService:
         if recovered:
             log.warn("printer", "printer_queue_recovered", recovered,
                      data={"printer": settings.printer_name})
+
+        # ── Phase 0: is the printer even there? ──────────────────────────────
+        # Cheaper than finding out the hard way. Submitting to an absent printer
+        # queues a job that cannot run, which then has to be detected in flight
+        # and cancelled; catching it here costs one lpinfo call and leaves the
+        # queue clean. Only a definite False stops us — see device_present.
+        if self._driver.device_present() is False:
+            log.error("printer", "printer_absent",
+                      f"Printer {settings.printer_name!r} is not connected — print not submitted",
+                      dur=elapsed_ms(), data={"filename": filename})
+            self._status_cache_time = 0
+            return PrintResult(
+                success=False,
+                error="Printer is not connected — check it is powered on and plugged in",
+                duration_ms=elapsed_ms(),
+            )
 
         # ── Phase 1: submit ──────────────────────────────────────────────────
         # Retry belongs here and nowhere else. A submission failure means nothing
