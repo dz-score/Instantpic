@@ -128,19 +128,48 @@ disables the queue until a human runs `cupsenable`. Correct for an office
 printer somebody walks over to; ruinous for an unattended booth, where one
 cover-open at 8pm means nobody gets a print for the rest of the night.
 
-**The queue must be set to `abort-job`:**
+**The queue must be set to `stop-printer` — which is also CUPS's default:**
 
 ```bash
-lpadmin -p DS-RX1 -o printer-error-policy=abort-job
+sudo lpadmin -p DS-RX1 -o printer-error-policy=stop-printer
 ```
 
-`abort-job` drops the failed job and leaves the queue running, so the next guest
-prints. Not `retry-current-job`: that reprints the previous guest's photo when
-the fault clears, to a guest who has left.
+**This reverses the advice that stood here until 2026-08-31, which said
+`abort-job`.** That was written before `recover()` existed and without weighing
+how each policy interacts with the queue-based detection above. All three
+options, against the current code:
 
-The booth checks this at every boot (`printer_preflight` in the log) because a
-setting applied by hand is a setting that is eventually not applied — a rebuilt
-SD card, a re-added queue, a different printer.
+| Policy | On a fault | What `await_job` concludes |
+|---|---|---|
+| `stop-printer` | queue stops, job stays in it | **failed**, carrying CUPS's reason ✅ |
+| `abort-job` | job dropped, queue keeps running | job left the queue → **completed** ❌ |
+| `retry-job` | job retried, queue keeps running | nothing fires → 90 s timeout ❌ |
+
+`abort-job` is the dangerous one: it makes every printer fault take the same
+path as a successful print, so the guest is shown "Done!" and walks away with
+nothing — the exact failure this whole module was built to remove. The
+liveness problem it was chosen for is already solved by `recover()`, which
+clears the backlog and re-enables the queue before every print.
+
+**The booth was found on `retry-job` (2026-08-31)**, which is how a switched-off
+printer produced a 90-second spinner: the queue stays enabled and the job simply
+retries, so nothing in the table above fired. With `job-cancel-after` at its
+10800 s default, a stranded job also retries for three hours and prints to a
+guest who left — the hazard `retry-current-job` was rejected for.
+
+**Verifying it is a manual deployment step; the booth cannot check it.** The
+attribute is not readable without root — `lpoptions -p`, `lpstat -l -p` and
+ipptool's `get-printer-attributes` were all measured returning nothing for it
+against a queue that was demonstrably `retry-job`:
+
+```bash
+sudo grep ErrorPolicy /etc/cups/printers.conf
+```
+
+A boot-time check used to live in `preflight()` and read `lpoptions`, so it
+always came back empty, logged "is the queue installed?" against a healthy
+queue, and never once reported the `retry-job` it existed to catch. It has been
+removed rather than left crying wolf.
 
 It also **recovers on its own**, before every print: a stopped queue is
 re-enabled and whatever was stranded in it is dropped first, logged as
@@ -257,8 +286,9 @@ are fixable on the spot. Everything else should already work.
 **1. Get a queue.** Install `printer-driver-gutenprint`, restart CUPS, add the
 printer over USB. Confirm it appears as **DS-RX1** with a Gutenprint driver, and
 that the booth user can reach the USB device without root. Then set
-`printer-error-policy=abort-job` — the booth logs `printer_preflight` at boot if
-you forget, and the section above is what happens when nobody does.
+`printer-error-policy=stop-printer` and **check it landed** with
+`sudo grep ErrorPolicy /etc/cups/printers.conf` — nothing in the booth can
+verify this for you, and the section above is what happens when nobody does.
 
 **2. Prove the geometry.** Admin panel → Printer → **Print Alignment Card**.
 Against a ruler:

@@ -665,37 +665,20 @@ class CupsPrinterDriver(PrinterDriver):
             note += f" after dropping {len(stranded)} stranded job(s)"
         return note
 
-    # CUPS aborts the job and keeps the queue running. The default,
-    # stop-printer, disables the queue on the first error and never re-enables
-    # it — see Docs/PRINTER_NOTES.md, which is the failure this check exists for.
-    WANTED_ERROR_POLICY = "abort-job"
-    _ERROR_POLICY = re.compile(r"printer-error-policy=(\S+)")
-
-    def error_policy(self) -> Optional[str]:
-        """The queue's ErrorPolicy, or None if it could not be read."""
-        try:
-            r = subprocess.run(
-                ["lpoptions", "-p", self.printer_name],
-                capture_output=True, text=True, timeout=5,
-            )
-        except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
-            return None
-        if r.returncode != 0:
-            return None
-        m = self._ERROR_POLICY.search(r.stdout)
-        return m.group(1) if m else None
-
-    def preflight(self) -> list:
-        policy = self.error_policy()
-        if policy is None:
-            return [f"Could not read the error policy for queue "
-                    f"{self.printer_name!r} — is the queue installed?"]
-        if policy != self.WANTED_ERROR_POLICY:
-            return [f"Queue {self.printer_name!r} has error policy {policy!r}. "
-                    f"One printer error will disable it for the rest of the "
-                    f"event. Fix with: lpadmin -p {self.printer_name} "
-                    f"-o printer-error-policy={self.WANTED_ERROR_POLICY}"]
-        return []
+    # No error-policy check here, deliberately. The queue's ErrorPolicy cannot
+    # be read without root: `lpoptions -p` does not carry the attribute,
+    # `lpstat -l -p` does not either, and ipptool's get-printer-attributes
+    # returns nothing for it — all three measured on the booth against a queue
+    # that was demonstrably set to retry-job. Only /etc/cups/printers.conf has
+    # it, and that is root-only.
+    #
+    # The check that used to live here read lpoptions, so it always came back
+    # empty and logged "is the queue installed?" at every boot against a
+    # perfectly healthy queue — and stayed silent about the retry-job setting it
+    # existed to catch. A check that cannot see its subject and cries wolf is
+    # worse than none: it teaches an operator to ignore the boot warnings.
+    #
+    # Verifying the policy is a deployment step now, in PRINTER_NOTES.md.
 
 
 # ── Mock driver ───────────────────────────────────────────────────────────────
