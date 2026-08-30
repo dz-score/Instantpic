@@ -84,20 +84,25 @@
 }
 
 /* ═══ Cards Container ═══ */
+/* Stacked, not side by side: two cards across a 1080px-wide panel would leave
+   each too narrow to show a legible preview of the layout it offers. The gap
+   has to clear the badge, which hangs 44px above each card's top edge — a
+   tighter gap lets the lower badge collide with the card above it. */
 .choose-cards {
   display: flex;
-  gap: clamp(var(--space-lg), 3vw, var(--space-2xl));
-  width: 90%;
-  max-width: min(90vw, 1600px);
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(var(--space-xl), 5vh, var(--space-2xl));
+  width: 100%;
+  max-width: min(90vw, 960px);
   margin-bottom: clamp(var(--space-md), 4vh, var(--space-xl));
 }
 
 /* ═══ Individual Card ═══ */
 .choose-card {
   position: relative;
-  flex: 1;
-  max-width: min(42vw, 680px);
+  flex: 0 0 auto;
+  width: min(88vw, 900px);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -141,9 +146,12 @@
 }
 
 /* ── Preview image ── */
+/* Capped so two stacked cards plus the heading block and the back button all
+   clear 1920px: at 390px preview each card runs ~516px, and the pair plus
+   their gap comes to ~1128px against the ~1200px the layout leaves free. */
 .choose-card__preview {
   width: 100%;
-  height: clamp(300px, 34vh, 480px);
+  height: clamp(220px, 20vh, 390px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -184,7 +192,7 @@
   align-items: center;
   justify-content: center;
   gap: var(--space-sm);
-  min-width: min(26vw, 380px);
+  min-width: min(56vw, 420px);
   height: clamp(var(--cta-height-sm), 8vh, var(--cta-height-lg));
   padding: 0 var(--space-lg);
   border-radius: var(--radius-full);

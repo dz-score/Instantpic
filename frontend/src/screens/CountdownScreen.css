@@ -135,7 +135,7 @@
 /* Progress dots at bottom */
 .countdown-progress {
   position: absolute;
-  bottom: var(--space-lg);
+  bottom: clamp(var(--space-lg), 5vh, var(--space-2xl));
   left: 50%;
   transform: translateX(-50%);
   z-index: 10;

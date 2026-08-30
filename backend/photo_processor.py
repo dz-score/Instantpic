@@ -68,8 +68,8 @@ def decode_base64_image(base64_str: str) -> Image.Image:
         filepath = os.path.join(PHOTOS_DIR, base64_str)
         return _upright(Image.open(filepath))
 
-# Longest edge of a screen preview, in pixels. The booth panel is 1920x1080 and
-# the reveal photo is capped at 58vh, so 1400 is already more than it can show.
+# Longest edge of a screen preview, in pixels. The booth panel is 1080x1920 and
+# the reveal photo is capped at 62vh, so 1400 is already more than it can show.
 PREVIEW_MAX_EDGE = 1400
 
 

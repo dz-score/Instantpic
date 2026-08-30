@@ -187,31 +187,35 @@
   margin-bottom: clamp(var(--space-md), 3vh, var(--space-xl));
 }
 
-/* ── Body: Photo + QR side by side ── */
+/* ── Body: Photo above, instructions below ── */
 .print-done__body {
   display: flex;
-  gap: clamp(var(--space-lg), 4vw, var(--space-2xl));
+  flex-direction: column;
+  gap: clamp(var(--space-lg), 4vh, var(--space-2xl));
   align-items: center;
   justify-content: center;
   width: 100%;
-  max-width: min(90vw, 1500px);
+  max-width: min(90vw, 1000px);
   margin-bottom: clamp(var(--space-sm), 3vh, var(--space-lg));
 }
 
 /* Photo preview */
 .print-done__photo-wrap {
-  flex: 1;
-  max-width: min(44vw, 640px);
+  flex: 0 0 auto;
+  width: min(56vw, 520px);
   border-radius: var(--radius-md);
   overflow: hidden;
   border: 3px solid var(--gold);
   box-shadow: var(--shadow-sm), var(--shadow-glow);
 }
 
+/* 2:3, the print canvas: this is the finished composite, so it should sit in
+   the frame whole. It was 4:3 against an 1800x1200 canvas, which meant
+   object-fit: cover quietly cropped the guest's keepsake in the preview. */
 .print-done__photo {
   width: 100%;
   display: block;
-  aspect-ratio: 4 / 3;
+  aspect-ratio: 2 / 3;
   object-fit: cover;
 }
 
@@ -220,7 +224,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-md);
-  min-width: min(30vw, 420px);
+  width: min(80vw, 640px);
 }
 
 .print-done__inst-card {
@@ -327,7 +331,7 @@
   align-items: center;
   justify-content: center;
   gap: var(--space-sm);
-  min-width: min(28vw, 420px);
+  min-width: min(56vw, 460px);
   height: clamp(var(--cta-height-sm), 8vh, var(--cta-height-lg));
   padding: 0 var(--space-lg);
   border-radius: var(--radius-button);
@@ -406,7 +410,7 @@
   align-items: center;
   justify-content: center;
   gap: var(--space-sm);
-  min-width: min(24vw, 380px);
+  min-width: min(44vw, 380px);
   height: clamp(var(--cta-height-sm), 8vh, var(--cta-height-lg));
   padding: 0 var(--space-lg);
   border-radius: var(--radius-button);

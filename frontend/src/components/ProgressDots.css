@@ -1,7 +1,7 @@
 /* ── ProgressDots ── */
 
 /* Sized viewport-relative like the booth screens: this only ever renders over
-   the countdown on the 1920x1080 panel (CountdownScreen is its sole consumer),
+   the countdown on the 1080x1920 panel (CountdownScreen is its sole consumer),
    where fixed 12px dots read as specks. */
 .progress-dots {
   display: flex;

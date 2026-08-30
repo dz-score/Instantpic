@@ -56,27 +56,35 @@
   color: var(--gold);
 }
 
-/* ═══ Body — Split Layout ═══ */
+/* ═══ Body — Stacked Layout ═══ */
+/* Preview above, frame choices below. The DOM already reads in that order, so
+   this is a direction flip rather than a re-ordering. */
 .frame__body {
   display: flex;
-  gap: clamp(var(--space-lg), 4vw, var(--space-2xl));
+  flex-direction: column;
+  gap: clamp(var(--space-lg), 4vh, var(--space-2xl));
   width: 100%;
-  max-width: min(92vw, 1700px);
+  max-width: min(92vw, 1000px);
   align-items: center;
   justify-content: center;
   margin-bottom: clamp(var(--space-md), 4vh, var(--space-xl));
 }
 
-/* ── Large Photo Preview (left) ── */
+/* ── Large Photo Preview (above) ── */
 .frame__preview-wrap {
-  flex: 1.2;
-  max-width: min(48vw, 780px);
+  flex: 0 0 auto;
+  width: min(62vw, 680px);
 }
 
+/* 2:3, matching the print canvas: this shows the finished composite with the
+   chosen overlay laid over it, not a raw shot, so it takes the canvas aspect
+   from process_photo_layout (backend/photo_processor.py). The overlay uses
+   object-fit: fill over the same box, which is only correct while the two
+   agree. */
 .frame__preview {
   position: relative;
   width: 100%;
-  aspect-ratio: 4 / 3;
+  aspect-ratio: 2 / 3;
   border-radius: var(--radius-lg);
   overflow: hidden;
   border: 3px solid var(--gold);
@@ -105,9 +113,10 @@
   to   { opacity: 1; }
 }
 
-/* ── Frame Options (right) ── */
+/* ── Frame Options (below) ── */
 .frame__options {
-  flex: 1;
+  flex: 0 0 auto;
+  width: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -223,7 +232,7 @@
   align-items: center;
   justify-content: center;
   gap: var(--space-sm);
-  min-width: min(30vw, 460px);
+  min-width: min(70vw, 560px);
   height: clamp(var(--cta-height-sm), 9vh, var(--cta-height-lg));
   padding: 0 clamp(var(--space-lg), 3vw, var(--space-xl));
   border-radius: var(--radius-button);

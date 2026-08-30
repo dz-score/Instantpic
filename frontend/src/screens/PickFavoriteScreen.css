@@ -75,6 +75,10 @@
   padding: 0 var(--space-sm);
 }
 
+/* Kept as a row rather than stacked. The cards are portrait now (the camera is
+   mounted rotated), so three across a 1080px panel are ~320px wide and ~480px
+   tall — taller than the landscape cards they replace, and far bigger than
+   stacking them would allow once three 2:3 cards had to share the height. */
 .pick-fav__item {
   display: flex;
   flex-direction: column;
@@ -82,11 +86,12 @@
   gap: var(--space-sm);
   flex: 1;
   min-width: 0;
-  max-width: min(31vw, 560px);
+  max-width: min(46vw, 520px);
 }
 
 /* Card keeps the gold frame/fill/shadow around the raw photo(s). Single
-   takes the camera's 3:2 aspect; collage sizes to its row of shots. */
+   takes the camera's 2:3 aspect (portrait, since the body is mounted rotated);
+   collage sizes to its row of shots. */
 .pick-fav__card {
   position: relative;
   width: 100%;
@@ -101,10 +106,12 @@
 }
 
 .pick-fav__card--single {
-  aspect-ratio: 3 / 2;
+  aspect-ratio: 2 / 3;
 }
 
-/* Collage: shots in a row, each a portrait 3:4 cell (matching the strip). */
+/* Collage: shots in a row, each a portrait 3:4 cell. Mirrors the print cells
+   built by process_photo_layout (backend/photo_processor.py) — the two are one
+   decision and have to change together. */
 .pick-fav__collage {
   display: flex;
   width: 100%;
@@ -185,7 +192,7 @@
   align-items: center;
   justify-content: center;
   gap: var(--space-sm);
-  min-width: min(32vw, 460px);
+  min-width: min(70vw, 560px);
   height: clamp(var(--cta-height-md), 9vh, var(--cta-height-lg));
   padding: 0 var(--space-xl);
   border-radius: var(--radius-button);

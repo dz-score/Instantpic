@@ -135,22 +135,29 @@
 /* Single: the photo at its natural aspect, capped to fit the screen. */
 .reveal-photo--single .reveal-photo__img {
   display: block;
-  max-height: 58vh;
-  max-width: 84vw;
+  max-height: 62vh;
+  max-width: 88vw;
   width: auto;
   height: auto;
 }
 
-/* Collage: the shots in a row, each a portrait 3:4 cell (matching the
-   print strip), all the same height. */
+/* Collage: the shots in a row, each a portrait 3:4 cell. Mirrors the print
+   cells built by process_photo_layout (backend/photo_processor.py) — the two
+   are one decision and have to change together.
+
+   Driven from width, not height. Setting a height and letting three 3:4 cells
+   size themselves off it makes the row 2.25x as wide as it is tall, which on a
+   portrait panel overflowed the container — and because .reveal-photo clips
+   (overflow: hidden), the outer shots were silently cut off rather than
+   shrinking to fit. Width in, height out via the cells' aspect-ratio. */
 .reveal-photo--collage {
-  height: 54vh;
-  max-width: 92vw;
+  width: min(92vw, 1000px);
 }
 
 .reveal-photo--collage .reveal-photo__img {
   display: block;
-  height: 100%;
+  flex: 1;
+  min-width: 0;
   aspect-ratio: 3 / 4;
   object-fit: cover;
 }
@@ -200,7 +207,7 @@
   align-items: center;
   justify-content: center;
   gap: var(--space-sm);
-  min-width: min(26vw, 380px);
+  min-width: min(46vw, 420px);
   height: clamp(var(--cta-height-sm), 8vh, var(--cta-height-lg));
   padding: 0 var(--space-lg);
   border-radius: var(--radius-button);
@@ -235,7 +242,7 @@
   align-items: center;
   justify-content: center;
   gap: var(--space-sm);
-  min-width: min(22vw, 320px);
+  min-width: min(38vw, 340px);
   height: clamp(var(--cta-height-sm), 8vh, var(--cta-height-lg));
   padding: 0 var(--space-md);
   border-radius: var(--radius-full);

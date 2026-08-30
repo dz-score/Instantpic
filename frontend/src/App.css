@@ -41,7 +41,7 @@
 }
 
 /* Offline overlay. Covers the whole booth panel whenever the SSE connection
-   drops, so it is centred content on an empty 1920x1080 screen — sized
+   drops, so it is centred content on an empty 1080x1920 screen — sized
    viewport-relative for the same reason the booth screens are. It deliberately
    does not appear on DOWNLOAD, which is the guest's phone. */
 .offline-overlay {

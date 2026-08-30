@@ -107,7 +107,7 @@
   text-transform: uppercase;
   color: var(--text-secondary);
   line-height: 1.8;
-  max-width: min(72vw, 900px);
+  max-width: min(84vw, 900px);
   margin-bottom: clamp(var(--space-lg), 7vh, var(--space-2xl));
 }
 
@@ -124,7 +124,7 @@
   align-items: center;
   justify-content: center;
   gap: var(--space-md);
-  min-width: min(34vw, 520px);
+  min-width: min(80vw, 720px);
   height: clamp(var(--cta-height-lg), 11vh, 120px);
   padding: 0 clamp(var(--space-xl), 5vw, var(--space-2xl));
   border-radius: var(--radius-button);
