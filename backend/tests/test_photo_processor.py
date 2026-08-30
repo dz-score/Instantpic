@@ -5,7 +5,8 @@ from backend import paths
 from backend.settings import AppSettings, OverlayConfig
 from backend.photo_processor import (
     CANVAS_H, CANVAS_W, PREVIEW_MAX_EDGE, PRINT_DPI,
-    generate_alignment_card, generate_previews, process_photo_layout,
+    decode_base64_image, generate_alignment_card, generate_previews,
+    process_photo_layout,
 )
 
 # The overlay catalogue is passed in now rather than read from a global.
@@ -103,6 +104,65 @@ def test_generate_previews_does_not_upscale(temp_workspace):
 
     out = Image.open(os.path.join(photos_dir, previews[0]))
     assert out.size == (640, 480)
+
+
+# --- Orientation: the camera is mounted rotated, so every capture is tagged ---
+
+def _sideways_capture(path):
+    """A landscape-stored frame tagged Orientation=6, as a camera on its side
+    writes. Displayed correctly it is portrait, with the stored top-left corner
+    ending up top-RIGHT. The red block lets a correct rotation be told apart
+    from a flip or a rotation the wrong way."""
+    img = Image.new("RGB", (200, 100), (30, 30, 30))
+    for x in range(60):
+        for y in range(30):
+            img.putpixel((x, y), (255, 0, 0))
+    exif = img.getexif()
+    exif[274] = 6
+    img.save(path, "JPEG", quality=95, exif=exif)
+
+
+def test_captures_are_uprighted_before_compositing(temp_workspace):
+    """The booth's camera is mounted rotated 90°, so its captures are stored
+    sideways with an Orientation tag. PIL ignores that tag; browsers honour it.
+    Unless we apply it here, the guest sees an upright photo on the reveal
+    screen and collects a sideways print — a split that is invisible on screen,
+    which is exactly why it needs a test."""
+    photos_dir = temp_workspace["photos_dir"]
+    _sideways_capture(os.path.join(photos_dir, "capture_tilted.jpg"))
+
+    img = decode_base64_image("capture_tilted.jpg")
+
+    assert img.size == (100, 200), "stored landscape, should load as portrait"
+    w, _ = img.size
+    assert img.getpixel((w - 5, 5))[0] > 200, "rotated 90° CW: mark belongs top-right"
+    assert img.getpixel((5, 5))[0] < 100, "top-left should be the dark background"
+
+
+def test_previews_are_uprighted_before_the_exif_is_dropped(temp_workspace):
+    """Previews are re-saved through PIL, which drops the EXIF block. Uprighting
+    has to happen before that save: a preview written from sideways pixels
+    would lose the only thing telling the browser to rotate it, and REVEAL and
+    PICK_FAVORITE show the preview, not the raw."""
+    photos_dir = temp_workspace["photos_dir"]
+    _sideways_capture(os.path.join(photos_dir, "capture_tilted.jpg"))
+
+    previews = generate_previews(["capture_tilted.jpg"])
+
+    out = Image.open(os.path.join(photos_dir, previews[0]))
+    assert out.size == (100, 200)
+    assert not out.getexif().get(274), "pixels are upright; a stale tag would re-rotate"
+
+
+def test_untagged_captures_are_left_alone(temp_workspace):
+    """The mock camera and the fixtures write no Orientation tag. Uprighting is
+    applied unconditionally, so it has to be a no-op for them."""
+    photos_dir = temp_workspace["photos_dir"]
+    Image.new("RGB", (200, 100), (10, 10, 10)).save(
+        os.path.join(photos_dir, "capture_plain.jpg"), "JPEG"
+    )
+
+    assert decode_base64_image("capture_plain.jpg").size == (200, 100)
 
 
 # --- Overlays: a frame the guest picked either gets printed or gets logged ---

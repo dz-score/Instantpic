@@ -33,13 +33,31 @@ def get_font(size: int):
             pass
     return ImageFont.load_default()
 
+def _upright(img: Image.Image) -> Image.Image:
+    """Apply the EXIF Orientation tag, so downstream code sees the picture the
+    way the photographer framed it.
+
+    The booth's camera is mounted rotated 90°, so every capture off it carries
+    an Orientation tag and its pixels are stored on their side. PIL does not
+    honour that tag on its own — `Image.open` hands back the raw sensor
+    orientation — but browsers DO honour it when rendering an <img>. Left
+    unapplied, the two disagree: the guest sees an upright photo on the reveal
+    screen and collects a sideways print. Normalising here, at the one place
+    every layout path loads its input, keeps the print and the screen agreeing.
+
+    A no-op for images with no tag (the mock camera, the test fixtures), which
+    is why it is safe to apply unconditionally.
+    """
+    return ImageOps.exif_transpose(img)
+
+
 def decode_base64_image(base64_str: str) -> Image.Image:
     """Decode a base64 data URI to a PIL Image, or load directly from disk if it's a filename."""
     if base64_str.startswith("data:image"):
         if "," in base64_str:
             base64_str = base64_str.split(",")[1]
         image_data = base64.b64decode(base64_str)
-        return Image.open(BytesIO(image_data))
+        return _upright(Image.open(BytesIO(image_data)))
     else:
         # A local filename produced by the gphoto2 capture. Reads this module's
         # PHOTOS_DIR, same as every other function here — it used to re-import
@@ -48,7 +66,7 @@ def decode_base64_image(base64_str: str) -> Image.Image:
         # fixture patches both, which is exactly why it would have gone unnoticed
         # until one of them moved (see diagnostics.py, which did).
         filepath = os.path.join(PHOTOS_DIR, base64_str)
-        return Image.open(filepath)
+        return _upright(Image.open(filepath))
 
 # Longest edge of a screen preview, in pixels. The booth panel is 1920x1080 and
 # the reveal photo is capped at 58vh, so 1400 is already more than it can show.
@@ -80,7 +98,15 @@ def generate_previews(raw_filenames: List[str]) -> List[str]:
             source = os.path.join(PHOTOS_DIR, raw)
             with Image.open(source) as img:
                 img.draft("RGB", (PREVIEW_MAX_EDGE, PREVIEW_MAX_EDGE))
-                preview = img.convert("RGB")
+                # Upright before the re-save, not after: saving through PIL
+                # drops the EXIF block, so a preview written from sideways
+                # pixels would lose the Orientation tag that was the only thing
+                # telling the browser to rotate it. The raw keeps its tag and
+                # renders fine; the preview would not, and the preview is what
+                # REVEAL and PICK_FAVORITE actually show. `draft` only
+                # configures the decoder, so it still applies to the load that
+                # the transpose triggers here.
+                preview = _upright(img).convert("RGB")
             preview.thumbnail((PREVIEW_MAX_EDGE, PREVIEW_MAX_EDGE), Image.LANCZOS)
             name = f"preview_{raw}"
             preview.save(os.path.join(PHOTOS_DIR, name), "JPEG", quality=82, optimize=True)
