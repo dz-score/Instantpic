@@ -4,25 +4,32 @@
   position: fixed;
   inset: 0;
   display: flex;
+  flex-direction: column;
   background: var(--bg-base);
   z-index: 10000;
   animation: fade-in var(--duration-brisk) ease;
 }
 
-/* ═══ Sidebar ═══ */
+/* ═══ Nav bar ═══ */
+/* A top bar rather than a side rail: a fixed 220px rail costs a fifth of a
+   1080px-wide panel, and the tab list is short enough to sit in a row. The DOM
+   order — title, tabs, close — already reads left to right, so this is a
+   direction flip with no markup change. */
 .admin-sidebar {
-  width: 220px;
+  width: 100%;
   flex-shrink: 0;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-sm);
   background: var(--bg-elevated);
-  border-right: 1px solid var(--surface-border);
-  padding: var(--space-md) 0;
+  border-bottom: 1px solid var(--surface-border);
+  padding: var(--space-xs) var(--space-sm);
 }
 
 .admin-sidebar__header {
-  padding: 0 var(--space-md) var(--space-md);
-  border-bottom: 1px solid var(--surface-border);
+  padding: 0 var(--space-sm);
+  flex-shrink: 0;
 }
 
 .admin-sidebar__title {
@@ -32,21 +39,31 @@
   color: var(--text-primary);
 }
 
+/* Scrolls horizontally rather than wrapping, so adding a tab shortens the
+   reachable row instead of pushing the content pane down a line. */
 .admin-sidebar__nav {
   flex: 1;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   gap: var(--space-2xs);
-  padding: var(--space-sm) var(--space-xs);
+  padding: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
 }
 
-/* Tab buttons */
+/* Tab buttons — icon over label, which keeps each one narrow enough that the
+   whole set fits 1080px without scrolling. */
 .admin-tab-btn {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: var(--space-sm);
-  height: var(--touch-comfortable);
-  padding: 0 var(--space-sm);
+  justify-content: center;
+  gap: 2px;
+  flex: 0 0 auto;
+  min-width: 96px;
+  min-height: var(--touch-comfortable);
+  padding: var(--space-2xs) var(--space-sm);
   border-radius: var(--radius-sm);
   border: none;
   background: transparent;
@@ -56,8 +73,7 @@
   color: var(--text-secondary);
   cursor: pointer;
   transition: all var(--duration-fast) ease;
-  width: 100%;
-  text-align: left;
+  text-align: center;
 }
 
 .admin-tab-btn:active {
@@ -72,23 +88,25 @@
 
 .admin-tab-btn__icon {
   font-size: var(--text-h3);
-  width: 32px;
+  line-height: 1;
   text-align: center;
   flex-shrink: 0;
 }
 
 .admin-tab-btn__label {
-  font-size: var(--text-body);
+  font-size: var(--text-label);
+  white-space: nowrap;
 }
 
-/* Sidebar footer */
+/* Nav-bar trailing slot */
 .admin-sidebar__footer {
-  padding: var(--space-sm) var(--space-xs);
-  border-top: 1px solid var(--surface-border);
+  padding: 0 var(--space-xs);
+  flex-shrink: 0;
 }
 
 .admin-close-btn {
-  width: 100%;
+  padding: 0 var(--space-md);
+  white-space: nowrap;
   height: var(--touch-min);
   border-radius: var(--radius-sm);
   border: none;
