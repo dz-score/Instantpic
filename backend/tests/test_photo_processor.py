@@ -1,10 +1,12 @@
 import os
 import pytest
-from PIL import Image
+from PIL import Image, ImageDraw
 from backend import paths
 from backend.settings import AppSettings, OverlayConfig
 from backend.photo_processor import (
-    CANVAS_H, CANVAS_W, PREVIEW_MAX_EDGE, PRINT_DPI,
+    CANVAS_H, CANVAS_W, CAPTION_MAX_SIZE, CAPTION_MIN_SIZE,
+    COLLAGE_CAPTION_POS, COLLAGE_CELL, COLLAGE_CELLS,
+    PREVIEW_MAX_EDGE, PRINT_DPI, _fit_font,
     decode_base64_image, generate_alignment_card, generate_previews,
     process_photo_layout,
 )
@@ -27,9 +29,9 @@ def test_process_photo_layout_single(temp_workspace, temp_config, mock_base64_im
     filepath = os.path.join(temp_workspace["photos_dir"], filename)
     assert os.path.exists(filepath)
     
-    # Verify it created an 1800x1200 image
+    # Verify it created a canvas-sized image
     img = Image.open(filepath)
-    assert img.size == (1800, 1200)
+    assert img.size == (CANVAS_W, CANVAS_H)
     assert img.format == "JPEG"
 
 def test_process_photo_layout_collage(temp_workspace, temp_config, mock_base64_image):
@@ -49,7 +51,7 @@ def test_process_photo_layout_collage(temp_workspace, temp_config, mock_base64_i
     assert os.path.exists(filepath)
     
     img = Image.open(filepath)
-    assert img.size == (1800, 1200)
+    assert img.size == (CANVAS_W, CANVAS_H)
 
 def test_process_photo_layout_overlay_resilience(temp_workspace, temp_config, mock_base64_image):
     """If an invalid overlay ID is provided, it should gracefully ignore it and still produce a photo."""
@@ -104,6 +106,84 @@ def test_generate_previews_does_not_upscale(temp_workspace):
 
     out = Image.open(os.path.join(photos_dir, previews[0]))
     assert out.size == (640, 480)
+
+
+# --- Print geometry: portrait 4x6, matching the panel and the rotated camera ---
+
+def _solid_base64(rgb):
+    """A distinctly-coloured capture, so we can tell which cell it landed in."""
+    import base64
+    from io import BytesIO
+    buf = BytesIO()
+    Image.new("RGB", (400, 600), rgb).save(buf, format="JPEG", quality=95)
+    return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
+
+
+def test_canvas_is_portrait():
+    """The print follows the panel and the camera. A silent flip back to
+    landscape would put every shot through a 90-degree crop."""
+    assert CANVAS_H > CANVAS_W
+    assert (CANVAS_W, CANVAS_H) == (1200, 1800)
+
+
+def test_collage_fills_three_cells_and_leaves_the_fourth_for_the_caption(
+        temp_workspace, temp_config):
+    """Three shots on a 2x2 grid. The fourth cell carries the names, so it must
+    stay background — a photo there would print over the caption."""
+    reds = [(220, 40, 40), (40, 200, 40), (40, 40, 220)]
+    filename = process_photo_layout(
+        images_base64=[_solid_base64(c) for c in reds],
+        layout_type="collage",
+        text="",
+        overlay_id="none",
+        overlays=OVERLAYS,
+    )
+    img = Image.open(os.path.join(temp_workspace["photos_dir"], filename)).convert("RGB")
+
+    # Each of the first three cells shows its own photo, in order.
+    for expected, (cx, cy) in zip(reds, COLLAGE_CELLS[:3]):
+        centre = (cx + COLLAGE_CELL[0] // 2, cy + COLLAGE_CELL[1] // 2)
+        got = img.getpixel(centre)
+        assert max(abs(a - b) for a, b in zip(got, expected)) < 40, (
+            f"cell at {(cx, cy)} should hold {expected}, got {got}"
+        )
+
+    # The caption cell is untouched cream, not a fourth photo. Compared loosely
+    # because the canvas is saved as JPEG, which shifts flat colour by a point.
+    cx, cy = COLLAGE_CAPTION_POS
+    centre = (cx + COLLAGE_CELL[0] // 2, cy + COLLAGE_CELL[1] // 2)
+    got = img.getpixel(centre)
+    assert max(abs(a - b) for a, b in zip(got, (253, 251, 247))) < 5, got
+
+
+def test_a_long_caption_is_shrunk_rather_than_overrunning_its_box():
+    """couple_names is operator-editable free text and the collage's caption
+    cell is only ~519px wide, so a fixed size would run off the print. The
+    shipped default is the realistic worst case."""
+    canvas = Image.new("RGB", (CANVAS_W, CANVAS_H))
+    draw = ImageDraw.Draw(canvas)
+    default_caption = "Michael & Sarah · June 14, 2030"
+
+    box = COLLAGE_CELL[0] - 48
+    font = _fit_font(draw, default_caption, box, CAPTION_MAX_SIZE)
+    bbox = draw.textbbox((0, 0), default_caption, font=font)
+
+    assert (bbox[2] - bbox[0]) <= box
+    assert font.size < CAPTION_MAX_SIZE, "should have shrunk to fit the cell"
+    # A short caption still gets the full size — the fit only shrinks on demand.
+    assert _fit_font(draw, "M & S", box, CAPTION_MAX_SIZE).size == CAPTION_MAX_SIZE
+
+
+def test_an_unreasonably_long_caption_stops_at_the_legibility_floor():
+    """Past CAPTION_MIN_SIZE the names are unreadable anyway, so _fit_font stops
+    shrinking and lets the text clip. Documented here so the overrun is a known
+    limit rather than a surprise on the print."""
+    draw = ImageDraw.Draw(Image.new("RGB", (CANVAS_W, CANVAS_H)))
+    absurd = "Bartholomew Fitzwilliam & Anastasia Konstantinova - June 14, 2030"
+
+    font = _fit_font(draw, absurd, COLLAGE_CELL[0] - 48, CAPTION_MAX_SIZE)
+
+    assert font.size == CAPTION_MIN_SIZE
 
 
 # --- Orientation: the camera is mounted rotated, so every capture is tagged ---

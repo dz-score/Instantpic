@@ -18,8 +18,37 @@ from backend.paths import PHOTOS_DIR, OVERLAYS_DIR
 from backend.paths import FONT_PATH
 
 # The fixed output geometry. Changing either is a Docs/CONSTRAINTS.md §6 change.
-CANVAS_W, CANVAS_H = 1800, 1200
+# Portrait 4x6, matching the panel and the rotated camera.
+CANVAS_W, CANVAS_H = 1200, 1800
 PRINT_DPI = 300
+
+# ── Layout geometry ──
+# Derived rather than written out as magic numbers, because the caption has to
+# land in whatever space the photos leave and the two drifted apart last time.
+
+# Single: one shot at the camera's native 2:3, so nothing is cropped away, with
+# a caption band beneath it.
+SINGLE_BOX = (960, 1440)
+SINGLE_POS = (120, 80)
+SINGLE_CAPTION_TOP = SINGLE_POS[1] + SINGLE_BOX[1]
+SINGLE_CAPTION_BOX = (CANVAS_W, CANVAS_H - SINGLE_CAPTION_TOP)
+
+# Collage: three 3:4 shots on a 2x2 grid, the free fourth cell carrying the
+# caption. A single row of three would cap each shot at 340px wide on a 1200px
+# canvas and leave the bottom two thirds of the print empty; the grid fills the
+# page and crops less (3:4 against a 2:3 source is a mild trim).
+COLLAGE_GAP = 54
+COLLAGE_CELL = (519, 692)
+_grid_h = 2 * COLLAGE_CELL[1] + COLLAGE_GAP
+COLLAGE_ORIGIN = (COLLAGE_GAP, (CANVAS_H - _grid_h) // 2)
+COLLAGE_CELLS = [
+    (COLLAGE_ORIGIN[0] + col * (COLLAGE_CELL[0] + COLLAGE_GAP),
+     COLLAGE_ORIGIN[1] + row * (COLLAGE_CELL[1] + COLLAGE_GAP))
+    for row in (0, 1) for col in (0, 1)
+]
+# The fourth cell holds the caption instead of a photo.
+COLLAGE_CAPTION_POS = COLLAGE_CELLS[3]
+COLLAGE_CAPTION_BOX = COLLAGE_CELL
 
 def get_font(size: int):
     """Load the bundled Playfair Display font, or fall back to PIL's default.
@@ -49,6 +78,26 @@ def _upright(img: Image.Image) -> Image.Image:
     is why it is safe to apply unconditionally.
     """
     return ImageOps.exif_transpose(img)
+
+
+# Caption sizing. The collage's caption cell is only ~519px wide, and
+# couple_names is operator-editable free text, so a fixed size would overrun the
+# box — off the side of the print for a long pair of names.
+CAPTION_MAX_SIZE = 52
+CAPTION_MIN_SIZE = 22
+CAPTION_PADDING = 24
+
+
+def _fit_font(draw: "ImageDraw.ImageDraw", text: str, max_width: int, max_size: int):
+    """Largest bundled-font size at which `text` fits `max_width`, floored at
+    CAPTION_MIN_SIZE — past that the names are unreadable anyway and clipping is
+    the more honest failure."""
+    for size in range(max_size, CAPTION_MIN_SIZE - 1, -2):
+        font = get_font(size)
+        bbox = draw.textbbox((0, 0), text, font=font)
+        if (bbox[2] - bbox[0]) <= max_width:
+            return font
+    return get_font(CAPTION_MIN_SIZE)
 
 
 def decode_base64_image(base64_str: str) -> Image.Image:
@@ -140,25 +189,15 @@ def process_photo_layout(images_base64: list, layout_type: str, text: str, overl
     decoded_images = [decode_base64_image(img_str) for img_str in images_base64]
     
     if layout_type == "single" and decoded_images:
-        # Single Landscape photo placement
-        img = decoded_images[0]
-        # Crop or resize to fit 3:2 nicely with elegant borders
-        # We want to fit it to 1440x960, centered horizontally
-        img_resized = ImageOps.fit(img, (1440, 960))
-        canvas.paste(img_resized, (180, 80)) # x = 180, y = 80. Bottom is 1040.
-        
+        # One portrait shot, caption band beneath. The box is 2:3, which is what
+        # the rotated camera delivers, so ImageOps.fit trims nothing.
+        img_resized = ImageOps.fit(decoded_images[0], SINGLE_BOX)
+        canvas.paste(img_resized, SINGLE_POS)
+
     elif layout_type == "collage" and len(decoded_images) >= 3:
-        # 3-Photo horizontal collage
-        # Crop each photo to portrait 3:4 aspect ratio (540x720)
-        collage_width = 540
-        collage_height = 720
-        gap = 45 # (CANVAS_W - (3 * 540)) / 4 = 45
-        
-        for idx, img in enumerate(decoded_images[:3]):
-            cropped_img = ImageOps.fit(img, (collage_width, collage_height))
-            x_pos = gap + idx * (collage_width + gap)
-            y_pos = 80
-            canvas.paste(cropped_img, (x_pos, y_pos)) # Bottom is 800
+        # Three shots on a 2x2 grid; the fourth cell is left for the caption.
+        for img, pos in zip(decoded_images[:3], COLLAGE_CELLS):
+            canvas.paste(ImageOps.fit(img, COLLAGE_CELL), pos)
 
     else:
         # Neither layout can be satisfied. Falling through would save a blank
@@ -215,26 +254,28 @@ def process_photo_layout(images_base64: list, layout_type: str, text: str, overl
     # 4. Render Customizable Text
     if text:
         draw = ImageDraw.Draw(canvas)
-        font = get_font(52)
-        
-        # Calculate text dimensions using textbbox
-        bbox = draw.textbbox((0, 0), text, font=font)
-        text_width = bbox[2] - bbox[0]
-        
-        # Centered horizontally
-        text_x = (CANVAS_W - text_width) // 2
-        
-        # Y position: vertical alignment in the bottom area
-        # For single, bottom area is 1040 -> 1200. Center is 1120.
-        # For collage, bottom area is 800 -> 1200. Center is 1000.
+
+        # Which box the caption sits in depends on the layout: a full-width band
+        # under a single shot, or the free fourth cell of the collage grid.
         if layout_type == "single":
-            text_y = 1040 + (160 - (bbox[3] - bbox[1])) // 2 - 10
+            box_x, box_y = 0, SINGLE_CAPTION_TOP
+            box_w, box_h = SINGLE_CAPTION_BOX
         else:
-            text_y = 800 + (400 - (bbox[3] - bbox[1])) // 2 - 20
-            
+            box_x, box_y = COLLAGE_CAPTION_POS
+            box_w, box_h = COLLAGE_CAPTION_BOX
+
+        font = _fit_font(draw, text, box_w - 2 * CAPTION_PADDING, CAPTION_MAX_SIZE)
+        bbox = draw.textbbox((0, 0), text, font=font)
+
+        # Centre in the box on both axes. bbox carries the glyphs' own offset
+        # from the origin, so it has to come off the position or the text sits
+        # low by its ascent.
+        text_x = box_x + (box_w - (bbox[2] - bbox[0])) // 2 - bbox[0]
+        text_y = box_y + (box_h - (bbox[3] - bbox[1])) // 2 - bbox[1]
+
         # Draw elegant dark rose/gold text
         draw.text((text_x, text_y), text, fill=(50, 30, 40), font=font)
-        
+
     # 5. Save the photo
     filename = f"photo_{uuid.uuid4().hex[:10]}.jpg"
     filepath = os.path.join(PHOTOS_DIR, filename)
