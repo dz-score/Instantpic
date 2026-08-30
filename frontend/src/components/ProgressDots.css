@@ -12,7 +12,7 @@
 
 .progress-dots__label {
   font-family: var(--font-body);
-  font-size: clamp(var(--text-caption), 1.3vw, var(--text-h3));
+  font-size: clamp(var(--text-caption), 1.3vmax, var(--text-h3));
   font-weight: 600;
   color: var(--text-on-gold);
   text-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
@@ -29,8 +29,8 @@
 }
 
 .progress-dots__dot {
-  width: clamp(12px, 1.1vw, 22px);
-  height: clamp(12px, 1.1vw, 22px);
+  width: clamp(12px, 1.1vmax, 22px);
+  height: clamp(12px, 1.1vmax, 22px);
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.3);
   transition: all var(--duration-normal) var(--ease-out);

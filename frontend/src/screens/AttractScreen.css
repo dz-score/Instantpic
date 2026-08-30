@@ -53,7 +53,7 @@
 }
 
 .attract-flourish__dash {
-  width: clamp(80px, 10vw, 160px);
+  width: clamp(80px, 10vmax, 160px);
   height: 1px;
   background: var(--gold-light);
 }
@@ -61,7 +61,7 @@
 /* ═══ Heading Block ═══ */
 .attract-kicker {
   font-family: var(--font-script);
-  font-size: clamp(var(--text-h1), 6vw, 5.5rem);
+  font-size: clamp(var(--text-h1), 6vmax, 5.5rem);
   font-weight: 400;
   color: var(--gold);
   margin-bottom: var(--space-xs);
@@ -70,7 +70,7 @@
 
 .attract-names {
   font-family: var(--font-script);
-  font-size: clamp(4.5rem, 12vw, 10rem);
+  font-size: clamp(4.5rem, 12vmax, 10rem);
   font-weight: 400;
   color: var(--gold);
   line-height: 1.4;
@@ -81,7 +81,7 @@
 
 .attract-label {
   font-family: var(--font-body);
-  font-size: clamp(var(--text-caption), 1.4vw, var(--text-body));
+  font-size: clamp(var(--text-caption), 1.4vmax, var(--text-body));
   font-weight: 500;
   letter-spacing: var(--tracking-lg);
   text-transform: uppercase;
@@ -101,7 +101,7 @@
 /* ═══ Subtitle / Welcome Message ═══ */
 .attract-subtitle {
   font-family: var(--font-body);
-  font-size: clamp(var(--text-caption), 1.5vw, var(--text-h3));
+  font-size: clamp(var(--text-caption), 1.5vmax, var(--text-h3));
   font-weight: 400;
   letter-spacing: var(--tracking-md);
   text-transform: uppercase;
@@ -163,7 +163,7 @@
 
 .attract-cta__text-main {
   font-family: var(--font-body);
-  font-size: clamp(var(--text-body), 1.7vw, var(--text-h3));
+  font-size: clamp(var(--text-body), 1.7vmax, var(--text-h3));
   font-weight: 700;
   letter-spacing: var(--tracking-md);
   text-transform: uppercase;
@@ -172,7 +172,7 @@
 
 .attract-cta__text-sub {
   font-family: var(--font-body);
-  font-size: clamp(var(--text-small), 1.1vw, var(--text-body));
+  font-size: clamp(var(--text-small), 1.1vmax, var(--text-body));
   font-weight: 600;
   letter-spacing: var(--tracking-sm);
   text-transform: uppercase;

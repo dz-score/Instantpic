@@ -48,7 +48,7 @@
 /* ═══ Heading ═══ */
 .frame__title {
   font-family: var(--font-script);
-  font-size: clamp(var(--text-h1), 7vw, 6.5rem);
+  font-size: clamp(var(--text-h1), 7vmax, 6.5rem);
   font-weight: 400;
   line-height: 1.4;
   margin-bottom: clamp(var(--space-md), 3vh, var(--space-lg));
@@ -124,7 +124,7 @@
 
 .frame__card {
   position: relative;
-  width: clamp(140px, 11vw, 200px);
+  width: clamp(140px, 11vmax, 200px);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -202,7 +202,7 @@
 
 .frame__card-name {
   font-family: var(--font-body);
-  font-size: clamp(0.7rem, 0.9vw, var(--text-caption));
+  font-size: clamp(0.7rem, 0.9vmax, var(--text-caption));
   font-weight: 600;
   letter-spacing: var(--tracking-hairline);
   text-transform: uppercase;
@@ -247,7 +247,7 @@
 
 .frame__btn-print-main {
   font-family: var(--font-body);
-  font-size: clamp(var(--text-caption), 1.5vw, var(--text-h3));
+  font-size: clamp(var(--text-caption), 1.5vmax, var(--text-h3));
   font-weight: 700;
   letter-spacing: var(--tracking-md);
   text-transform: uppercase;
