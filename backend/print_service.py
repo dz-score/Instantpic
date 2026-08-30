@@ -157,6 +157,15 @@ class CupsPrinterDriver(PrinterDriver):
     # Consecutive failed observations tolerated before we admit we've lost the
     # job. One hiccup while cupsd reloads should not fail a good print.
     OBSERVE_FAILURE_LIMIT = 3
+    # Job-state reasons meaning CUPS took the file but the hardware cannot run
+    # it: nothing on the USB bus, or no media loaded. Observed on the booth's
+    # own DS-RX1 with the printer switched off — the JOB reports
+    # "Alerts: resources-are-not-ready" while the QUEUE still says
+    # "idle. enabled" with no fault at all.
+    UNREADY_JOB_REASONS = ("resources-are-not-ready",)
+    # Consecutive not-ready observations before believing it. A job can report
+    # not-ready for an instant at submission while CUPS opens the device.
+    UNREADY_LIMIT = 3
 
     def __init__(self, printer_name: str, abort: Optional[threading.Event] = None):
         self.printer_name = printer_name
@@ -339,6 +348,45 @@ class CupsPrinterDriver(PrinterDriver):
                 duration_ms=duration,
             )
 
+    def _job_trouble(self, job_id: str) -> Optional[str]:
+        """CUPS's own words for why `job_id` cannot run yet, or None.
+
+        Read from `lpstat -l -o`, which carries per-job alerts that the
+        printer's state does not. With the printer switched off the queue looks
+        perfectly healthy — "idle. enabled", no fault — and only the job knows:
+
+            DS-RX1-18            instantpic  1024  Mon 31 Aug 2026 12:34:56
+                    Status: Printer open failure (No matching printers found!)
+                    Alerts: resources-are-not-ready
+                    queued for DS-RX1
+
+        Returns the Status line when there is one, since "Printer open failure"
+        tells an operator what to go and do; falls back to the raw alert.
+        """
+        out = self._lpstat(["-l", "-o", self.printer_name])
+        if out is None:
+            return None
+
+        # Job records start at column 0 with the id; details are indented under
+        # it, so a record ends at the next unindented line.
+        ours = False
+        status = None
+        for line in out.splitlines():
+            if not line[:1].isspace():
+                ours = line.split(" ", 1)[0].strip() == job_id
+                status = None
+                continue
+            if not ours:
+                continue
+            detail = line.strip()
+            if detail.startswith("Status:"):
+                status = detail[len("Status:"):].strip()
+            elif detail.startswith("Alerts:"):
+                alerts = detail[len("Alerts:"):].strip()
+                if any(r in alerts for r in self.UNREADY_JOB_REASONS):
+                    return status or alerts
+        return None
+
     def await_job(self, job_id: str, timeout_s: float) -> JobOutcome:
         """Poll CUPS until the job is off the queue, the queue stops, or we run
         out of patience.
@@ -350,6 +398,7 @@ class CupsPrinterDriver(PrinterDriver):
         """
         deadline = time.monotonic() + timeout_s
         misses = 0
+        unready = 0
 
         while True:
             queued = self._queued_job_ids()
@@ -374,6 +423,20 @@ class CupsPrinterDriver(PrinterDriver):
                 reason = self._stop_reason()
                 if reason:
                     return JobOutcome(JOB_FAILED, reason)
+
+                # A stopped queue is not the only way a print dies. With the
+                # printer switched off or unplugged the queue stays enabled and
+                # idle, and the job simply waits — so nothing above fires and
+                # the guest watched the spinner all the way to the 90s ceiling.
+                # The job's own alert is the only signal, and it is a positive
+                # one, so this needs no timer of its own.
+                trouble = self._job_trouble(job_id)
+                if trouble:
+                    unready += 1
+                    if unready >= self.UNREADY_LIMIT:
+                        return JobOutcome(JOB_FAILED, trouble)
+                else:
+                    unready = 0
 
             if time.monotonic() >= deadline:
                 return JobOutcome(

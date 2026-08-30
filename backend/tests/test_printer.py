@@ -166,6 +166,29 @@ LPSTAT_STOPPED = (
 )
 LPSTAT_RUNNING = "printer DS-RX1 is idle.  enabled since Wed 27 Aug 2026 09:00:00 AM\n"
 
+# Verbatim from the booth's Pi with the DS-RX1 switched off. Note the queue
+# reported "idle. enabled" with no fault at the same moment — the job is the
+# only thing that knows anything is wrong.
+LPSTAT_JOB_UNREADY = (
+    "DS-RX1-18               instantpic        1024   Mon 31 Aug 2026 12:34:56 AM CEST\n"
+    "        Status: Printer open failure (No matching printers found!)\n"
+    "        Alerts: resources-are-not-ready\n"
+    "        queued for DS-RX1\n"
+)
+LPSTAT_JOB_HEALTHY = (
+    "DS-RX1-18               instantpic        1024   Mon 31 Aug 2026 12:34:56 AM CEST\n"
+    "        Status: Sending data to printer.\n"
+    "        queued for DS-RX1\n"
+)
+# Someone else's job is stuck; ours is fine. Must not be confused for ours.
+LPSTAT_JOB_OTHER_UNREADY = (
+    "DS-RX1-17               instantpic        1024   Mon 31 Aug 2026 12:30:00 AM CEST\n"
+    "        Status: Printer open failure (No matching printers found!)\n"
+    "        Alerts: resources-are-not-ready\n"
+    "DS-RX1-18               instantpic        1024   Mon 31 Aug 2026 12:34:56 AM CEST\n"
+    "        Status: Sending data to printer.\n"
+)
+
 
 def test_queued_job_ids_parses_first_token(mocker):
     """Job ids are the first whitespace token of each lpstat -o line."""
@@ -199,6 +222,68 @@ def test_stop_reason_none_while_running(mocker):
     driver = CupsPrinterDriver("DS-RX1")
     mocker.patch.object(driver, "_lpstat", return_value=LPSTAT_RUNNING)
     assert driver._stop_reason() is None
+
+
+# ── Job alerts: the powered-off printer the queue does not report ────────────
+
+def test_job_trouble_reads_the_status_line(mocker):
+    """The Status line names what an operator has to go and fix."""
+    driver = CupsPrinterDriver("DS-RX1")
+    mocker.patch.object(driver, "_lpstat", return_value=LPSTAT_JOB_UNREADY)
+    assert driver._job_trouble("DS-RX1-18") == (
+        "Printer open failure (No matching printers found!)"
+    )
+
+
+def test_job_trouble_none_for_a_healthy_job(mocker):
+    driver = CupsPrinterDriver("DS-RX1")
+    mocker.patch.object(driver, "_lpstat", return_value=LPSTAT_JOB_HEALTHY)
+    assert driver._job_trouble("DS-RX1-18") is None
+
+
+def test_job_trouble_only_reads_our_own_job(mocker):
+    """Alerts are per-job. Another stuck job must not fail this guest's print."""
+    driver = CupsPrinterDriver("DS-RX1")
+    mocker.patch.object(driver, "_lpstat", return_value=LPSTAT_JOB_OTHER_UNREADY)
+    assert driver._job_trouble("DS-RX1-18") is None
+    assert driver._job_trouble("DS-RX1-17") is not None
+
+
+def test_job_trouble_none_when_lpstat_unusable(mocker):
+    driver = CupsPrinterDriver("DS-RX1")
+    mocker.patch.object(driver, "_lpstat", return_value=None)
+    assert driver._job_trouble("DS-RX1-18") is None
+
+
+def test_await_job_fails_fast_when_the_printer_is_switched_off(mocker):
+    """The bug this closes: queue enabled and idle, job quietly waiting, so
+    nothing fired and the guest watched a spinner out to the 90s ceiling."""
+    driver = CupsPrinterDriver("DS-RX1", InstantAbort())
+    mocker.patch.object(driver, "_queued_job_ids", return_value={"DS-RX1-18"})
+    mocker.patch.object(driver, "_stop_reason", return_value=None)
+    mocker.patch.object(driver, "_job_trouble",
+                        return_value="Printer open failure (No matching printers found!)")
+
+    outcome = driver.await_job("DS-RX1-18", timeout_s=90)
+
+    assert outcome.state == JOB_FAILED
+    assert outcome.ok is False
+    assert "Printer open failure" in outcome.message
+
+
+def test_await_job_tolerates_a_momentary_not_ready(mocker):
+    """A job can report not-ready for an instant while CUPS opens the device.
+    One blip must not fail a print that then goes on to come out."""
+    driver = CupsPrinterDriver("DS-RX1", InstantAbort())
+    mocker.patch.object(driver, "_queued_job_ids",
+                        side_effect=[{"DS-RX1-18"}, {"DS-RX1-18"}, set()])
+    mocker.patch.object(driver, "_stop_reason", return_value=None)
+    mocker.patch.object(driver, "_job_trouble",
+                        side_effect=["resources-are-not-ready", None, None])
+
+    outcome = driver.await_job("DS-RX1-18", timeout_s=90)
+
+    assert outcome.state == JOB_COMPLETED
 
 
 # ── await_job: outcomes ──────────────────────────────────────────────────────

@@ -37,15 +37,36 @@ work from the CLI: **`lpstat -W completed` is IPP `which-jobs=completed`, which
 returns completed, aborted *and* canceled jobs in one list.** It cannot tell a
 good print from a jam.
 
-The queue can. Out of ribbon, out of paper, a jam and a power-off all **stop the
-queue and leave the job sitting in it**. So:
+The queue can. Out of ribbon, out of paper and a jam all **stop the queue and
+leave the job sitting in it**. So:
 
 | Observation | Meaning |
 |---|---|
 | job id gone from `lpstat -o <queue>` | completed |
 | job still queued **and** queue stopped | failed — carries CUPS's own reason line |
+| job still queued **and** the job alerts `resources-are-not-ready` (3 polls) | failed — printer absent or no media |
 | still queued at the 90 s deadline | timeout |
 | 3 consecutive unreadable polls | unknown (reported, never passed off as success) |
+
+**A switched-off printer does NOT stop the queue** — this was assumed for a
+long time and is wrong. Measured on the booth's own DS-RX1 with the printer
+powered down, `lpstat -p` reports the queue perfectly healthy while the job
+alone carries the fault:
+
+```
+$ lpstat -p DS-RX1
+printer DS-RX1 is idle.  enabled since Mon 31 Aug 2026 12:35:06 AM CEST
+$ lpstat -l -o DS-RX1
+DS-RX1-18    instantpic  1024  Mon 31 Aug 2026 12:34:56 AM CEST
+        Status: Printer open failure (No matching printers found!)
+        Alerts: resources-are-not-ready
+```
+
+So the queue-stopped check never fired and the guest watched the printing
+animation out to the full 90 s before being told anything. `await_job` now also
+reads the job's own alerts, which is why the third row above exists. Three
+consecutive observations, because a job can report not-ready for an instant at
+submission while CUPS opens the device.
 
 Order matters and is tested: the job-left check runs **first**, so a queue
 stopped just after our print finished does not fail a print that came out.
