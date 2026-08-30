@@ -13,11 +13,37 @@
   overflow: hidden;
 }
 
+/* Which way the camera lies on its mount. The live-view stream carries no
+   EXIF, so unlike the stills (backend/photo_processor.py) nothing tells us
+   this at runtime — it is a fact about the rig, and flipping it is the one
+   change needed if the camera is mounted the other way round. */
+.countdown-screen {
+  --liveview-rotation: 90deg;
+}
+
+/* The camera is mounted rotated 90deg, so it streams a 960x640 landscape JPEG
+   with the scene lying on its side. Rotating here costs nothing — it is a
+   composited transform — whereas rotating each frame on the Pi would cost CPU
+   on every one of ~15 frames a second.
+
+   The box is deliberately sized in swapped units: the element is laid out
+   100vh wide by 100vw tall, so that once rotated a quarter turn its bounding
+   box is exactly the viewport. top/left 50% plus the translate centres it;
+   rotation about that centre leaves the centre put. (This holds because
+   .countdown-viewport is full-screen — .countdown-screen is inset: 0.)
+
+   Transform order matters and is easy to get subtly wrong: CSS applies the
+   rightmost function first, so this rotates the sideways frame upright, THEN
+   mirrors it along the screen's horizontal axis. Mirroring before the rotation
+   would flip the guest vertically instead. */
 .countdown-video {
-  width: 100%;
-  height: 100%;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 100vh;
+  height: 100vw;
   object-fit: cover;
-  transform: scaleX(-1); /* Mirror for selfie */
+  transform: translate(-50%, -50%) scaleX(-1) rotate(var(--liveview-rotation));
 }
 
 /* Warm semi-transparent overlay */
