@@ -323,13 +323,24 @@ class CupsPrinterDriver(PrinterDriver):
         listed = {ln.split()[-1] for ln in r.stdout.splitlines() if ln.strip()}
         return uri in listed
 
-    def _queued_job_ids(self) -> Optional[set]:
+    def _queued_job_ids(self, out: Optional[str] = None) -> Optional[set]:
         """Ids of jobs CUPS still considers not-completed. The job id is the
-        first token of each line. None means we could not look."""
-        out = self._lpstat(["-o", self.printer_name])
+        first token of each unindented line. None means we could not look.
+
+        Takes an optional pre-fetched `lpstat -l -o` body so await_job can read
+        the ids and the per-job alerts from one call instead of two. The indent
+        test is what makes that safe: under `-l` each job carries indented
+        Status/Alerts lines, and without it those would be read as job ids.
+        """
+        if out is None:
+            out = self._lpstat(["-o", self.printer_name])
         if out is None:
             return None
-        return {line.split()[0] for line in out.splitlines() if line.split()}
+        return {
+            line.split()[0]
+            for line in out.splitlines()
+            if line.split() and not line[:1].isspace()
+        }
 
     def _stop_reason(self) -> Optional[str]:
         """The reason CUPS has stopped this queue, or None if it is running.
@@ -411,7 +422,7 @@ class CupsPrinterDriver(PrinterDriver):
                 duration_ms=duration,
             )
 
-    def _job_trouble(self, job_id: str) -> Optional[str]:
+    def _job_trouble(self, job_id: str, out: Optional[str] = None) -> Optional[str]:
         """CUPS's own words for why `job_id` cannot run yet, or None.
 
         Read from `lpstat -l -o`, which carries per-job alerts that the
@@ -426,7 +437,8 @@ class CupsPrinterDriver(PrinterDriver):
         Returns the Status line when there is one, since "Printer open failure"
         tells an operator what to go and do; falls back to the raw alert.
         """
-        out = self._lpstat(["-l", "-o", self.printer_name])
+        if out is None:
+            out = self._lpstat(["-l", "-o", self.printer_name])
         if out is None:
             return None
 
@@ -464,7 +476,12 @@ class CupsPrinterDriver(PrinterDriver):
         unready = 0
 
         while True:
-            queued = self._queued_job_ids()
+            # One `lpstat -l -o` per poll, read twice: it is a strict superset
+            # of `lpstat -o`, carrying the same job lines plus the indented
+            # per-job detail. Fetching it once keeps this loop at the same
+            # subprocess count it had before the alert check was added.
+            listing = self._lpstat(["-l", "-o", self.printer_name])
+            queued = self._queued_job_ids(listing)
 
             if queued is None:
                 # Could not look. Tolerate a hiccup; give up if it persists,
@@ -493,7 +510,7 @@ class CupsPrinterDriver(PrinterDriver):
                 # the guest watched the spinner all the way to the 90s ceiling.
                 # The job's own alert is the only signal, and it is a positive
                 # one, so this needs no timer of its own.
-                trouble = self._job_trouble(job_id)
+                trouble = self._job_trouble(job_id, listing)
                 if trouble:
                     unready += 1
                     if unready >= self.UNREADY_LIMIT:

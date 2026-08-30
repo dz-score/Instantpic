@@ -293,6 +293,27 @@ def test_queued_job_ids_none_when_lpstat_unusable(mocker):
     assert driver._queued_job_ids() is None
 
 
+def test_queued_job_ids_ignores_indented_detail(mocker):
+    """await_job reads ids and alerts from one `lpstat -l -o`. Under -l each job
+    carries indented Status/Alerts lines, and without the indent test those get
+    read as job ids — which would make our job look permanently still-queued."""
+    driver = CupsPrinterDriver("DS-RX1")
+    assert driver._queued_job_ids(LPSTAT_JOB_UNREADY) == {"DS-RX1-18"}
+
+
+def test_await_job_makes_one_lpstat_call_per_poll(mocker):
+    """The alert check rides along on the listing the loop already fetches
+    rather than costing a second subprocess every second."""
+    driver = CupsPrinterDriver("DS-RX1", InstantAbort())
+    lpstat = mocker.patch.object(driver, "_lpstat", return_value="")
+
+    driver.await_job("DS-RX1-18", timeout_s=90)
+
+    # Job absent from an empty queue -> completed on the first poll.
+    assert lpstat.call_count == 1
+    assert lpstat.call_args[0][0] == ["-l", "-o", "DS-RX1"]
+
+
 def test_stop_reason_reads_the_detail_line(mocker):
     """The reason CUPS gives sits on the line after "disabled since ..."."""
     driver = CupsPrinterDriver("DS-RX1")
