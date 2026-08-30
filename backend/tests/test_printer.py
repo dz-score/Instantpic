@@ -191,8 +191,7 @@ def test_print_proceeds_when_presence_is_unknown(mocker, tmp_path):
 
 
 def test_status_reports_not_connected_when_the_device_is_gone(mocker):
-    """The admin panel showed an unplugged printer as Idle: lpstat describes the
-    queue, which stays idle and enabled with the hardware switched off."""
+    """The panel used to show an unplugged printer as Idle."""
     driver = CupsPrinterDriver("DS-RX1")
     mocker.patch("backend.print_service.subprocess.run",
                  return_value=subprocess.CompletedProcess(
@@ -209,8 +208,7 @@ def test_status_reports_not_connected_when_the_device_is_gone(mocker):
 
 
 def test_status_stays_connected_when_presence_is_unknown(mocker):
-    """Don't show the operator a disconnected printer that is sitting there
-    working just because lpinfo would not run."""
+    """A failed probe must not report a working printer as disconnected."""
     driver = CupsPrinterDriver("DS-RX1")
     mocker.patch("backend.print_service.subprocess.run",
                  return_value=subprocess.CompletedProcess(
@@ -294,9 +292,7 @@ def test_queued_job_ids_none_when_lpstat_unusable(mocker):
 
 
 def test_queued_job_ids_ignores_indented_detail(mocker):
-    """await_job reads ids and alerts from one `lpstat -l -o`. Under -l each job
-    carries indented Status/Alerts lines, and without the indent test those get
-    read as job ids — which would make our job look permanently still-queued."""
+    """Indented Status/Alerts lines must not parse as job ids."""
     driver = CupsPrinterDriver("DS-RX1")
     assert driver._queued_job_ids(LPSTAT_JOB_UNREADY) == {"DS-RX1-18"}
 
@@ -377,8 +373,7 @@ def test_device_present_false_when_the_printer_is_off(mocker):
 
 
 def test_device_present_probes_only_this_queues_scheme(mocker):
-    """A bare `lpinfo -v` walks the network backends too, which costs seconds of
-    discovery on a venue LAN — far too slow to sit in front of every print."""
+    """The scheme filter is a latency requirement, not a tidiness one."""
     driver = CupsPrinterDriver("DS-RX1")
     mocker.patch.object(driver, "_lpstat", return_value=LPSTAT_V)
     run = _lpinfo(mocker, LPINFO_PRESENT)
@@ -391,8 +386,7 @@ def test_device_present_probes_only_this_queues_scheme(mocker):
 
 
 def test_device_present_unknown_when_lpinfo_unavailable(mocker):
-    """None, not False. lpinfo can want privileges we lack, and a diagnostic
-    that cannot run must never be read as a missing printer."""
+    """None, not False — an unrunnable probe is not evidence of absence."""
     driver = CupsPrinterDriver("DS-RX1")
     mocker.patch.object(driver, "_lpstat", return_value=LPSTAT_V)
     mocker.patch("backend.print_service.subprocess.run", side_effect=FileNotFoundError)
@@ -442,8 +436,7 @@ def test_job_trouble_none_when_lpstat_unusable(mocker):
 
 
 def test_await_job_fails_fast_when_the_printer_is_switched_off(mocker):
-    """The bug this closes: queue enabled and idle, job quietly waiting, so
-    nothing fired and the guest watched a spinner out to the 90s ceiling."""
+    """Queue healthy, job stuck: the case no other check sees."""
     driver = CupsPrinterDriver("DS-RX1", InstantAbort())
     mocker.patch.object(driver, "_queued_job_ids", return_value={"DS-RX1-18"})
     mocker.patch.object(driver, "_stop_reason", return_value=None)
@@ -458,8 +451,7 @@ def test_await_job_fails_fast_when_the_printer_is_switched_off(mocker):
 
 
 def test_await_job_tolerates_a_momentary_not_ready(mocker):
-    """A job can report not-ready for an instant while CUPS opens the device.
-    One blip must not fail a print that then goes on to come out."""
+    """One not-ready blip must not fail a print that then comes out."""
     driver = CupsPrinterDriver("DS-RX1", InstantAbort())
     mocker.patch.object(driver, "_queued_job_ids",
                         side_effect=[{"DS-RX1-18"}, {"DS-RX1-18"}, set()])
@@ -1144,11 +1136,8 @@ def test_a_failed_print_is_not_counted(mocker, tmp_path):
 # ── Startup configuration checks ─────────────────────────────────────────────
 
 def test_preflight_no_longer_guesses_at_the_error_policy(mocker):
-    """The queue's ErrorPolicy is unreadable without root: lpoptions, lpstat -l -p
-    and ipptool were all measured returning nothing for it against a queue that
-    was demonstrably retry-job. The check that used to live here read lpoptions,
-    so it reported "is the queue installed?" at every boot against a healthy
-    queue while staying silent about the setting it existed to catch."""
+    """The error-policy check was removed; it cannot be read without root.
+    Docs/PRINTER_NOTES.md."""
     mocker.patch("backend.print_service.subprocess.run",
                  side_effect=AssertionError("preflight must not shell out for the policy"))
     assert CupsPrinterDriver("DS-RX1").preflight() == []

@@ -100,19 +100,14 @@ Then add it from the CUPS web UI with the printer **on and connected over USB**.
 
 [PRINTER_NOTES.md](PRINTER_NOTES.md) explains why each of those is the answer.
 
-Then set the error policy — **do not skip this**, and verify it, because
-nothing in the booth can:
+Then set the error policy and read it back — **do not skip either line**:
 ```bash
 sudo lpadmin -p DS-RX1 -o printer-error-policy=stop-printer
 sudo grep ErrorPolicy /etc/cups/printers.conf
 ```
-`stop-printer` is the only policy under which a fault reaches the guest as a
-failure: it leaves the job in a stopped queue, which is what the booth watches
-for. `abort-job` drops the job, which the booth cannot tell from a finished
-print — the guest gets "Done!" and no photo. `retry-job` retries silently for
-three hours and prints to whoever is standing there later. A stopped queue is
-not a stuck event: the booth clears the backlog and re-enables it before every
-print ([PRINTER_NOTES.md](PRINTER_NOTES.md)).
+Get this wrong and printer faults reach the guest as successful prints. The
+comparison of all three policies is in
+[PRINTER_NOTES.md](PRINTER_NOTES.md#the-queue-latches-disabled--set-the-error-policy-2026-08-29).
 
 Then, in the admin panel's **Printer** tab:
 1. Set the queue name.

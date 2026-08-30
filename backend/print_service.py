@@ -165,14 +165,9 @@ class CupsPrinterDriver(PrinterDriver):
     # Consecutive failed observations tolerated before we admit we've lost the
     # job. One hiccup while cupsd reloads should not fail a good print.
     OBSERVE_FAILURE_LIMIT = 3
-    # Job-state reasons meaning CUPS took the file but the hardware cannot run
-    # it: nothing on the USB bus, or no media loaded. Observed on the booth's
-    # own DS-RX1 with the printer switched off — the JOB reports
-    # "Alerts: resources-are-not-ready" while the QUEUE still says
-    # "idle. enabled" with no fault at all.
+    # Job-state reasons meaning the hardware cannot run the job. Docs/PRINTER_NOTES.md.
     UNREADY_JOB_REASONS = ("resources-are-not-ready",)
-    # Consecutive not-ready observations before believing it. A job can report
-    # not-ready for an instant at submission while CUPS opens the device.
+    # Do not drop to 1: a healthy job reports not-ready briefly at submission.
     UNREADY_LIMIT = 3
 
     def __init__(self, printer_name: str, abort: Optional[threading.Event] = None):
@@ -269,10 +264,8 @@ class CupsPrinterDriver(PrinterDriver):
         return r.stdout if r.returncode == 0 else None
 
     def _device_absent_for_status(self) -> bool:
-        """Definitely-absent, for the status panel. Only a hard False counts:
-        "could not tell" must read as connected, so a missing lpinfo does not
-        show the operator a disconnected printer that is sitting there working.
-        """
+        """Only a hard False counts as absent; "could not tell" reads as
+        connected. Never widen this to `is not True`."""
         return self.device_present() is False
 
     def _device_uri(self) -> Optional[str]:
@@ -292,22 +285,17 @@ class CupsPrinterDriver(PrinterDriver):
     def device_present(self) -> Optional[bool]:
         """Is this queue's device actually on the bus right now?
 
-        `lpstat -p` cannot answer: with the printer switched off it still
-        reports "idle. enabled" (see PRINTER_NOTES.md). `lpinfo -v` can, because
-        it probes the backends rather than reading the queue's cached state —
-        the USB URI simply stops being listed when the printer is off.
+        Must use `lpinfo`, never `lpstat` — Docs/PRINTER_NOTES.md has why.
 
-        Tri-state on purpose. None means "could not tell", and a caller must
-        never refuse to print on that: lpinfo can want privileges we lack, and a
-        diagnostic that cannot run is not evidence of a missing printer.
+        Tri-state: None means "could not tell", and no caller may treat that as
+        absent. Returning False on a failed probe would ground a working booth.
         """
         uri = self._device_uri()
         if not uri:
             return None
 
-        # Probe only this queue's own scheme. A bare `lpinfo -v` also walks the
-        # network backends (snmp, dnssd), which costs seconds of discovery on a
-        # venue LAN — far too slow to sit in front of every print.
+        # Keep --include-schemes: an unrestricted lpinfo is far too slow to sit
+        # in front of every print. Docs/PRINTER_NOTES.md.
         scheme = uri.split(":", 1)[0]
         try:
             r = subprocess.run(
@@ -425,17 +413,8 @@ class CupsPrinterDriver(PrinterDriver):
     def _job_trouble(self, job_id: str, out: Optional[str] = None) -> Optional[str]:
         """CUPS's own words for why `job_id` cannot run yet, or None.
 
-        Read from `lpstat -l -o`, which carries per-job alerts that the
-        printer's state does not. With the printer switched off the queue looks
-        perfectly healthy — "idle. enabled", no fault — and only the job knows:
-
-            DS-RX1-18            instantpic  1024  Mon 31 Aug 2026 12:34:56
-                    Status: Printer open failure (No matching printers found!)
-                    Alerts: resources-are-not-ready
-                    queued for DS-RX1
-
-        Returns the Status line when there is one, since "Printer open failure"
-        tells an operator what to go and do; falls back to the raw alert.
+        Read the alerts from the JOB, never the printer: the queue reports
+        itself healthy in the case this exists for. Docs/PRINTER_NOTES.md.
         """
         if out is None:
             out = self._lpstat(["-l", "-o", self.printer_name])
@@ -504,12 +483,8 @@ class CupsPrinterDriver(PrinterDriver):
                 if reason:
                     return JobOutcome(JOB_FAILED, reason)
 
-                # A stopped queue is not the only way a print dies. With the
-                # printer switched off or unplugged the queue stays enabled and
-                # idle, and the job simply waits — so nothing above fires and
-                # the guest watched the spinner all the way to the 90s ceiling.
-                # The job's own alert is the only signal, and it is a positive
-                # one, so this needs no timer of its own.
+                # Second failure path: the queue can stay healthy while the job
+                # cannot run. Docs/PRINTER_NOTES.md.
                 trouble = self._job_trouble(job_id, listing)
                 if trouble:
                     unready += 1
@@ -566,10 +541,8 @@ class CupsPrinterDriver(PrinterDriver):
                 status_text = output[:80]
                 ready = True
 
-            # lpstat describes the QUEUE, which stays "idle. enabled" with the
-            # printer switched off — so on its own this panel reported an
-            # unplugged DS-RX1 as Idle and ready. Ask whether the device is
-            # actually on the bus before claiming either.
+            # lpstat alone cannot see a switched-off printer here — the queue
+            # reads healthy either way. Docs/PRINTER_NOTES.md.
             if self._device_absent_for_status():
                 return PrinterStatus(
                     connected=False,
@@ -665,20 +638,9 @@ class CupsPrinterDriver(PrinterDriver):
             note += f" after dropping {len(stranded)} stranded job(s)"
         return note
 
-    # No error-policy check here, deliberately. The queue's ErrorPolicy cannot
-    # be read without root: `lpoptions -p` does not carry the attribute,
-    # `lpstat -l -p` does not either, and ipptool's get-printer-attributes
-    # returns nothing for it — all three measured on the booth against a queue
-    # that was demonstrably set to retry-job. Only /etc/cups/printers.conf has
-    # it, and that is root-only.
-    #
-    # The check that used to live here read lpoptions, so it always came back
-    # empty and logged "is the queue installed?" at every boot against a
-    # perfectly healthy queue — and stayed silent about the retry-job setting it
-    # existed to catch. A check that cannot see its subject and cries wolf is
-    # worse than none: it teaches an operator to ignore the boot warnings.
-    #
-    # Verifying the policy is a deployment step now, in PRINTER_NOTES.md.
+    # Do not add an error-policy check here: the attribute is unreadable without
+    # root, so any such check reports a false diagnosis. Verifying the policy is
+    # a deployment step — Docs/PRINTER_NOTES.md.
 
 
 # ── Mock driver ───────────────────────────────────────────────────────────────
@@ -945,10 +907,7 @@ class PrintService:
                      data={"printer": settings.printer_name})
 
         # ── Phase 0: is the printer even there? ──────────────────────────────
-        # Cheaper than finding out the hard way. Submitting to an absent printer
-        # queues a job that cannot run, which then has to be detected in flight
-        # and cancelled; catching it here costs one lpinfo call and leaves the
-        # queue clean. Only a definite False stops us — see device_present.
+        # Only a definite False stops us; None must fall through (device_present).
         if self._driver.device_present() is False:
             log.error("printer", "printer_absent",
                       f"Printer {settings.printer_name!r} is not connected — print not submitted",
