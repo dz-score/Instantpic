@@ -445,7 +445,7 @@ move to the document that owns them.
 
 Enforced when a change touches both code and `Docs/`, by `.githooks/pre-commit`:
 
-    python3 backend/tools/check_duplication.py --staged --since main --width 4
+    python3 backend/tools/check_duplication.py --staged --since main --width 4 --min 2
 
 A passage that appears in two files means one of them should be a link. This is not optional diligence — writing code and
 its documentation in one sitting is exactly when the same justification gets
@@ -462,11 +462,11 @@ is not a mechanism. Install it once per clone:
 `backend/tests/test_hooks.py` fails if that is not set, because otherwise
 installing the hook would itself be a step someone has to remember.
 
-Two settings matter and neither is arbitrary. `--width 4` rather than the
-default 7: at 7 this check passed a branch whose comments and docs argued the
-same points in paraphrase. `--staged` rather than plain `--since`: the latter
-lists what a branch has already committed, so in a hook it cannot see the change
-being made and reports clean while duplication is staged.
+Three settings, none arbitrary. `--staged` because plain `--since` lists what a
+branch has already *committed*, so in a hook it cannot see the change being made.
+`--width 4` to catch paraphrase, and `--min 2` because a single four-word overlap
+is shared vocabulary — a check that fires on those gets bypassed reflexively,
+which is how the boot-time error-policy check ended up worthless.
 
 The hook only catches text. Nothing here detects the same argument in different
 words — that judgement stays yours. What it guarantees is that you are asked at

@@ -33,7 +33,7 @@ done
 # same fact was argued in full in a comment and a doc, because the two copies
 # were paraphrases. --since main subtracts the baseline, so the extra
 # sensitivity costs little.
-"$PY" backend/tools/check_duplication.py --staged --since main --width 4 --fail || {
+"$PY" backend/tools/check_duplication.py --staged --since main --width 4 --min 2 --fail || {
     echo "" >&2
     echo "Rule 25: this commit touches both code and Docs/, and the passages above" >&2
     echo "appear in more than one file. Move the argument to the doc that owns it" >&2
