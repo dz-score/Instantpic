@@ -1,0 +1,44 @@
+#!/bin/sh
+# BACKEND_RULES Rule 25 — Every Fact Has One Home.
+#
+# The rule's condition is "a change touches both code and Docs/". This executes
+# that condition instead of asking an author to remember it: the two times it
+# was left to memory, it was not run.
+#
+# Bypass with `git commit --no-verify` when you mean to.
+
+staged=$(git diff --cached --name-only --diff-filter=ACM)
+[ -z "$staged" ] && exit 0
+
+echo "$staged" | grep -q '^Docs/.*\.md$' || exit 0
+echo "$staged" | grep -qE '\.(py|jsx?|css|ino|cpp|h)$' || exit 0
+
+# No baseline, nothing to subtract against — a fresh clone or a detached HEAD
+# should not be blocked by a check that cannot run correctly.
+git rev-parse --verify --quiet main >/dev/null || {
+    echo "Rule 25: no 'main' ref to compare against; skipping duplication check." >&2
+    exit 0
+}
+
+for py in ./backend/venv/Scripts/python.exe ./backend/venv/bin/python \
+          ./backend/.venv/bin/python python3 python; do
+    command -v "$py" >/dev/null 2>&1 && { PY="$py"; break; }
+done
+[ -z "$PY" ] && {
+    echo "Rule 25: no python found; skipping duplication check." >&2
+    exit 0
+}
+
+# Width 4, not the default 7. At 7 this check reported a clean branch while the
+# same fact was argued in full in a comment and a doc, because the two copies
+# were paraphrases. --since main subtracts the baseline, so the extra
+# sensitivity costs little.
+"$PY" backend/tools/check_duplication.py --staged --since main --width 4 --fail || {
+    echo "" >&2
+    echo "Rule 25: this commit touches both code and Docs/, and the passages above" >&2
+    echo "appear in more than one file. Move the argument to the doc that owns it" >&2
+    echo "and leave a warning plus a link in the code, or --no-verify if they are" >&2
+    echo "only shared vocabulary." >&2
+    exit 1
+}
+exit 0

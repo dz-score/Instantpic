@@ -443,14 +443,34 @@ than *warning*. Warnings stay — "do not read job states here", "keep the dpi
 tag" — because they are what stops the next edit breaking something. Arguments
 move to the document that owns them.
 
-Required when a change touches both code and `Docs/`:
+Enforced when a change touches both code and `Docs/`, by `.githooks/pre-commit`:
 
-    python3 backend/tools/check_duplication.py --since main
+    python3 backend/tools/check_duplication.py --staged --since main --width 4
 
 A passage that appears in two files means one of them should be a link. This is not optional diligence — writing code and
 its documentation in one sitting is exactly when the same justification gets
 written twice, because the author has it in mind in both places and no prompt to
 ask where it already lives.
+
+**Which is why this is a hook and not an instruction.** It was an instruction
+twice, and twice it was not run — the second time on a branch that duplicated
+this rule's own reasoning across four files. A step that depends on remembering
+is not a mechanism. Install it once per clone:
+
+    git config core.hooksPath .githooks
+
+`backend/tests/test_hooks.py` fails if that is not set, because otherwise
+installing the hook would itself be a step someone has to remember.
+
+Two settings matter and neither is arbitrary. `--width 4` rather than the
+default 7: at 7 this check passed a branch whose comments and docs argued the
+same points in paraphrase. `--staged` rather than plain `--since`: the latter
+lists what a branch has already committed, so in a hook it cannot see the change
+being made and reports clean while duplication is staged.
+
+The hook only catches text. Nothing here detects the same argument in different
+words — that judgement stays yours. What it guarantees is that you are asked at
+the moment the rule applies.
 
 ---
 

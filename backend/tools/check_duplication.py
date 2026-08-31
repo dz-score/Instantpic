@@ -12,6 +12,9 @@ any shingle living in two or more files.
     # only what a branch introduced, with the same scan at main subtracted
     python3 backend/tools/check_duplication.py --since main
 
+    # what is staged right now, as the pre-commit hook runs it
+    python3 backend/tools/check_duplication.py --staged --since main --width 4
+
     # the shared text between two specific files
     python3 backend/tools/check_duplication.py --pair Docs/LED_SPEC.md led-node/README.md
 
@@ -59,15 +62,33 @@ def walk():
     return sorted(set(out + [p for p in EXTRA if os.path.exists(p)]))
 
 
-def changed_since(ref):
-    """Files a branch touched, plus all of Docs/ — a code change usually
-    duplicates a document it did not itself edit."""
-    out = subprocess.run(["git", "diff", "--name-only", ref + "...HEAD"],
-                         capture_output=True, text=True,
-                         encoding="utf-8", errors="replace").stdout
-    files = {f for f in out.splitlines() if f.strip() and keep(f)}
+def _with_docs(listing):
+    """A file list, plus all of Docs/ — a code change usually duplicates a
+    document it did not itself edit."""
+    files = {f for f in listing.splitlines() if f.strip() and keep(f)}
     files |= {p for p in walk() if p.startswith("Docs/")}
     return sorted(f for f in files if os.path.exists(f))
+
+
+def changed_since(ref):
+    """Files a branch has committed."""
+    return _with_docs(subprocess.run(
+        ["git", "diff", "--name-only", ref + "...HEAD"],
+        capture_output=True, text=True,
+        encoding="utf-8", errors="replace").stdout)
+
+
+def changed_staged():
+    """Files staged for the commit being made — the pre-commit hook's view.
+
+    Distinct from changed_since, which lists what a branch has already
+    committed and therefore cannot see the change you are about to make. A hook
+    running the wrong one reports the branch as clean while staging duplication.
+    """
+    return _with_docs(subprocess.run(
+        ["git", "diff", "--cached", "--name-only", "--diff-filter=ACM"],
+        capture_output=True, text=True,
+        encoding="utf-8", errors="replace").stdout)
 
 
 def read(path):
@@ -179,6 +200,9 @@ def main():
                     help="only report pairs sharing at least N shingles")
     ap.add_argument("--width", type=int, default=7, metavar="W",
                     help="shingle length in words (default 7)")
+    ap.add_argument("--staged", action="store_true",
+                    help="scan what is staged for commit rather than what the "
+                         "branch has committed (for the pre-commit hook)")
     ap.add_argument("--fail", action="store_true",
                     help="exit 1 if anything is reported")
     args = ap.parse_args()
@@ -189,7 +213,12 @@ def main():
             print("  * " + r)
         return 0
 
-    files = changed_since(args.since) if args.since else walk()
+    if args.staged:
+        files = changed_staged()
+    elif args.since:
+        files = changed_since(args.since)
+    else:
+        files = walk()
     counts = pairs_for(files, read, args.width)
 
     if args.since:
