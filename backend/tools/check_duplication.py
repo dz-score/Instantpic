@@ -81,9 +81,7 @@ def changed_since(ref):
 def changed_staged():
     """Files staged for the commit being made — the pre-commit hook's view.
 
-    Distinct from changed_since, which lists what a branch has already
-    committed and therefore cannot see the change you are about to make. A hook
-    running the wrong one reports the branch as clean while staging duplication.
+    Not interchangeable with changed_since; BACKEND_RULES Rule 25 has why.
     """
     return _with_docs(subprocess.run(
         ["git", "diff", "--cached", "--name-only", "--diff-filter=ACM"],
@@ -132,6 +130,10 @@ def c_prose(src):
 
 def md_prose(src):
     src = re.sub(r"```.*?```", " ", src, flags=re.S)   # fenced code
+    # Indented code blocks. A command is not prose, and a rule that quotes the
+    # command it mandates was being read as duplicating the tool that defines
+    # it. Negative lookahead so an indented list item survives.
+    src = re.sub(r"^ {4,}(?![-*+] |\d+\. )\S.*$", " ", src, flags=re.M)
     return re.sub(r"^\s*\|.*$", " ", src, flags=re.M)  # tables
 
 
@@ -158,15 +160,19 @@ def shingles(text, width):
     return {" ".join(w[i:i + width]) for i in range(len(w) - width + 1)}
 
 
-def pairs_for(files, getter, width):
+def shared_shingles(files, getter, width):
+    """{shingle: owning files} for every shingle living in more than one file."""
     index = defaultdict(set)
     for p in files:
         for sh in shingles(prose(p, getter(p)), width):
             index[sh].add(p)
+    return {sh: tuple(sorted(o)) for sh, o in index.items() if len(o) > 1}
+
+
+def aggregate(shared):
     counts = defaultdict(int)
-    for sh, owners in index.items():
-        if len(owners) > 1:
-            counts[tuple(sorted(owners))] += 1
+    for owners in shared.values():
+        counts[owners] += 1
     return counts
 
 
@@ -219,13 +225,17 @@ def main():
         files = changed_since(args.since)
     else:
         files = walk()
-    counts = pairs_for(files, read, args.width)
+    shared = shared_shingles(files, read, args.width)
 
     if args.since:
-        # Same files as they were at REF: whatever already overlapped there is
-        # not this branch's problem.
-        before = pairs_for(files, lambda p: read_at(args.since, p), args.width)
-        counts = {k: v for k, v in counts.items() if k not in before}
+        # Subtract PHRASES, not file pairs. Excluding a pair outright meant two
+        # files that had ever shared one phrase — a doc and the module that
+        # cites it, say — were exempt from each other from then on, which is
+        # precisely the pair most likely to duplicate next.
+        before = shared_shingles(files, lambda p: read_at(args.since, p), args.width)
+        shared = {sh: o for sh, o in shared.items() if sh not in before}
+
+    counts = aggregate(shared)
 
     reported = sorted(((k, v) for k, v in counts.items() if v >= args.min),
                       key=lambda kv: -kv[1])
