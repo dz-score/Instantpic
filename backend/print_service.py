@@ -139,6 +139,14 @@ class PrinterDriver(ABC):
         """
         return []
 
+    def device_present(self) -> Optional[bool]:
+        """Whether the queue's device is on the bus, or None when we cannot tell.
+
+        None by default: a driver with no way to look must not be read as
+        reporting a missing printer, or it would block every print.
+        """
+        return None
+
     @abstractmethod
     def cancel_all(self) -> bool:
         """Cancel all pending jobs. Returns True on success."""
@@ -157,6 +165,10 @@ class CupsPrinterDriver(PrinterDriver):
     # Consecutive failed observations tolerated before we admit we've lost the
     # job. One hiccup while cupsd reloads should not fail a good print.
     OBSERVE_FAILURE_LIMIT = 3
+    # Job-state reasons meaning the hardware cannot run the job. Docs/PRINTER_NOTES.md.
+    UNREADY_JOB_REASONS = ("resources-are-not-ready",)
+    # Do not drop to 1: a healthy job reports not-ready briefly at submission.
+    UNREADY_LIMIT = 3
 
     def __init__(self, printer_name: str, abort: Optional[threading.Event] = None):
         self.printer_name = printer_name
@@ -251,13 +263,72 @@ class CupsPrinterDriver(PrinterDriver):
             return None
         return r.stdout if r.returncode == 0 else None
 
-    def _queued_job_ids(self) -> Optional[set]:
+    def _device_absent_for_status(self) -> bool:
+        """Only a hard False counts as absent; "could not tell" reads as
+        connected. Never widen this to `is not True`."""
+        return self.device_present() is False
+
+    def _device_uri(self) -> Optional[str]:
+        """The device URI this queue is configured to print to.
+
+        `lpstat -v DS-RX1` -> "device for DS-RX1: gutenprint53+usb://dnp-dsrx1/CB2D63217299"
+        """
+        out = self._lpstat(["-v", self.printer_name])
+        if not out:
+            return None
+        for line in out.splitlines():
+            _, sep, uri = line.partition(": ")
+            if sep and uri.strip():
+                return uri.strip()
+        return None
+
+    def device_present(self) -> Optional[bool]:
+        """Is this queue's device actually on the bus right now?
+
+        Must use `lpinfo`, never `lpstat` — Docs/PRINTER_NOTES.md has why.
+
+        Tri-state: None means "could not tell", and no caller may treat that as
+        absent. Returning False on a failed probe would ground a working booth.
+        """
+        uri = self._device_uri()
+        if not uri:
+            return None
+
+        # Keep --include-schemes: an unrestricted lpinfo is far too slow to sit
+        # in front of every print. Docs/PRINTER_NOTES.md.
+        scheme = uri.split(":", 1)[0]
+        try:
+            r = subprocess.run(
+                ["lpinfo", "-v", "--include-schemes", scheme],
+                capture_output=True, text=True, timeout=5,
+            )
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+            return None
+        if r.returncode != 0:
+            return None
+
+        # Lines are "<class> <uri>", e.g. "direct gutenprint53+usb://dnp-dsrx1/CB2D63217299".
+        listed = {ln.split()[-1] for ln in r.stdout.splitlines() if ln.strip()}
+        return uri in listed
+
+    def _queued_job_ids(self, out: Optional[str] = None) -> Optional[set]:
         """Ids of jobs CUPS still considers not-completed. The job id is the
-        first token of each line. None means we could not look."""
-        out = self._lpstat(["-o", self.printer_name])
+        first token of each unindented line. None means we could not look.
+
+        Takes an optional pre-fetched `lpstat -l -o` body so await_job can read
+        the ids and the per-job alerts from one call instead of two. The indent
+        test is what makes that safe: under `-l` each job carries indented
+        Status/Alerts lines, and without it those would be read as job ids.
+        """
+        if out is None:
+            out = self._lpstat(["-o", self.printer_name])
         if out is None:
             return None
-        return {line.split()[0] for line in out.splitlines() if line.split()}
+        return {
+            line.split()[0]
+            for line in out.splitlines()
+            if line.split() and not line[:1].isspace()
+        }
 
     def _stop_reason(self) -> Optional[str]:
         """The reason CUPS has stopped this queue, or None if it is running.
@@ -339,6 +410,37 @@ class CupsPrinterDriver(PrinterDriver):
                 duration_ms=duration,
             )
 
+    def _job_trouble(self, job_id: str, out: Optional[str] = None) -> Optional[str]:
+        """CUPS's own words for why `job_id` cannot run yet, or None.
+
+        Read the alerts from the JOB, never the printer: the queue reports
+        itself healthy in the case this exists for. Docs/PRINTER_NOTES.md.
+        """
+        if out is None:
+            out = self._lpstat(["-l", "-o", self.printer_name])
+        if out is None:
+            return None
+
+        # Job records start at column 0 with the id; details are indented under
+        # it, so a record ends at the next unindented line.
+        ours = False
+        status = None
+        for line in out.splitlines():
+            if not line[:1].isspace():
+                ours = line.split(" ", 1)[0].strip() == job_id
+                status = None
+                continue
+            if not ours:
+                continue
+            detail = line.strip()
+            if detail.startswith("Status:"):
+                status = detail[len("Status:"):].strip()
+            elif detail.startswith("Alerts:"):
+                alerts = detail[len("Alerts:"):].strip()
+                if any(r in alerts for r in self.UNREADY_JOB_REASONS):
+                    return status or alerts
+        return None
+
     def await_job(self, job_id: str, timeout_s: float) -> JobOutcome:
         """Poll CUPS until the job is off the queue, the queue stops, or we run
         out of patience.
@@ -350,9 +452,15 @@ class CupsPrinterDriver(PrinterDriver):
         """
         deadline = time.monotonic() + timeout_s
         misses = 0
+        unready = 0
 
         while True:
-            queued = self._queued_job_ids()
+            # One `lpstat -l -o` per poll, read twice: it is a strict superset
+            # of `lpstat -o`, carrying the same job lines plus the indented
+            # per-job detail. Fetching it once keeps this loop at the same
+            # subprocess count it had before the alert check was added.
+            listing = self._lpstat(["-l", "-o", self.printer_name])
+            queued = self._queued_job_ids(listing)
 
             if queued is None:
                 # Could not look. Tolerate a hiccup; give up if it persists,
@@ -374,6 +482,16 @@ class CupsPrinterDriver(PrinterDriver):
                 reason = self._stop_reason()
                 if reason:
                     return JobOutcome(JOB_FAILED, reason)
+
+                # Second failure path: the queue can stay healthy while the job
+                # cannot run. Docs/PRINTER_NOTES.md.
+                trouble = self._job_trouble(job_id, listing)
+                if trouble:
+                    unready += 1
+                    if unready >= self.UNREADY_LIMIT:
+                        return JobOutcome(JOB_FAILED, trouble)
+                else:
+                    unready = 0
 
             if time.monotonic() >= deadline:
                 return JobOutcome(
@@ -422,6 +540,17 @@ class CupsPrinterDriver(PrinterDriver):
             else:
                 status_text = output[:80]
                 ready = True
+
+            # lpstat alone cannot see a switched-off printer here — the queue
+            # reads healthy either way. Docs/PRINTER_NOTES.md.
+            if self._device_absent_for_status():
+                return PrinterStatus(
+                    connected=False,
+                    ready=False,
+                    printer_name=self.printer_name,
+                    status_text="Not connected",
+                    error="Printer is not connected — check it is powered on and plugged in",
+                )
 
             media_type, prints_remaining = self._read_media()
 
@@ -509,37 +638,9 @@ class CupsPrinterDriver(PrinterDriver):
             note += f" after dropping {len(stranded)} stranded job(s)"
         return note
 
-    # CUPS aborts the job and keeps the queue running. The default,
-    # stop-printer, disables the queue on the first error and never re-enables
-    # it — see Docs/PRINTER_NOTES.md, which is the failure this check exists for.
-    WANTED_ERROR_POLICY = "abort-job"
-    _ERROR_POLICY = re.compile(r"printer-error-policy=(\S+)")
-
-    def error_policy(self) -> Optional[str]:
-        """The queue's ErrorPolicy, or None if it could not be read."""
-        try:
-            r = subprocess.run(
-                ["lpoptions", "-p", self.printer_name],
-                capture_output=True, text=True, timeout=5,
-            )
-        except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
-            return None
-        if r.returncode != 0:
-            return None
-        m = self._ERROR_POLICY.search(r.stdout)
-        return m.group(1) if m else None
-
-    def preflight(self) -> list:
-        policy = self.error_policy()
-        if policy is None:
-            return [f"Could not read the error policy for queue "
-                    f"{self.printer_name!r} — is the queue installed?"]
-        if policy != self.WANTED_ERROR_POLICY:
-            return [f"Queue {self.printer_name!r} has error policy {policy!r}. "
-                    f"One printer error will disable it for the rest of the "
-                    f"event. Fix with: lpadmin -p {self.printer_name} "
-                    f"-o printer-error-policy={self.WANTED_ERROR_POLICY}"]
-        return []
+    # Do not add an error-policy check here: the attribute is unreadable without
+    # root, so any such check reports a false diagnosis. Verifying the policy is
+    # a deployment step — Docs/PRINTER_NOTES.md.
 
 
 # ── Mock driver ───────────────────────────────────────────────────────────────
@@ -804,6 +905,19 @@ class PrintService:
         if recovered:
             log.warn("printer", "printer_queue_recovered", recovered,
                      data={"printer": settings.printer_name})
+
+        # ── Phase 0: is the printer even there? ──────────────────────────────
+        # Only a definite False stops us; None must fall through (device_present).
+        if self._driver.device_present() is False:
+            log.error("printer", "printer_absent",
+                      f"Printer {settings.printer_name!r} is not connected — print not submitted",
+                      dur=elapsed_ms(), data={"filename": filename})
+            self._status_cache_time = 0
+            return PrintResult(
+                success=False,
+                error="Printer is not connected — check it is powered on and plugged in",
+                duration_ms=elapsed_ms(),
+            )
 
         # ── Phase 1: submit ──────────────────────────────────────────────────
         # Retry belongs here and nowhere else. A submission failure means nothing

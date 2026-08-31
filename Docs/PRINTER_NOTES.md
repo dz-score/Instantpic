@@ -37,15 +37,62 @@ work from the CLI: **`lpstat -W completed` is IPP `which-jobs=completed`, which
 returns completed, aborted *and* canceled jobs in one list.** It cannot tell a
 good print from a jam.
 
-The queue can. Out of ribbon, out of paper, a jam and a power-off all **stop the
-queue and leave the job sitting in it**. So:
+The queue can. Out of ribbon, out of paper and a jam all **stop the queue and
+leave the job sitting in it**. So:
 
 | Observation | Meaning |
 |---|---|
 | job id gone from `lpstat -o <queue>` | completed |
 | job still queued **and** queue stopped | failed — carries CUPS's own reason line |
+| job still queued **and** the job alerts `resources-are-not-ready` (3 polls) | failed — printer absent or no media |
 | still queued at the 90 s deadline | timeout |
 | 3 consecutive unreadable polls | unknown (reported, never passed off as success) |
+
+**A switched-off printer does NOT stop the queue** — this was assumed for a
+long time and is wrong. Measured on the booth's own DS-RX1 with the printer
+powered down, `lpstat -p` reports the queue perfectly healthy while the job
+alone carries the fault:
+
+```
+$ lpstat -p DS-RX1
+printer DS-RX1 is idle.  enabled since Mon 31 Aug 2026 12:35:06 AM CEST
+$ lpstat -l -o DS-RX1
+DS-RX1-18    instantpic  1024  Mon 31 Aug 2026 12:34:56 AM CEST
+        Status: Printer open failure (No matching printers found!)
+        Alerts: resources-are-not-ready
+```
+
+So the queue-stopped check never fired and the guest watched the printing
+animation out to the full 90 s before being told anything. `await_job` now also
+reads the job's own alerts, which is why the third row above exists. Three
+consecutive observations, because a job can report not-ready for an instant at
+submission while CUPS opens the device.
+
+### Asking *before* submitting: `lpinfo -v`, not `lpstat`
+
+No `lpstat` form can answer "is the printer plugged in" — `lpstat -p` and
+`lpstat -l -p` were measured byte-identical with the DS-RX1 powered on and
+powered off. **`lpinfo -v` is different: it probes the backends instead of
+reading the queue's cached state, so the USB URI simply stops being listed.**
+
+```bash
+lpstat -v DS-RX1     # device for DS-RX1: gutenprint53+usb://dnp-dsrx1/CB2D63217299
+lpinfo -v            # that URI is listed only while the printer is powered on
+```
+
+`device_present()` matches the two and is used in two places: to refuse a
+submission that would only queue work nobody can print, and to stop the admin
+panel reporting an unplugged printer as "Idle" — which it did, because `lpstat`
+describes the queue and the queue is fine.
+
+Probe with `--include-schemes <scheme>`; a bare `lpinfo -v` also walks the
+network backends and costs seconds of discovery on a venue LAN.
+
+**It returns `None` for "could not tell", and neither caller treats that as a
+missing printer.** `lpinfo` may want privileges the booth does not have, and a
+diagnostic that cannot run must never ground a printer that is sitting there
+working. The in-flight alert check above remains the backstop regardless: the
+printer can be switched off in the seconds after any pre-check passes.
 
 Order matters and is tested: the job-left check runs **first**, so a queue
 stopped just after our print finished does not fail a print that came out.
@@ -81,19 +128,48 @@ disables the queue until a human runs `cupsenable`. Correct for an office
 printer somebody walks over to; ruinous for an unattended booth, where one
 cover-open at 8pm means nobody gets a print for the rest of the night.
 
-**The queue must be set to `abort-job`:**
+**The queue must be set to `stop-printer` — which is also CUPS's default:**
 
 ```bash
-lpadmin -p DS-RX1 -o printer-error-policy=abort-job
+sudo lpadmin -p DS-RX1 -o printer-error-policy=stop-printer
 ```
 
-`abort-job` drops the failed job and leaves the queue running, so the next guest
-prints. Not `retry-current-job`: that reprints the previous guest's photo when
-the fault clears, to a guest who has left.
+**This reverses the advice that stood here until 2026-08-31, which said
+`abort-job`.** That was written before `recover()` existed and without weighing
+how each policy interacts with the queue-based detection above. All three
+options, against the current code:
 
-The booth checks this at every boot (`printer_preflight` in the log) because a
-setting applied by hand is a setting that is eventually not applied — a rebuilt
-SD card, a re-added queue, a different printer.
+| Policy | On a fault | What `await_job` concludes |
+|---|---|---|
+| `stop-printer` | queue stops, job stays in it | **failed**, carrying CUPS's reason ✅ |
+| `abort-job` | job dropped, queue keeps running | job left the queue → **completed** ❌ |
+| `retry-job` | job retried, queue keeps running | nothing fires → 90 s timeout ❌ |
+
+`abort-job` is the dangerous one: it makes every printer fault take the same
+path as a successful print, so the guest is shown "Done!" and walks away with
+nothing — the exact failure this whole module was built to remove. The
+liveness problem it was chosen for is already solved by `recover()`, which
+clears the backlog and re-enables the queue before every print.
+
+**The booth was found on `retry-job` (2026-08-31)**, which is how a switched-off
+printer produced a 90-second spinner: the queue stays enabled and the job simply
+retries, so nothing in the table above fired. With `job-cancel-after` at its
+10800 s default, a stranded job also retries for three hours and prints to a
+guest who left — the hazard `retry-current-job` was rejected for.
+
+**Verifying it is a manual deployment step; the booth cannot check it.** The
+attribute is not readable without root — `lpoptions -p`, `lpstat -l -p` and
+ipptool's `get-printer-attributes` were all measured returning nothing for it
+against a queue that was demonstrably `retry-job`:
+
+```bash
+sudo grep ErrorPolicy /etc/cups/printers.conf
+```
+
+A boot-time check used to live in `preflight()` and read `lpoptions`, so it
+always came back empty, logged "is the queue installed?" against a healthy
+queue, and never once reported the `retry-job` it existed to catch. It has been
+removed rather than left crying wolf.
 
 It also **recovers on its own**, before every print: a stopped queue is
 re-enabled and whatever was stranded in it is dropped first, logged as
@@ -210,8 +286,9 @@ are fixable on the spot. Everything else should already work.
 **1. Get a queue.** Install `printer-driver-gutenprint`, restart CUPS, add the
 printer over USB. Confirm it appears as **DS-RX1** with a Gutenprint driver, and
 that the booth user can reach the USB device without root. Then set
-`printer-error-policy=abort-job` — the booth logs `printer_preflight` at boot if
-you forget, and the section above is what happens when nobody does.
+`printer-error-policy=stop-printer` and **check it landed** with
+`sudo grep ErrorPolicy /etc/cups/printers.conf` — nothing in the booth can
+verify this for you, and the section above is what happens when nobody does.
 
 **2. Prove the geometry.** Admin panel → Printer → **Print Alignment Card**.
 Against a ruler:

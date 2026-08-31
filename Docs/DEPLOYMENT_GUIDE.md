@@ -100,13 +100,14 @@ Then add it from the CUPS web UI with the printer **on and connected over USB**.
 
 [PRINTER_NOTES.md](PRINTER_NOTES.md) explains why each of those is the answer.
 
-Then set the error policy — **do not skip this**:
+Then set the error policy and read it back — **do not skip either line**:
 ```bash
-lpadmin -p DS-RX1 -o printer-error-policy=abort-job
+sudo lpadmin -p DS-RX1 -o printer-error-policy=stop-printer
+sudo grep ErrorPolicy /etc/cups/printers.conf
 ```
-Without it, the first cover-open or jam disables the queue for the rest of the
-event and nothing prints again until someone runs `cupsenable`. The booth warns
-at boot if it is not set ([PRINTER_NOTES.md](PRINTER_NOTES.md)).
+Get this wrong and printer faults reach the guest as successful prints. The
+comparison of all three policies is in
+[PRINTER_NOTES.md](PRINTER_NOTES.md#the-queue-latches-disabled--set-the-error-policy-2026-08-29).
 
 Then, in the admin panel's **Printer** tab:
 1. Set the queue name.
@@ -257,7 +258,7 @@ the heartbeat alone — a `PING` is enough. So:
 - [ ] Python venv created & dependencies installed
 - [ ] Frontend built (`npm run build`)
 - [ ] CUPS printer added, queue name entered in the Printer tab
-- [ ] `printer-error-policy=abort-job` set on the queue
+- [ ] `printer-error-policy=stop-printer` set on the queue AND verified in /etc/cups/printers.conf
 - [ ] Alignment card printed and measured (see PRINTER_NOTES.md)
 - [ ] `photo-booth.service` enabled & running
 - [ ] Chromium kiosk autostart configured
